@@ -3,7 +3,9 @@
 #include "ll/api/service/Bedrock.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
+#include "mc/world/actor/Mob.h"
 #include "mc/world/actor/player/Player.h"
+#include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
 #include <chrono>
 #include <ctime>
@@ -26,7 +28,27 @@ void registerBuiltinPlaceholders() {
         }
         return "0";
     });
-
+    manager.registerPlaceholder<Mob>("pa", "health", [](Mob* entity) -> std::string {
+        if (entity) {
+            auto health = ActorAttribute::getHealth(entity->getEntityContext());
+            return std::to_string(health);
+        }
+        return "0";
+    });
+    manager.registerPlaceholder<Mob>("pa", "max_health", [](Mob* entity) -> std::string {
+        if (entity) {
+            int MaxHealth = entity->getMaxHealth();
+            return std::to_string(MaxHealth);
+        }
+        return "0";
+    });
+    manager.registerPlaceholder<Mob>("pa", "can_fly", [](Mob* entity) -> std::string {
+        if (entity) {
+            bool can = entity->canFly();
+            return can ? "true" : "false"; // 便于与 trueText/falseText 映射
+        }
+        return "false";
+    });
     // --- 注册服务器相关的占位符 ---
     manager.registerServerPlaceholder("pa", "online_players", []() -> std::string {
         auto level = ll::service::getLevel();
