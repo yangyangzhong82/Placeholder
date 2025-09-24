@@ -21,7 +21,8 @@ public:
     PA_API static PlaceholderManager& getInstance();
 
     // 注册一个服务器占位符（与任何对象无关）
-    PA_API void registerServerPlaceholder(const std::string& placeholder, ServerReplacer replacer);
+    PA_API void
+    registerServerPlaceholder(const std::string& pluginName, const std::string& placeholder, ServerReplacer replacer);
 
     /**
      * @brief 模板化的函数，用于注册与特定类型相关的占位符
@@ -30,9 +31,13 @@ public:
      * @param replacer 一个接收 T* 指针并返回 std::string 的函数
      */
     template <typename T>
-    void registerPlaceholder(const std::string& placeholder, std::function<std::string(T*)> replacer) {
+    void registerPlaceholder(
+        const std::string&               pluginName,
+        const std::string&               placeholder,
+        std::function<std::string(T*)>&& replacer
+    ) {
         // 将特定类型的 replacer 包装成一个接受 std::any 的通用函数
-        mContextPlaceholders[placeholder] = [replacer](std::any context) -> std::string {
+        mContextPlaceholders[pluginName][placeholder] = [replacer](std::any context) -> std::string {
             // 检查 context 是否为空
             if (!context.has_value()) {
                 return "";
@@ -50,6 +55,9 @@ public:
             return ""; // 返回空字符串表示此上下文占位符处理失败
         };
     }
+
+    // 注销插件的所有占位符
+    PA_API void unregisterPlaceholders(const std::string& pluginName);
 
     /**
      * @brief 替换占位符（无上下文对象，仅服务器占位符）
@@ -79,9 +87,10 @@ private:
     // 使用类型擦除后的通用函数来存储上下文相关的占位符
     using ContextReplacer = std::function<std::string(std::any)>;
 
-    // 分开存储不同类型的占位符
-    std::unordered_map<std::string, ServerReplacer>  mServerPlaceholders;
-    std::unordered_map<std::string, ContextReplacer> mContextPlaceholders;
+    // 插件名 -> (占位符 -> 替换函数)
+    std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacer>>  mServerPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, ContextReplacer>> mContextPlaceholders;
+
 
     // 私有化构造函数和析构函数，以实现单例模式
     PlaceholderManager();

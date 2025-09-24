@@ -20,8 +20,17 @@ PlaceholderManager& PlaceholderManager::getInstance() {
 // 构造函数现在为空，所有注册逻辑已移至 registerBuiltinPlaceholders()
 PlaceholderManager::PlaceholderManager() = default;
 
-void PlaceholderManager::registerServerPlaceholder(const std::string& placeholder, ServerReplacer replacer) {
-    mServerPlaceholders[placeholder] = replacer;
+void PlaceholderManager::registerServerPlaceholder(
+    const std::string& pluginName,
+    const std::string& placeholder,
+    ServerReplacer     replacer
+) {
+    mServerPlaceholders[pluginName][placeholder] = replacer;
+}
+
+void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
+    mServerPlaceholders.erase(pluginName);
+    mContextPlaceholders.erase(pluginName);
 }
 
 // 无上下文对象的版本，调用主函数并传入空的 std::any
@@ -49,34 +58,46 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
             break;
         }
 
-        const std::string placeholder(text, find_pos, end_pos - find_pos + 1);
-        bool              replaced = false;
+        const std::string full_placeholder = text.substr(find_pos, end_pos - find_pos + 1);
+        const std::string key              = text.substr(find_pos + 1, end_pos - find_pos - 1);
+        size_t            colon_pos        = key.find(':');
+        bool              replaced         = false;
 
-        // 1. 优先尝试匹配上下文相关的占位符
-        if (contextObject.has_value()) {
-            auto it = mContextPlaceholders.find(placeholder);
-            if (it != mContextPlaceholders.end()) {
-                std::string replaced_val = it->second(contextObject);
-                // 如果 lambda 返回非空字符串，说明类型匹配且处理成功
-                if (!replaced_val.empty()) {
-                    result.append(replaced_val);
-                    replaced = true;
+        if (colon_pos != std::string::npos) {
+            std::string pluginName      = key.substr(0, colon_pos);
+            std::string placeholderName = key.substr(colon_pos + 1);
+
+            // 1. 优先尝试匹配上下文相关的占位符
+            if (contextObject.has_value()) {
+                auto plugin_it = mContextPlaceholders.find(pluginName);
+                if (plugin_it != mContextPlaceholders.end()) {
+                    auto placeholder_it = plugin_it->second.find(placeholderName);
+                    if (placeholder_it != plugin_it->second.end()) {
+                        std::string replaced_val = placeholder_it->second(contextObject);
+                        if (!replaced_val.empty()) {
+                            result.append(replaced_val);
+                            replaced = true;
+                        }
+                    }
                 }
             }
-        }
 
-        // 2. 如果上一步没有成功，尝试匹配服务器占位符
-        if (!replaced) {
-            auto it = mServerPlaceholders.find(placeholder);
-            if (it != mServerPlaceholders.end()) {
-                result.append(it->second());
-                replaced = true;
+            // 2. 如果上一步没有成功，尝试匹配服务器占位符
+            if (!replaced) {
+                auto plugin_it = mServerPlaceholders.find(pluginName);
+                if (plugin_it != mServerPlaceholders.end()) {
+                    auto placeholder_it = plugin_it->second.find(placeholderName);
+                    if (placeholder_it != plugin_it->second.end()) {
+                        result.append(placeholder_it->second());
+                        replaced = true;
+                    }
+                }
             }
         }
 
         // 如果都失败了，保留原样
         if (!replaced) {
-            result.append(placeholder);
+            result.append(full_placeholder);
         }
 
         last_pos = end_pos + 1;

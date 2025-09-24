@@ -16,10 +16,10 @@ void registerBuiltinPlaceholders() {
     auto& manager = PlaceholderManager::getInstance();
 
     // --- 注册玩家相关的占位符 ---
-    manager.registerPlaceholder<Player>("{player_name}", [](Player* player) -> std::string {
+    manager.registerPlaceholder<Player>("pa", "player_name", [](Player* player) -> std::string {
         return player ? player->getRealName() : "";
     });
-    manager.registerPlaceholder<Player>("{ping}", [](Player* player) -> std::string {
+    manager.registerPlaceholder<Player>("pa", "ping", [](Player* player) -> std::string {
         if (player) {
             auto status = player->getNetworkStatus();
             return status ? std::to_string(status->mAveragePing) : "0";
@@ -28,11 +28,11 @@ void registerBuiltinPlaceholders() {
     });
 
     // --- 注册服务器相关的占位符 ---
-    manager.registerServerPlaceholder("{online_players}", []() -> std::string {
+    manager.registerServerPlaceholder("pa", "online_players", []() -> std::string {
         auto level = ll::service::getLevel();
         return level ? std::to_string(level->getActivePlayerCount()) : "0";
     });
-    manager.registerServerPlaceholder("{max_players}", []() -> std::string {
+    manager.registerServerPlaceholder("pa", "max_players", []() -> std::string {
         auto server = ll::service::getServerNetworkHandler();
         return server ? std::to_string(server->mMaxNumPlayers) : "0";
     });
@@ -51,13 +51,15 @@ void registerBuiltinPlaceholders() {
         return ss.str();
     };
 
-    manager.registerServerPlaceholder("{time}", [getTimeComponent]() { return getTimeComponent("%Y-%m-%d %H:%M:%S"); });
-    manager.registerServerPlaceholder("{year}", [getTimeComponent]() { return getTimeComponent("%Y"); });
-    manager.registerServerPlaceholder("{month}", [getTimeComponent]() { return getTimeComponent("%m"); });
-    manager.registerServerPlaceholder("{day}", [getTimeComponent]() { return getTimeComponent("%d"); });
-    manager.registerServerPlaceholder("{hour}", [getTimeComponent]() { return getTimeComponent("%H"); });
-    manager.registerServerPlaceholder("{minute}", [getTimeComponent]() { return getTimeComponent("%M"); });
-    manager.registerServerPlaceholder("{second}", [getTimeComponent]() { return getTimeComponent("%S"); });
+    manager.registerServerPlaceholder("pa", "time", [getTimeComponent]() {
+        return getTimeComponent("%Y-%m-%d %H:%M:%S");
+    });
+    manager.registerServerPlaceholder("pa", "year", [getTimeComponent]() { return getTimeComponent("%Y"); });
+    manager.registerServerPlaceholder("pa", "month", [getTimeComponent]() { return getTimeComponent("%m"); });
+    manager.registerServerPlaceholder("pa", "day", [getTimeComponent]() { return getTimeComponent("%d"); });
+    manager.registerServerPlaceholder("pa", "hour", [getTimeComponent]() { return getTimeComponent("%H"); });
+    manager.registerServerPlaceholder("pa", "minute", [getTimeComponent]() { return getTimeComponent("%M"); });
+    manager.registerServerPlaceholder("pa", "second", [getTimeComponent]() { return getTimeComponent("%S"); });
 }
 
 } // namespace PA
