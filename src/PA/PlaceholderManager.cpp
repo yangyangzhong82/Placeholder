@@ -17,62 +17,80 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-// 构造函数现在使用新的注册API
-PlaceholderManager::PlaceholderManager() {
-    // --- 注册玩家相关的占位符 ---
-    // 使用模板化的 registerPlaceholder<Player>
-    registerPlaceholder<Player>("{player_name}", [](Player* player) -> std::string {
-        return player ? player->getRealName() : "";
-    });
-    registerPlaceholder<Player>("{ping}", [](Player* player) -> std::string {
-        if (player) {
-            auto status = player->getNetworkStatus();
-            return status ? std::to_string(status->mAveragePing) : "0";
-        }
-        return "0";
-    });
-
-    // --- 注册服务器相关的占位符 ---
-    registerServerPlaceholder("{online_players}", []() -> std::string {
-        auto level = ll::service::getLevel();
-        return level ? std::to_string(level->getActivePlayerCount()) : "0";
-    });
-    registerServerPlaceholder("{max_players}", []() -> std::string {
-        auto server = ll::service::getServerNetworkHandler();
-        return server ? std::to_string(server->mMaxNumPlayers) : "0";
-    });
-
-    auto getTimeComponent = [](const char* format) -> std::string {
-        auto    now       = std::chrono::system_clock::now();
-        auto    in_time_t = std::chrono::system_clock::to_time_t(now);
-        std::tm buf;
-#ifdef _WIN32
-        localtime_s(&buf, &in_time_t);
-#else
-        localtime_r(&in_time_t, &buf);
-#endif
-        std::stringstream ss;
-        ss << std::put_time(&buf, format);
-        return ss.str();
-    };
-
-    registerServerPlaceholder("{time}", [getTimeComponent]() { return getTimeComponent("%Y-%m-%d %H:%M:%S"); });
-    registerServerPlaceholder("{year}", [getTimeComponent]() { return getTimeComponent("%Y"); });
-    registerServerPlaceholder("{month}", [getTimeComponent]() { return getTimeComponent("%m"); });
-    registerServerPlaceholder("{day}", [getTimeComponent]() { return getTimeComponent("%d"); });
-    registerServerPlaceholder("{hour}", [getTimeComponent]() { return getTimeComponent("%H"); });
-    registerServerPlaceholder("{minute}", [getTimeComponent]() { return getTimeComponent("%M"); });
-    registerServerPlaceholder("{second}", [getTimeComponent]() { return getTimeComponent("%S"); });
-}
+// 构造函数现在为空，所有注册逻辑已移至 registerBuiltinPlaceholders()
+PlaceholderManager::PlaceholderManager() = default;
 
 void PlaceholderManager::registerServerPlaceholder(const std::string& placeholder, ServerReplacer replacer) {
-    mPlaceholders[placeholder] = replacer;
+    mServerPlaceholders[placeholder] = replacer;
 }
 
-// 这个非模板化的重载函数只是为了方便调用，它内部调用模板版本
+// 无上下文对象的版本，调用主函数并传入空的 std::any
 std::string PlaceholderManager::replacePlaceholders(const std::string& text) {
-    // 传递 nullptr 作为上下文对象，这样只会匹配服务器占位符
-    return replacePlaceholders<std::nullptr_t>(text, nullptr);
+    return replacePlaceholders(text, std::any{});
+}
+
+// 带有上下文对象的主替换函数
+std::string PlaceholderManager::replacePlaceholders(const std::string& text, std::any contextObject) {
+    if (text.find('{') == std::string::npos) {
+        return text;
+    }
+
+    std::string result;
+    result.reserve(text.length() * 1.5);
+
+    size_t last_pos = 0;
+    size_t find_pos;
+    while ((find_pos = text.find('{', last_pos)) != std::string::npos) {
+        result.append(text, last_pos, find_pos - last_pos);
+
+        size_t end_pos = text.find('}', find_pos + 1);
+        if (end_pos == std::string::npos) {
+            last_pos = find_pos;
+            break;
+        }
+
+        const std::string placeholder(text, find_pos, end_pos - find_pos + 1);
+        bool              replaced = false;
+
+        // 1. 优先尝试匹配上下文相关的占位符
+        if (contextObject.has_value()) {
+            auto it = mContextPlaceholders.find(placeholder);
+            if (it != mContextPlaceholders.end()) {
+                std::string replaced_val = it->second(contextObject);
+                // 如果 lambda 返回非空字符串，说明类型匹配且处理成功
+                if (!replaced_val.empty()) {
+                    result.append(replaced_val);
+                    replaced = true;
+                }
+            }
+        }
+
+        // 2. 如果上一步没有成功，尝试匹配服务器占位符
+        if (!replaced) {
+            auto it = mServerPlaceholders.find(placeholder);
+            if (it != mServerPlaceholders.end()) {
+                result.append(it->second());
+                replaced = true;
+            }
+        }
+
+        // 如果都失败了，保留原样
+        if (!replaced) {
+            result.append(placeholder);
+        }
+
+        last_pos = end_pos + 1;
+    }
+
+    if (last_pos < text.length()) {
+        result.append(text, last_pos, std::string::npos);
+    }
+    return result;
+}
+
+// Player* 的便利重载版本
+std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
+    return replacePlaceholders(text, std::any{player});
 }
 
 } // namespace PA

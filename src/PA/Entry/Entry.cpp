@@ -1,5 +1,6 @@
 #include "PA/Entry/Entry.h"
 
+#include "PA/BuiltinPlaceholders.h"
 #include "ll/api/mod/RegisterHelper.h"
 
 namespace PA {
@@ -11,7 +12,7 @@ Entry& Entry::getInstance() {
 
 bool Entry::load() {
     getSelf().getLogger().debug("Loading...");
-    // Code for loading the mod goes here.
+    registerBuiltinPlaceholders();
     return true;
 }
 
@@ -27,6 +28,6 @@ bool Entry::disable() {
     return true;
 }
 
-} // namespace my_mod
+} // namespace PA
 
 LL_REGISTER_MOD(PA::Entry, PA::Entry::getInstance());
