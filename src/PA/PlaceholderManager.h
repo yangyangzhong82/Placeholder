@@ -14,6 +14,8 @@ namespace PA {
 
 class PlaceholderManager {
 public:
+    // 使用一个 map 存储所有占位符，值是 std::any
+    std::unordered_map<std::string, std::any> mPlaceholders;
     // 获取全局唯一的实例（单例模式）
     PA_API static PlaceholderManager& getInstance();
 
@@ -121,8 +123,7 @@ private:
     PlaceholderManager(const PlaceholderManager&)            = delete;
     PlaceholderManager& operator=(const PlaceholderManager&) = delete;
 
-    // 使用一个 map 存储所有占位符，值是 std::any
-    std::unordered_map<std::string, std::any> mPlaceholders;
+
 };
 
 } // namespace PA
