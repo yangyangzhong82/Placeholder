@@ -2,7 +2,7 @@
 
 #include "ll/api/mod/RegisterHelper.h"
 
-namespace VS {
+namespace PA {
 
 Entry& Entry::getInstance() {
     static Entry instance;
@@ -29,4 +29,4 @@ bool Entry::disable() {
 
 } // namespace my_mod
 
-LL_REGISTER_MOD(VS::Entry, VS::Entry::getInstance());
+LL_REGISTER_MOD(PA::Entry, PA::Entry::getInstance());

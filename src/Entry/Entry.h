@@ -2,7 +2,7 @@
 
 #include "ll/api/mod/NativeMod.h"
 
-namespace VS {
+namespace PA {
 
 class Entry {
 
