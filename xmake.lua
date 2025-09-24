@@ -23,7 +23,7 @@ option("target_type")
     set_values("server", "client")
 option_end()
 
-target("my-mod") -- Change this to your mod name.
+target("Placeholder") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
@@ -43,3 +43,23 @@ target("my-mod") -- Change this to your mod name.
     --     add_includedirs("src-client")
     --     add_files("src-client/**.cpp")
     -- end
+        after_build(function (target)
+        local bindir = path.join(os.projectdir(), "bin")
+        local includedir = path.join(bindir, "include") -- 修改目标包含目录
+        local libdir = path.join(bindir, "lib")
+        os.mkdir(includedir)
+        os.mkdir(libdir)
+
+        -- 复制 .lib 文件
+        os.cp(path.join(target:targetdir(), target:name() .. ".lib"), libdir)
+
+        -- 复制头文件并保留目录结构
+        local src_root = path.join(os.projectdir(), "src")
+        for _, header_file in ipairs(target:headerfiles()) do
+            local src_file_path = path.join(os.projectdir(), header_file)
+            local relative_path = path.relative(src_file_path, src_root)
+            local dest_file_path = path.join(includedir, relative_path)
+            os.mkdir(path.directory(dest_file_path)) -- 确保目标目录存在
+            os.cp(src_file_path, dest_file_path)
+        end
+        end)

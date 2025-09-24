@@ -17,13 +17,14 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-// 构造函数现在只负责注册内置的占位符
+// 构造函数现在使用新的注册API
 PlaceholderManager::PlaceholderManager() {
-    // --- 注册玩家占位符 ---
-    registerPlayerPlaceholder("{player_name}", [](Player* player) -> std::string {
+    // --- 注册玩家相关的占位符 ---
+    // 使用模板化的 registerPlaceholder<Player>
+    registerPlaceholder<Player>("{player_name}", [](Player* player) -> std::string {
         return player ? player->getRealName() : "";
     });
-    registerPlayerPlaceholder("{ping}", [](Player* player) -> std::string {
+    registerPlaceholder<Player>("{ping}", [](Player* player) -> std::string {
         if (player) {
             auto status = player->getNetworkStatus();
             return status ? std::to_string(status->mAveragePing) : "0";
@@ -31,7 +32,7 @@ PlaceholderManager::PlaceholderManager() {
         return "0";
     });
 
-    // --- 注册服务器占位符 ---
+    // --- 注册服务器相关的占位符 ---
     registerServerPlaceholder("{online_players}", []() -> std::string {
         auto level = ll::service::getLevel();
         return level ? std::to_string(level->getActivePlayerCount()) : "0";
@@ -68,61 +69,10 @@ void PlaceholderManager::registerServerPlaceholder(const std::string& placeholde
     mPlaceholders[placeholder] = replacer;
 }
 
-void PlaceholderManager::registerPlayerPlaceholder(const std::string& placeholder, PlayerReplacer replacer) {
-    mPlaceholders[placeholder] = replacer;
-}
-
-// 统一的占位符替换实现
-std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
-    if (text.find('{') == std::string::npos) {
-        return text;
-    }
-
-    std::string result;
-    result.reserve(text.length() * 1.5); // 预留空间以提高性能
-
-    size_t last_pos = 0;
-    size_t find_pos;
-    while ((find_pos = text.find('{', last_pos)) != std::string::npos) {
-        result.append(text, last_pos, find_pos - last_pos);
-
-        size_t end_pos = text.find('}', find_pos + 1);
-        if (end_pos == std::string::npos) {
-            // 没有找到匹配的 '}'，停止解析
-            last_pos = find_pos;
-            break;
-        }
-
-        const std::string placeholder(text, find_pos, end_pos - find_pos + 1);
-        auto              it = mPlaceholders.find(placeholder);
-
-        if (it != mPlaceholders.end()) {
-            // 找到了占位符，使用 std::visit 来调用正确的 replacer
-            std::visit(
-                [&](auto&& arg) {
-                    using T = std::decay_t<decltype(arg)>;
-                    if constexpr (std::is_same_v<T, ServerReplacer>) {
-                        result.append(arg()); // 调用服务器 replacer
-                    } else if constexpr (std::is_same_v<T, PlayerReplacer>) {
-                        if (player) {
-                            result.append(arg(player)); // 如果有 player 对象，调用玩家 replacer
-                        } else {
-                            result.append(placeholder); // 没有 player 对象，无法替换玩家占位符，保留原样
-                        }
-                    }
-                },
-                it->second
-            );
-        } else {
-            result.append(placeholder); // 未找到，保留原样
-        }
-        last_pos = end_pos + 1;
-    }
-
-    if (last_pos < text.length()) {
-        result.append(text, last_pos, std::string::npos);
-    }
-    return result;
+// 这个非模板化的重载函数只是为了方便调用，它内部调用模板版本
+std::string PlaceholderManager::replacePlaceholders(const std::string& text) {
+    // 传递 nullptr 作为上下文对象，这样只会匹配服务器占位符
+    return replacePlaceholders<std::nullptr_t>(text, nullptr);
 }
 
 } // namespace PA
