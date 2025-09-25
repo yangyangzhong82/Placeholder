@@ -1,20 +1,11 @@
 #include "PlaceholderManager.h"
-#include "ll/api/service/Bedrock.h"
-#include "mc/network/ServerNetworkHandler.h"
-#include "mc/server/ServerPlayer.h"
-#include "mc/world/actor/player/Player.h"
-#include "mc/world/level/Level.h"
-#include <chrono>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
 
-#include "PlaceholderManager.h"
 #include "ll/api/service/Bedrock.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/level/Level.h"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -22,14 +13,14 @@
 #include <ctime>
 #include <iomanip>
 #include <optional>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 
-
 namespace PA {
 
-// 工具函数（匿名命名空间）
+// 工具函数（匿名命名空间）保持不变（从原版迁移）
 namespace {
 
 inline bool isSpace(unsigned char ch) { return std::isspace(ch) != 0; }
@@ -76,7 +67,7 @@ inline std::optional<double> parseDouble(const std::string& s) {
     return std::nullopt;
 }
 
-// 颜色名/样式 -> §码 映射
+// 颜色/样式映射，同原版
 inline const std::unordered_map<std::string, std::string>& colorMap() {
     static const std::unordered_map<std::string, std::string> m = {
         {"black",         "§0"},
@@ -111,7 +102,6 @@ inline const std::unordered_map<std::string, std::string>& colorMap() {
         {"yellow",        "§e"},
         {"white",         "§f"},
         {"reset",         "§r"},
-        // 样式
         {"bold",          "§l"},
         {"italic",        "§o"},
         {"underline",     "§n"},
@@ -121,12 +111,10 @@ inline const std::unordered_map<std::string, std::string>& colorMap() {
     return m;
 }
 
-// 将 "red+bold" / "§c+bold" / "§c" 解析为前缀码串
 inline std::string styleSpecToCodes(const std::string& spec) {
     auto s = trim(spec);
     if (s.empty()) return "";
 
-    // 直接是 §码 且不含 '+' 的情况
     if (s.size() >= 2 && s.rfind("§", 0) == 0 && s.find('+') == std::string::npos) {
         return s;
     }
@@ -149,7 +137,6 @@ inline std::string styleSpecToCodes(const std::string& spec) {
     return result;
 }
 
-// params: 仅以分号 ';' 分隔顶层 key=value，避免与 thresholds 内部逗号冲突
 inline std::unordered_map<std::string, std::string> parseParams(const std::string& paramStr) {
     std::unordered_map<std::string, std::string> params;
     std::string                                  s     = paramStr;
@@ -164,7 +151,6 @@ inline std::unordered_map<std::string, std::string> parseParams(const std::strin
                 auto val = trim(pair.substr(eq + 1));
                 if (!key.empty()) params[key] = val;
             } else {
-                // 只有key无值的情况，视为空字符串
                 auto key = toLower(trim(pair));
                 if (!key.empty()) params[key] = "";
             }
@@ -175,7 +161,6 @@ inline std::unordered_map<std::string, std::string> parseParams(const std::strin
     return params;
 }
 
-// 数值格式化
 inline std::string formatNumber(double x, int decimals, bool doRound) {
     if (decimals < 0) return std::to_string(x);
     double             factor = std::pow(10.0, (double)decimals);
@@ -185,20 +170,17 @@ inline std::string formatNumber(double x, int decimals, bool doRound) {
     return oss.str();
 }
 
-// 解析 thresholds 条件
 inline bool matchCond(double v, const std::string& condRaw) {
     auto cond = trim(condRaw);
     if (cond.empty()) return false;
 
-    // 区间 a-b
     auto dash = cond.find('-');
     if (dash != std::string::npos) {
         auto a = parseDouble(cond.substr(0, dash));
         auto b = parseDouble(cond.substr(dash + 1));
-        if (a && b) return v >= *a && v <= *b; // 闭区间
+        if (a && b) return v >= *a && v <= *b;
     }
 
-    // 比较符
     auto startsWith = [&](const char* p) {
         size_t n = std::strlen(p);
         return cond.size() >= n && cond.substr(0, n) == p;
@@ -225,7 +207,6 @@ inline bool matchCond(double v, const std::string& condRaw) {
         return num ? (v < *num) : false;
     }
 
-    // 仅数字，等于
     if (auto num = parseDouble(cond)) {
         return v == *num;
     }
@@ -233,7 +214,6 @@ inline bool matchCond(double v, const std::string& condRaw) {
     return false;
 }
 
-// thresholds 求值：返回第一个匹配项的“输出”字符串；支持 default
 inline std::optional<std::string> evalThresholds(double v, const std::string& spec) {
     std::string       defaultVal;
     std::stringstream ss(spec);
@@ -245,8 +225,8 @@ inline std::optional<std::string> evalThresholds(double v, const std::string& sp
         auto col = part.find(':');
         if (col == std::string::npos) continue;
 
-        auto lhs = trim(part.substr(0, col));  // 条件
-        auto rhs = trim(part.substr(col + 1)); // 输出
+        auto lhs = trim(part.substr(0, col));
+        auto rhs = trim(part.substr(col + 1));
 
         if (lhs == "default" || lhs == "*") {
             defaultVal = rhs;
@@ -261,7 +241,6 @@ inline std::optional<std::string> evalThresholds(double v, const std::string& sp
     return std::nullopt;
 }
 
-// map=key1:val1,key2:val2,default:valx
 inline std::optional<std::string> evalMap(const std::string& raw, const std::string& spec) {
     std::string       rawLower = toLower(trim(raw));
     std::string       defaultVal;
@@ -289,18 +268,15 @@ inline std::optional<std::string> evalMap(const std::string& raw, const std::str
     return std::nullopt;
 }
 
-// 应用参数格式化（核心）
 inline std::string applyFormatting(const std::string& rawValue, const std::string& paramStr) {
     if (paramStr.empty()) return rawValue;
     auto params = parseParams(paramStr);
 
-    // 数值/布尔识别
     auto maybeBool = parseBoolish(rawValue);
     auto maybeNum  = parseDouble(rawValue);
 
     std::string out = rawValue;
 
-    // 1) 布尔映射
     if (maybeBool.has_value()) {
         bool b   = *maybeBool;
         auto itT = params.find("truetext");
@@ -308,18 +284,15 @@ inline std::string applyFormatting(const std::string& rawValue, const std::strin
         if (itT != params.end() || itF != params.end()) {
             out = b ? (itT != params.end() ? itT->second : "true") : (itF != params.end() ? itF->second : "false");
         } else if (auto itMap = params.find("map"); itMap != params.end()) {
-            // 兼容 map=true:是,false:否
             auto mapped = evalMap(b ? "true" : "false", itMap->second);
             if (!mapped) mapped = evalMap(b ? "1" : "0", itMap->second);
             if (mapped) out = *mapped;
         }
     }
 
-    // 2) 数值格式与阈值
     if (maybeNum.has_value()) {
         double v = *maybeNum;
 
-        // decimals & round
         int  decimals = -1;
         bool doRound  = true;
         if (auto it = params.find("decimals"); it != params.end()) {
@@ -332,15 +305,12 @@ inline std::string applyFormatting(const std::string& rawValue, const std::strin
             out = formatNumber(v, decimals, doRound);
         }
 
-        // thresholds
         if (auto it = params.find("thresholds"); it != params.end()) {
             if (auto matched = evalThresholds(v, it->second)) {
-                // 如果是颜色/样式，作为着色；否则视为替换文本
                 std::string codes = styleSpecToCodes(*matched);
                 if (!codes.empty()) {
                     out = codes + out;
                 } else {
-                    // 替换文本
                     bool showValue = true;
                     if (auto sv = params.find("showvalue"); sv != params.end()) {
                         if (auto bv = parseBoolish(sv->second)) showValue = *bv;
@@ -348,26 +318,22 @@ inline std::string applyFormatting(const std::string& rawValue, const std::strin
                     if (!showValue) {
                         out = *matched;
                     } else {
-                        // showValue=true 时，仍保留原值（不强制拼接标签，保持简单一致的行为）
-                        out = *matched; // 若你希望“保留数值”，可改成 ( *matched + out ) 或其他风格
+                        out = *matched;
                     }
                 }
             }
         }
     } else {
-        // 非数值的 map
         if (auto it = params.find("map"); it != params.end()) {
             if (auto mapped = evalMap(out, it->second)) out = *mapped;
         }
     }
 
-    // 3) 通用着色（若 thresholds 未着色）
     if (auto it = params.find("color"); it != params.end()) {
         std::string codes = styleSpecToCodes(it->second);
         if (!codes.empty()) out = codes + out;
     }
 
-    // 4) 前后缀
     if (auto it = params.find("prefix"); it != params.end()) {
         out = it->second + out;
     }
@@ -375,7 +341,6 @@ inline std::string applyFormatting(const std::string& rawValue, const std::strin
         out += it->second;
     }
 
-    // 5) 空文本替代
     if (out.empty()) {
         if (auto it = params.find("emptytext"); it != params.end()) out = it->second;
     }
@@ -385,35 +350,159 @@ inline std::string applyFormatting(const std::string& rawValue, const std::strin
 
 } // namespace
 
-// 定义静态实例
+// 单例
 PlaceholderManager& PlaceholderManager::getInstance() {
     static PlaceholderManager instance;
     return instance;
 }
 
-// 构造函数现在为空，所有注册逻辑已移至 registerBuiltinPlaceholders()
 PlaceholderManager::PlaceholderManager() = default;
+
+// ==== 类型系统实现 ====
+
+std::size_t PlaceholderManager::ensureTypeId(const std::string& typeKeyStr) {
+    auto it = mTypeKeyToId.find(typeKeyStr);
+    if (it != mTypeKeyToId.end()) return it->second;
+    auto id                  = mNextTypeId++;
+    mTypeKeyToId[typeKeyStr] = id;
+    mIdToTypeKey[id]         = typeKeyStr;
+    return id;
+}
+
+void PlaceholderManager::registerInheritanceByKeys(
+    const std::string& derivedKey,
+    const std::string& baseKey,
+    Caster             caster
+) {
+    auto d             = ensureTypeId(derivedKey);
+    auto b             = ensureTypeId(baseKey);
+    mUpcastEdges[d][b] = caster; // 派生 -> 基类 的上行边
+}
+
+// BFS 查询 from -> to 的“最短上行路径”
+bool PlaceholderManager::findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain)
+    const {
+    outChain.clear();
+    if (fromTypeId == 0 || toTypeId == 0) return false;
+    if (fromTypeId == toTypeId) return true; // 空链表示已是同型
+
+    std::unordered_map<std::size_t, std::pair<std::size_t, Caster>> prev;
+    std::queue<std::size_t>                                         q;
+
+    prev[fromTypeId] = {0, nullptr};
+    q.push(fromTypeId);
+
+    while (!q.empty()) {
+        auto cur = q.front();
+        q.pop();
+
+        auto it = mUpcastEdges.find(cur);
+        if (it == mUpcastEdges.end()) continue;
+
+        for (auto& [nxt, caster] : it->second) {
+            if (prev.find(nxt) != prev.end()) continue;
+            prev[nxt] = {cur, caster};
+            if (nxt == toTypeId) {
+                // 回溯构造链
+                std::vector<Caster> chain;
+                std::size_t         x = nxt;
+                while (x != fromTypeId) {
+                    auto [p, c] = prev[x];
+                    chain.push_back(c);
+                    x = p;
+                }
+                std::reverse(chain.begin(), chain.end());
+                outChain = std::move(chain);
+                return true;
+            }
+            q.push(nxt);
+        }
+    }
+    return false;
+}
+
+// ==== 占位符注册 ====
 
 void PlaceholderManager::registerServerPlaceholder(
     const std::string& pluginName,
     const std::string& placeholder,
     ServerReplacer     replacer
 ) {
-    mServerPlaceholders[pluginName][placeholder] = replacer;
+    mServerPlaceholders[pluginName][placeholder] = std::move(replacer);
 }
+
+void PlaceholderManager::registerPlaceholderForTypeId(
+    const std::string& pluginName,
+    const std::string& placeholder,
+    std::size_t        targetTypeId,
+    AnyPtrReplacer     replacer
+) {
+    mContextPlaceholders[pluginName][placeholder].push_back(TypedReplacer{
+        targetTypeId,
+        std::move(replacer),
+    });
+}
+
+void PlaceholderManager::registerPlaceholderForTypeKey(
+    const std::string& pluginName,
+    const std::string& placeholder,
+    const std::string& typeKeyStr,
+    AnyPtrReplacer     replacer
+) {
+    auto id = ensureTypeId(typeKeyStr);
+    registerPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+}
+
+// ==== 注销 ====
 
 void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
     mServerPlaceholders.erase(pluginName);
     mContextPlaceholders.erase(pluginName);
 }
 
-// 无上下文对象的版本，调用主函数并传入空的 std::any
+// ==== Context 构造 ====
+
+PlaceholderContext PlaceholderManager::makeContextRaw(void* ptr, const std::string& typeKeyStr) {
+    PlaceholderContext ctx;
+    ctx.ptr    = ptr;
+    ctx.typeId = getInstance().ensureTypeId(typeKeyStr);
+    return ctx;
+}
+
+// ==== 替换 ====
+
 std::string PlaceholderManager::replacePlaceholders(const std::string& text) {
     return replacePlaceholders(text, std::any{});
 }
 
-// 带有上下文对象的主替换函数（已支持参数语法）
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, std::any contextObject) {
+    // 尽量兼容旧用法
+    if (!contextObject.has_value()) {
+        return replacePlaceholders(text, PlaceholderContext{nullptr, 0});
+    }
+
+    // 1) 若 any 里就是 PlaceholderContext
+    if (contextObject.type() == typeid(PlaceholderContext)) {
+        auto ctx = std::any_cast<PlaceholderContext>(contextObject);
+        return replacePlaceholders(text, ctx);
+    }
+
+    // 2) 若 any 里是内置常见类型指针（示例：Player*），自动转为 Context
+    //    注意：这只是有限的兼容，其他自定义类型请改用 makeContextRaw/makeContext。
+    try {
+        if (contextObject.type() == typeid(Player*)) {
+            auto p = std::any_cast<Player*>(contextObject);
+            return replacePlaceholders(text, makeContext(p));
+        }
+    } catch (...) {}
+
+    // 3) 退化为“历史行为”：无法多态，仅尝试精确匹配（会走不到 Context 版本的派发）
+    //    建议迁移调用方到新的 Context/模板重载。
+    // 为了保持兼容，这里直接把上下文忽略，后续只会尝试服务器占位符。
+    return replacePlaceholders(text, PlaceholderContext{nullptr, 0});
+}
+
+std::string PlaceholderManager::replacePlaceholders(const std::string& text, const PlaceholderContext& ctx) {
     if (text.find('{') == std::string::npos) {
         return text;
     }
@@ -441,7 +530,7 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
             std::string pluginName      = key.substr(0, colon_pos);
             std::string placeholderPart = key.substr(colon_pos + 1);
 
-            // 解析参数段：占位符名后用 '|' 分隔
+            // 支持参数：name|k=v;...
             std::string placeholderName = placeholderPart;
             std::string paramString;
             if (auto pipe = placeholderPart.find('|'); pipe != std::string::npos) {
@@ -449,20 +538,57 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
                 paramString     = placeholderPart.substr(pipe + 1);
             }
 
-            // 1. 优先尝试上下文占位符
-            if (contextObject.has_value()) {
+            // 1. 多态上下文占位符
+            if (ctx.ptr != nullptr && ctx.typeId != 0) {
                 auto plugin_it = mContextPlaceholders.find(pluginName);
                 if (plugin_it != mContextPlaceholders.end()) {
-                    auto placeholder_it = plugin_it->second.find(placeholderName);
-                    if (placeholder_it != plugin_it->second.end()) {
-                        std::string replaced_val = placeholder_it->second(contextObject);
-                        if (!replaced_val.empty()) {
-                            // 应用参数格式化
-                            if (!paramString.empty()) {
-                                replaced_val = applyFormatting(replaced_val, paramString);
+                    auto ph_it = plugin_it->second.find(placeholderName);
+                    if (ph_it != plugin_it->second.end()) {
+                        // 将所有“可达的目标类型”候选收集出来，并按“转换步数”从小到大尝试
+                        struct Candidate {
+                            std::vector<Caster> chain;
+                            AnyPtrReplacer      fn;
+                        };
+                        std::vector<std::pair<int, Candidate>> candidates;
+
+                        for (auto& entry : ph_it->second) {
+                            std::vector<Caster> chain;
+                            if (entry.targetTypeId == ctx.typeId) {
+                                candidates.push_back({
+                                    0,
+                                    Candidate{std::vector<Caster>{}, entry.fn}
+                                });
+                            } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
+                                candidates.push_back({
+                                    (int)chain.size(),
+                                    Candidate{std::move(chain), entry.fn}
+                                });
                             }
-                            result.append(replaced_val);
-                            replaced = true;
+                        }
+
+                        if (!candidates.empty()) {
+                            std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) {
+                                return a.first < b.first;
+                            });
+
+                            for (auto& [dist, cand] : candidates) {
+                                void* p = ctx.ptr;
+                                for (auto& c : cand.chain) {
+                                    p = c(p); // 逐步上行，确保 p 指向目标类型子对象
+                                    if (!p) break;
+                                }
+                                if (!p) continue;
+
+                                std::string replaced_val = cand.fn(p);
+                                if (!replaced_val.empty()) {
+                                    if (!paramString.empty()) {
+                                        replaced_val = applyFormatting(replaced_val, paramString);
+                                    }
+                                    result.append(replaced_val);
+                                    replaced = true;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -485,7 +611,6 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
             }
         }
 
-        // 未匹配成功，保留原样
         if (!replaced) {
             result.append(full_placeholder);
         }
@@ -499,9 +624,9 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
     return result;
 }
 
-// Player* 的便利重载版本
+// 便利重载：Player*
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
-    return replacePlaceholders(text, std::any{player});
+    return replacePlaceholders(text, makeContext(player));
 }
 
 } // namespace PA

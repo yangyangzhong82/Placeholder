@@ -1,5 +1,6 @@
 #include "BuiltinPlaceholders.h"
 #include "PlaceholderManager.h"
+
 #include "ll/api/service/Bedrock.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
@@ -7,6 +8,7 @@
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
+
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -17,7 +19,11 @@ namespace PA {
 void registerBuiltinPlaceholders() {
     auto& manager = PlaceholderManager::getInstance();
 
-    // --- 注册玩家相关的占位符 ---
+    // 声明内置类型的继承关系（无 RTTI 环境下实现多态的关键）
+    // Player : public Mob
+    manager.registerInheritance<Player, Mob>();
+
+    // --- 注册玩家/实体相关占位符（多态） ---
     manager.registerPlaceholder<Player>("pa", "player_name", [](Player* player) -> std::string {
         return player ? player->getRealName() : "";
     });
@@ -45,11 +51,12 @@ void registerBuiltinPlaceholders() {
     manager.registerPlaceholder<Mob>("pa", "can_fly", [](Mob* entity) -> std::string {
         if (entity) {
             bool can = entity->canFly();
-            return can ? "true" : "false"; // 便于与 trueText/falseText 映射
+            return can ? "true" : "false";
         }
         return "false";
     });
-    // --- 注册服务器相关的占位符 ---
+
+    // --- 注册服务器占位符（无上下文） ---
     manager.registerServerPlaceholder("pa", "online_players", []() -> std::string {
         auto level = ll::service::getLevel();
         return level ? std::to_string(level->getActivePlayerCount()) : "0";
@@ -59,6 +66,7 @@ void registerBuiltinPlaceholders() {
         return server ? std::to_string(server->mMaxNumPlayers) : "0";
     });
 
+    // 时间类
     auto getTimeComponent = [](const char* format) -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
