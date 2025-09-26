@@ -1,11 +1,16 @@
 #pragma once
 
 #include "Macros.h"
+
 #include <any>
 #include <functional>
+#include <optional>
+#include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 class Player; // 前向声明
@@ -16,9 +21,9 @@ namespace PA {
 template <typename T>
 inline std::string typeKey() {
 #if defined(_MSC_VER)
-    return __FUNCSIG__; // 在 MSVC 下同一类型在不同模块也一致
+    return __FUNCSIG__; // MSVC
 #else
-    return __PRETTY_FUNCTION__; // 在 GCC/Clang 下同一类型在不同模块也一致
+    return __PRETTY_FUNCTION__; // GCC/Clang
 #endif
 }
 
@@ -40,16 +45,29 @@ class PlaceholderManager {
 public:
     // 服务器占位符：无上下文
     using ServerReplacer = std::function<std::string()>;
+    // 服务器占位符（带参数）
+    using ServerReplacerWithParams = std::function<std::string(std::string_view params)>;
+
     // 上下文占位符：内部总以 void* 接口保存；调用前会按类型系统进行“上行转换”使其成为目标类型子对象指针
     using AnyPtrReplacer = std::function<std::string(void*)>;
-    using Caster         = void* (*)(void*); // Derived* -> Base* 上行转换函数指针
+    // 上下文占位符（带参数）
+    using AnyPtrReplacerWithParams = std::function<std::string(void*, std::string_view params)>;
+
+    using Caster = void* (*)(void*); // Derived* -> Base* 上行转换函数指针
 
     // 获取单例
     PA_API static PlaceholderManager& getInstance();
 
-    // 注册服务器占位符（无上下文）
+    // ---------------- 注册服务器占位符（无上下文） ----------------
     PA_API void
     registerServerPlaceholder(const std::string& pluginName, const std::string& placeholder, ServerReplacer replacer);
+
+    // [新] 注册服务器占位符（带参数）
+    PA_API void registerServerPlaceholderWithParams(
+        const std::string&         pluginName,
+        const std::string&         placeholder,
+        ServerReplacerWithParams&& replacer
+    );
 
     /**
      * @brief [新] 注册上下文占位符（模板版）
@@ -61,20 +79,31 @@ public:
         const std::string&               placeholder,
         std::function<std::string(T*)>&& replacer
     ) {
-        // 目标类型ID
-        auto targetId = ensureTypeId(typeKey<T>());
-        // 存储为 void* -> T* 的适配器，要求传入的是 T 子对象指针（我们会在派发前做上行转换，确保这里安全）
-        AnyPtrReplacer fn = [r = std::move(replacer)](void* p) -> std::string {
+        auto           targetId = ensureTypeId(typeKey<T>());
+        AnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::string {
             if (!p) return std::string{};
             return r(reinterpret_cast<T*>(p));
         };
         registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
     }
 
+    // [新] 注册上下文占位符（模板版，带参数）
+    template <typename T>
+    void registerPlaceholderWithParams(
+        const std::string&                                 pluginName,
+        const std::string&                                 placeholder,
+        std::function<std::string(T*, std::string_view)>&& replacer
+    ) {
+        auto                     targetId = ensureTypeId(typeKey<T>());
+        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, std::string_view params) -> std::string {
+            if (!p) return std::string{};
+            return r(reinterpret_cast<T*>(p), params);
+        };
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+    }
+
     /**
-     * @brief [新] 注册上下文占位符（显式类型键版，便于其他插件用自定义类型名）
-     * @param typeKeyStr 任意保证在此类型维度内唯一且跨模块一致的字符串（建议用 typeKey<T>() 或自己约定的稳定字面量）
-     * @param replacer   接收“已上行转换到该类型子对象指针”的 void*，需 reinterpret_cast 为该具体类型
+     * @brief [新] 注册上下文占位符（显式类型键版）
      */
     PA_API void registerPlaceholderForTypeKey(
         const std::string& pluginName,
@@ -83,27 +112,28 @@ public:
         AnyPtrReplacer     replacer
     );
 
+    // [新] 注册上下文占位符（显式类型键版，带参数）
+    PA_API void registerPlaceholderForTypeKeyWithParams(
+        const std::string&         pluginName,
+        const std::string&         placeholder,
+        const std::string&         typeKeyStr,
+        AnyPtrReplacerWithParams&& replacer
+    );
+
     /**
      * @brief [新] 注册类型继承关系：Derived -> Base 的上行转换
-     * 无需 RTTI，使用静态转换构造出上行转换函数指针。
      */
     template <typename Derived, typename Base>
     void registerInheritance() {
         registerInheritanceByKeys(
             typeKey<Derived>(),
             typeKey<Base>(),
-            +[](void* p) -> void* {
-                // 先恢复 Derived*，再静态上行到 Base*
-                return static_cast<Base*>(reinterpret_cast<Derived*>(p));
-            }
+            +[](void* p) -> void* { return static_cast<Base*>(reinterpret_cast<Derived*>(p)); }
         );
     }
 
     /**
      * @brief [新] 注册类型继承关系（显式类型键版）
-     * @param derivedKey e.g. typeKey<Derived>()
-     * @param baseKey    e.g. typeKey<Base>()
-     * @param caster     上行转换函数指针：Derived* -> Base*
      */
     PA_API void registerInheritanceByKeys(const std::string& derivedKey, const std::string& baseKey, Caster caster);
 
@@ -115,9 +145,6 @@ public:
 
     /**
      * @brief [旧] 保留的兼容接口：std::any
-     * - 若 any 内部恰好是我们新的 PlaceholderContext，则直接走多态派发
-     * - 若 any 恰好是常见内置类型指针（如 Player*），也会自动转为新 Context（仅作为示例；自定义类型请使用新接口）
-     * - 其他情况：仅能匹配精确类型（历史行为），建议迁移到新接口
      */
     PA_API std::string replacePlaceholders(const std::string& text, std::any contextObject);
 
@@ -127,7 +154,7 @@ public:
     PA_API std::string replacePlaceholders(const std::string& text, const PlaceholderContext& ctx);
 
     /**
-     * @brief [便捷] 替换，占位符上下文为 Player*（保留）
+     * @brief [便捷] 占位符上下文为 Player*
      */
     PA_API std::string replacePlaceholders(const std::string& text, Player* player);
 
@@ -148,35 +175,53 @@ public:
     }
 
     /**
-     * @brief [便捷] 显式类型键构造上下文（当变量静态类型与动态类型不一致时，建议指定动态类型键）
-     * 例如：只有 Base* 变量，但运行时其实是 Derived*，可传 Derived 的 typeKey。
+     * @brief [便捷] 显式类型键构造上下文
      */
     PA_API static PlaceholderContext makeContextRaw(void* ptr, const std::string& typeKeyStr);
 
-private:
-    // 内部：注册上下文占位符（目标类型ID版）
-    void registerPlaceholderForTypeId(
+    // 注册上下文占位符（目标类型ID版）
+    PA_API void registerPlaceholderForTypeId(
         const std::string& pluginName,
         const std::string& placeholder,
         std::size_t        targetTypeId,
         AnyPtrReplacer     replacer
     );
 
-    // 内部：确保/获取类型ID
-    std::size_t ensureTypeId(const std::string& typeKeyStr);
+    // 注册上下文占位符（目标类型ID版，带参数）
+    PA_API void registerPlaceholderForTypeId(
+        const std::string&         pluginName,
+        const std::string&         placeholder,
+        std::size_t                targetTypeId,
+        AnyPtrReplacerWithParams&& replacer
+    );
 
-    // 内部：类型系统“上行转换路径”查询（from -> to），返回是否存在；out 为转换函数序列（最短路径）
-    bool findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain) const;
+    // 确保/获取类型ID
+    PA_API std::size_t ensureTypeId(const std::string& typeKeyStr);
+
+    // 类型系统“上行转换路径”查询
+    PA_API bool findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain) const;
+
+    // 可选：配置解析行为
+    PA_API void setMaxRecursionDepth(int depth);
+    PA_API int  getMaxRecursionDepth() const;
+    PA_API void setDoubleBraceEscape(bool enable);
+    PA_API bool getDoubleBraceEscape() const;
 
 private:
-    // 服务器占位符：插件名 -> (占位符 -> 替换函数)
-    std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacer>> mServerPlaceholders;
-
-    // 上下文占位符（多态）：插件名 -> (占位符 -> [目标类型ID -> 函数])
-    struct TypedReplacer {
-        std::size_t    targetTypeId{0};
-        AnyPtrReplacer fn;
+    // --- 内部结构 ---
+    struct ServerReplacerEntry {
+        std::variant<ServerReplacer, ServerReplacerWithParams> fn;
     };
+
+    struct TypedReplacer {
+        std::size_t                                            targetTypeId{0};
+        std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;
+    };
+
+    // 服务器占位符：插件名 -> (占位符 -> 替换函数)
+    std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>> mServerPlaceholders;
+
+    // 上下文占位符（多态）：插件名 -> (占位符 -> [候选列表])
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
 
     // 类型系统：typeKeyStr <-> typeId
@@ -187,12 +232,28 @@ private:
     // 继承图：派生ID -> (基类ID -> 上行转换函数)
     std::unordered_map<std::size_t, std::unordered_map<std::size_t, Caster>> mUpcastEdges;
 
+    // 线程安全
+    mutable std::shared_mutex mMutex;
+
+    // 解析配置
+    int  mMaxRecursionDepth{12};
+    bool mEnableDoubleBraceEscape{true};
+
 private:
     PlaceholderManager();
     ~PlaceholderManager() = default;
 
     PlaceholderManager(const PlaceholderManager&)            = delete;
     PlaceholderManager& operator=(const PlaceholderManager&) = delete;
+
+    // 内部实现：带状态与深度控制的替换
+    struct ReplaceState {
+        int depth{0};
+        // 同一轮替换内的简易缓存（key: ctxptr#typeId#plugin:ph|params）
+        std::unordered_map<std::string, std::string> cache;
+    };
+
+    std::string replacePlaceholdersImpl(const std::string& text, const PlaceholderContext& ctx, ReplaceState& st);
 };
 
 } // namespace PA
