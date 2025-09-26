@@ -1,5 +1,6 @@
 #include "BuiltinPlaceholders.h"
 #include "PlaceholderManager.h"
+#include "Utils.h"
 
 #include "ll/api/service/Bedrock.h"
 #include "mc/network/ServerNetworkHandler.h"
@@ -22,103 +23,12 @@
 
 namespace PA {
 
-namespace {
-// 简易表达式求值：支持 + - * / 和括号，以及一元负号
-// 返回 std::nullopt 表示解析失败
-// --- 从 PlaceholderManager.cpp 移植过来的工具函数 ---
-
-inline bool isSpace(unsigned char ch) { return std::isspace(ch) != 0; }
-
-inline std::string ltrim(std::string s) {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !isSpace(ch); }));
-    return s;
-}
-inline std::string rtrim(std::string s) {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !isSpace(ch); }).base(), s.end());
-    return s;
-}
-inline std::string trim(std::string s) { return rtrim(ltrim(std::move(s))); }
-
-inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    return s;
-}
-
-inline std::optional<double> parseDouble(const std::string& s) {
-    auto t = trim(s);
-    if (t.empty()) return std::nullopt;
-    double v     = 0.0;
-    auto   first = t.data();
-    auto   last  = t.data() + t.size();
-    auto   res   = std::from_chars(first, last, v);
-    if (res.ec == std::errc() && res.ptr == last) return v;
-    try {
-        size_t idx = 0;
-        double x   = std::stod(t, &idx);
-        if (idx == t.size()) return x;
-    } catch (...) {}
-    return std::nullopt;
-}
-
-inline std::unordered_map<std::string, std::string> parseParams(const std::string& paramStr) {
-    std::unordered_map<std::string, std::string> params;
-    std::string                                  s = paramStr;
-    size_t                                       i = 0, n = s.size();
-
-    auto skipSpaces = [&]() {
-        while (i < n && isSpace((unsigned char)s[i])) ++i;
-    };
-    auto readKey = [&]() -> std::string {
-        size_t start = i;
-        while (i < n && s[i] != '=' && s[i] != ';') ++i;
-        return trim(s.substr(start, i - start));
-    };
-    auto readValue = [&]() -> std::string {
-        if (i >= n) return "";
-        if (s[i] == '"' || s[i] == '\'') {
-            char        quote = s[i++];
-            std::string val;
-            while (i < n) {
-                char c = s[i++];
-                if (c == '\\') {
-                    if (i < n) {
-                        val.push_back(s[i++]);
-                    }
-                } else if (c == quote) {
-                    break;
-                } else {
-                    val.push_back(c);
-                }
-            }
-            return val;
-        } else {
-            size_t start = i;
-            while (i < n && s[i] != ';') ++i;
-            return trim(s.substr(start, i - start));
-        }
-    };
-
-    while (i < n) {
-        skipSpaces();
-        if (i >= n) break;
-        std::string key = readKey();
-        if (i < n && s[i] == '=') {
-            ++i;
-            std::string val      = readValue();
-            params[toLower(key)] = val;
-        } else {
-            if (!key.empty()) params[toLower(key)] = "";
-        }
-        if (i < n && s[i] == ';') ++i;
-    }
-    return params;
-}
 static std::optional<double> evalExpr(std::string_view expr) {
     // 去空白
     std::string s;
     s.reserve(expr.size());
     for (char c : expr)
-        if (!std::isspace((unsigned char)c)) s.push_back(c);
+        if (!PA::Utils::isSpace((unsigned char)c)) s.push_back(c);
     if (s.empty()) return std::nullopt;
 
     // Shunting-yard
@@ -222,8 +132,6 @@ static std::optional<double> evalExpr(std::string_view expr) {
     return val.back();
 }
 
-} // namespace
-
 void registerBuiltinPlaceholders() {
     auto& manager = PlaceholderManager::getInstance();
 
@@ -310,12 +218,12 @@ void registerBuiltinPlaceholders() {
     // --- 新增：随机数 ---
     // 用法：{pa:random|min=1;max=10}，支持小数与整数（输出仍由 decimals/round 等参数控制）
     manager.registerServerPlaceholderWithParams("pa", "random", [](std::string_view params) -> std::string {
-        auto   m  = parseParams(std::string(params));
+        auto   m  = PA::Utils::parseParams(std::string(params));
         double lo = 0.0, hi = 1.0;
         if (auto it = m.find("min"); it != m.end())
-            if (auto v = parseDouble(it->second)) lo = *v;
+            if (auto v = PA::Utils::parseDouble(it->second)) lo = *v;
         if (auto it = m.find("max"); it != m.end())
-            if (auto v = parseDouble(it->second)) hi = *v;
+            if (auto v = PA::Utils::parseDouble(it->second)) hi = *v;
         if (hi < lo) std::swap(hi, lo);
         static thread_local std::mt19937_64    rng{std::random_device{}()};
         std::uniform_real_distribution<double> dist(lo, hi);
@@ -326,7 +234,7 @@ void registerBuiltinPlaceholders() {
     // --- 新增：表达式计算 ---
     // 用法：{pa:calc|expr=1+2*(3-4)}；支持在 expr 中嵌套占位符（先求值）
     manager.registerServerPlaceholderWithParams("pa", "calc", [&](std::string_view params) -> std::string {
-        auto m  = parseParams(std::string(params));
+        auto m  = PA::Utils::parseParams(std::string(params));
         auto it = m.find("expr");
         if (it == m.end()) return "";
         auto expr = it->second;
@@ -340,7 +248,7 @@ void registerBuiltinPlaceholders() {
     // 如需上下文版 calc（可在 expr 中访问玩家/实体占位符），提供 Mob 基类版本
     manager.registerPlaceholderWithParams<Mob>("pa", "calc", [&](Mob* mob, std::string_view params) -> std::string {
         (void)mob;
-        auto m  = parseParams(std::string(params));
+        auto m  = PA::Utils::parseParams(std::string(params));
         auto it = m.find("expr");
         if (it == m.end()) return "";
         auto  expr = it->second;
