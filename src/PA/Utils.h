@@ -79,6 +79,9 @@ private:
 inline const std::unordered_map<std::string, std::string>& colorMap();
 inline std::string styleSpecToCodes(const std::string& spec);
 inline size_t      visibleLength(std::string_view s);
+std::string        truncateVisible(
+           std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
+       );
 inline std::string stripColorCodes(std::string_view s);
 inline std::string addThousandSeparators(std::string s);
 inline std::string siScale(double v, int base, int decimals, bool doRound);

@@ -268,6 +268,101 @@ inline size_t visibleLength(std::string_view s) {
     return vis;
 }
 
+// 可见安全截断
+std::string truncateVisible(
+    std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
+) {
+    if (s.empty()) return "";
+
+    size_t              vis_count = 0;
+    size_t              byte_pos  = 0;
+    std::string         last_styles;
+    std::vector<char>   active_formats;
+    std::optional<char> last_color;
+
+    for (size_t i = 0; i < s.size();) {
+        if (vis_count >= maxlen) {
+            byte_pos = i;
+            break;
+        }
+
+        if (s[i] == '\xA7' && i + 1 < s.size()) {
+            char code = tolower(s[i + 1]);
+            if (preserve_styles) {
+                if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) {
+                    last_color = code;
+                    active_formats.clear();
+                } else if (code >= 'k' && code <= 'o') {
+                    if (std::find(active_formats.begin(), active_formats.end(), code)
+                        == active_formats.end()) {
+                        active_formats.push_back(code);
+                    }
+                } else if (code == 'r') {
+                    last_color.reset();
+                    active_formats.clear();
+                }
+            }
+            i += 2;
+            continue;
+        }
+
+        // 处理 UTF-8 字符
+        unsigned char c = s[i];
+        size_t        char_len;
+        if (c < 0x80) { // 1-byte char (ASCII)
+            char_len = 1;
+        } else if ((c & 0xE0) == 0xC0) { // 2-byte char
+            char_len = 2;
+        } else if ((c & 0xF0) == 0xE0) { // 3-byte char
+            char_len = 3;
+        } else if ((c & 0xF8) == 0xF0) { // 4-byte char
+            char_len = 4;
+        } else {
+            // 无效的 UTF-8 序列，当作单字节处理
+            char_len = 1;
+        }
+
+        if (i + char_len > s.size()) {
+            // 不完整的 UTF-8 字符，停止
+            byte_pos = i;
+            break;
+        }
+
+        vis_count++;
+        i += char_len;
+        if (vis_count >= maxlen) {
+            byte_pos = i;
+            break;
+        }
+    }
+
+    // 如果未截断，直接返回原字符串
+    if (byte_pos == 0 && vis_count < maxlen) {
+        return std::string(s);
+    }
+
+    std::string result = std::string(s.substr(0, byte_pos));
+    result += ellipsis;
+
+    if (preserve_styles) {
+        std::string styles_to_restore;
+        if (last_color) {
+            styles_to_restore += '\xA7';
+            styles_to_restore += *last_color;
+        }
+        for (char fmt : active_formats) {
+            styles_to_restore += '\xA7';
+            styles_to_restore += fmt;
+        }
+        if (!styles_to_restore.empty()) {
+            result.insert(byte_pos, styles_to_restore);
+        }
+        result += "\xA7r";
+    }
+
+    return result;
+}
+
 inline std::string stripColorCodes(std::string_view s) {
     std::string out;
     out.reserve(s.size());
@@ -673,14 +768,12 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 
     // 截断
     if (auto maxlenOpt = params.getInt("maxlen")) {
-        int maxlen = std::max(0, *maxlenOpt);
-        int vis    = (int)visibleLength(out);
-        if (vis > maxlen) {
+        size_t maxlen = std::max(0, *maxlenOpt);
+        if (visibleLength(out) > maxlen) {
             std::string ell = "...";
             if (auto e = params.get("ellipsis")) ell = *e;
-            // 简化处理：按字节近似截断
-            if ((int)out.size() > maxlen) out.resize((size_t)maxlen);
-            out += ell;
+            bool preserve = params.getBool("preserve_styles").value_or(true);
+            out           = truncateVisible(out, maxlen, ell, preserve);
         }
     }
 

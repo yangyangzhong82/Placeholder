@@ -218,30 +218,40 @@ void registerBuiltinPlaceholders() {
 
     // --- 新增：随机数 ---
     // 用法：{pa:random|min=1;max=10}，支持小数与整数（输出仍由 decimals/round 等参数控制）
-    manager.registerServerPlaceholderWithParams("pa", "random", [](const Utils::ParsedParams& params) -> std::string {
-        double lo = params.getDouble("min").value_or(0.0);
-        double hi = params.getDouble("max").value_or(1.0);
+    manager.registerServerPlaceholderWithParams(
+        "pa",
+        "random",
+        std::function<std::string(const Utils::ParsedParams&)>([](const Utils::ParsedParams& params) -> std::string {
+            double lo = params.getDouble("min").value_or(0.0);
+            double hi = params.getDouble("max").value_or(1.0);
 
-        if (hi < lo) std::swap(hi, lo);
-        static thread_local std::mt19937_64    rng{std::random_device{}()};
-        std::uniform_real_distribution<double> dist(lo, hi);
-        double                                 v = dist(rng);
-        return std::to_string(v);
-    });
+            if (hi < lo) std::swap(hi, lo);
+            static thread_local std::mt19937_64    rng{std::random_device{}()};
+            std::uniform_real_distribution<double> dist(lo, hi);
+            double                                 v = dist(rng);
+            return std::to_string(v);
+        })
+    );
 
     // --- 新增：表达式计算 ---
     // 用法：{pa:calc|expr=1+2*(3-4)}；支持在 expr 中嵌套占位符（先求值）
-    manager.registerServerPlaceholderWithParams("pa", "calc", [&](const Utils::ParsedParams& params) -> std::string {
-        auto exprOpt = params.get("expr");
-        if (!exprOpt) return "";
+    manager.registerServerPlaceholderWithParams(
+        "pa",
+        "calc",
+        std::function<std::string(const Utils::ParsedParams&)>(
+            [&](const Utils::ParsedParams& params) -> std::string {
+                auto exprOpt = params.get("expr");
+                if (!exprOpt) return "";
 
-        auto expr = std::string(*exprOpt);
-        // 先把 expr 中的占位符在“无上下文”下展开（如需上下文版本可使用上下文版 calc）
-        auto& mgr = PlaceholderManager::getInstance();
-        expr      = mgr.replacePlaceholders(expr);
-        if (auto v = evalExpr(expr)) return std::to_string(*v);
-        return "";
-    });
+                auto expr = std::string(*exprOpt);
+                // 先把 expr 中的占位符在“无上下文”下展开（如需上下文版本可使用上下文版 calc）
+                auto& mgr = PlaceholderManager::getInstance();
+                expr      = mgr.replacePlaceholders(expr);
+                if (auto v = evalExpr(expr)) return std::to_string(*v);
+                return "";
+            }
+        )
+    );
 
     // 如需上下文版 calc（可在 expr 中访问玩家/实体占位符），提供 Mob 基类版本
     manager.registerPlaceholderWithParams<Mob>(
