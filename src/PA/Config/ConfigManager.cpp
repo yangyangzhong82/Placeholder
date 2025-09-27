@@ -43,6 +43,11 @@ bool ConfigManager::load(const std::string& path) {
         return false;
     }
 
+    // 触发重载回调
+    for (const auto& callback : mReloadCallbacks) {
+        callback(*mConfig);
+    }
+
     // 检查缺失的键以警告用户。
     nlohmann::json default_json = Config{}; // 创建一个默认配置对象并转换为json
 
@@ -75,6 +80,10 @@ bool ConfigManager::load(const std::string& path) {
     return true; // 不再保存，以保留用户文件的格式和注释
 }
 
+void ConfigManager::onReload(ReloadCallback callback) {
+    mReloadCallbacks.push_back(std::move(callback));
+}
+
 bool ConfigManager::save() {
     try {
         nlohmann::json json = *mConfig;
@@ -93,4 +102,4 @@ Config& ConfigManager::get() { return *mConfig; }
 
 const Config& ConfigManager::get() const { return *mConfig; }
 
-} // namespace CZET
+} // namespace PA

@@ -50,12 +50,17 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-PlaceholderManager::PlaceholderManager() {
+PlaceholderManager::PlaceholderManager() : mGlobalCache(ConfigManager::getInstance().get().globalCacheSize) {
     unsigned int concurrency = std::thread::hardware_concurrency();
     if (concurrency == 0) {
         concurrency = 2; // 硬件并发未知时的默认值
     }
     mThreadPool = std::make_unique<ThreadPool>(concurrency);
+
+    // 注册一个回调，当配置重新加载时，更新缓存大小
+    ConfigManager::getInstance().onReload([this](const Config& newConfig) {
+        mGlobalCache.setCapacity(newConfig.globalCacheSize);
+    });
 }
 
 // ==== 类型系统实现 ====
@@ -628,10 +633,9 @@ std::string PlaceholderManager::executePlaceholder(
         cacheDuration = cache_duration_override;
     }
     if (cacheDuration) {
-        std::shared_lock lk(mMutex);
-        auto             itGlobalCache = mGlobalCache.find(cacheKey);
-        if (itGlobalCache != mGlobalCache.end() && itGlobalCache->second.expiresAt > std::chrono::steady_clock::now()) {
-            std::string out = itGlobalCache->second.result;
+        auto cached = mGlobalCache.get(cacheKey);
+        if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
+            std::string out = cached->result;
             st.cache.emplace(std::move(cacheKey), out); // 写入单次缓存
             if (out.empty() && !defaultText.empty()) out = defaultText;
             return out;
@@ -760,8 +764,7 @@ std::string PlaceholderManager::executePlaceholder(
     // 3. 写入缓存
     st.cache.emplace(cacheKey, finalOut);
     if (cacheDuration && replaced) { // 只有成功替换且需要缓存时才写入全局缓存
-        std::unique_lock lk(mMutex);
-        mGlobalCache[cacheKey] = {finalOut, std::chrono::steady_clock::now() + *cacheDuration};
+        mGlobalCache.put(cacheKey, {finalOut, std::chrono::steady_clock::now() + *cacheDuration});
     }
     return finalOut;
 }
@@ -796,11 +799,10 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         cacheDuration = cache_duration_override;
     }
     if (cacheDuration) {
-        std::shared_lock lk(mMutex);
-        auto             itGlobalCache = mGlobalCache.find(cacheKey);
-        if (itGlobalCache != mGlobalCache.end() && itGlobalCache->second.expiresAt > std::chrono::steady_clock::now()) {
+        auto cached = mGlobalCache.get(cacheKey);
+        if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
             std::promise<std::string> promise;
-            promise.set_value(itGlobalCache->second.result);
+            promise.set_value(cached->result);
             return promise.get_future();
         }
     }
@@ -865,8 +867,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             auto cacheKeyCopy = cacheKey; // 捕获副本
             async_replaced_fut = mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *cand.cacheDuration]() mutable {
                 std::string result = fut.get();
-                std::unique_lock lk(mMutex);
-                mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
+                mGlobalCache.put(cacheKeyCopy, {result, std::chrono::steady_clock::now() + duration});
                 return result;
             });
         }
@@ -896,8 +897,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                     auto cacheKeyCopy = cacheKey; // 捕获副本
                     async_replaced_fut = mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
                         std::string result = fut.get();
-                        std::unique_lock lk(mMutex);
-                        mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
+                        mGlobalCache.put(cacheKeyCopy, {result, std::chrono::steady_clock::now() + duration});
                         return result;
                     });
                 }
@@ -949,8 +949,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
 
         // 写入全局缓存 (如果之前没有被异步占位符的缓存逻辑处理过)
         if (cacheDuration && replaced) {
-            std::unique_lock lk(mMutex);
-            mGlobalCache[cacheKey] = {finalOut, std::chrono::steady_clock::now() + *cacheDuration};
+            mGlobalCache.put(cacheKey, {finalOut, std::chrono::steady_clock::now() + *cacheDuration});
         }
         return finalOut;
     });

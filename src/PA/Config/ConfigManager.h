@@ -1,14 +1,18 @@
 #pragma once
 
 #include "config.h"
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 
 namespace PA {
 
 class ConfigManager {
 public:
+    using ReloadCallback = std::function<void(const Config&)>;
+
     // 获取单例实例
     static ConfigManager& getInstance();
 
@@ -18,7 +22,8 @@ public:
     // 保存配置
     bool save();
 
-
+    // 注册一个当配置被重载时调用的回调函数
+    void onReload(ReloadCallback callback);
 
     // 获取配置对象的引用
     Config& get();
@@ -37,6 +42,7 @@ private:
 
     std::unique_ptr<Config> mConfig;
     std::string             mConfigPath;
+    std::vector<ReloadCallback> mReloadCallbacks;
 };
 
-} // namespace CZET
+} // namespace PA

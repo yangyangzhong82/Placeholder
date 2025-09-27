@@ -20,6 +20,8 @@
 #include <memory>       // 用于智能指针，例如 unique_ptr
 #include <chrono>       // 用于时间相关的操作，例如缓存过期
 
+#include "LRUCache.h"   // 引入 LRU 缓存
+
 class Player; // 前向声明 Minecraft 玩家类，避免循环引用
 
 namespace PA { // PlaceholderAPI 命名空间
@@ -757,7 +759,7 @@ private:
     mutable std::unordered_map<uint64_t, UpcastCacheEntry> mUpcastCache;
 
     // 全局占位符结果缓存
-    mutable std::unordered_map<std::string, CacheEntry> mGlobalCache;
+    mutable LRUCache<std::string, CacheEntry> mGlobalCache;
 
     // 线程安全：使用读写锁保护内部数据结构
     mutable std::shared_mutex mMutex;
