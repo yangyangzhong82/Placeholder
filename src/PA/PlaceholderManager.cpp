@@ -395,7 +395,7 @@ PlaceholderManager::replacePlaceholdersAsync(const std::string& text, const Plac
 
 std::future<std::string>
 PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx) {
-    std::vector<std::future<std::string>> futures;
+    auto futures = std::make_shared<std::vector<std::future<std::string>>>();
 
     // Use a local recursive lambda to process templates and collect futures.
     // Pass depth to control recursion.
@@ -408,34 +408,52 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
         for (const auto& token : currentTpl.tokens) {
             if (auto* literal = std::get_if<LiteralToken>(&token)) {
                 std::promise<std::string> p;
-                p.set_value(std::string(literal->text));
-                futures.push_back(p.get_future());
-            } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
+                std::string               unescaped;
+                std::string_view          text = literal->text;
+                unescaped.reserve(text.size());
+                for (size_t i = 0; i < text.size(); ++i) {
+                    if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
+                        if (text[i] == '{' && text[i + 1] == '{') {
+                            unescaped.push_back('{');
+                            i++; // Skip the second brace
+                            continue;
+                        }
+                        if (text[i] == '}' && text[i + 1] == '}') {
+                            unescaped.push_back('}');
+                            i++; // Skip the second brace
+                            continue;
+                        }
+                    }
+                    unescaped.push_back(text[i]);
+                }
+                p.set_value(unescaped);
+                futures->push_back(p.get_future());
+            } else if (auto* ph_token = std::get_if<PlaceholderToken>(&token)) {
                 // For each placeholder, enqueue a task to resolve it.
-                auto placeholderFuture =
-                    mThreadPool->enqueue([this, placeholder, &ctx, depth]() -> std::string {
+                auto ph_future =
+                    mThreadPool->enqueue([this, ph_token, &ctx, depth]() -> std::string {
                         // Resolve params and default value SYNCHRONOUSLY to avoid deadlocks.
                         std::string paramString;
-                        if (placeholder->paramsTemplate) {
-                            paramString = replacePlaceholdersSync(*placeholder->paramsTemplate, ctx, depth + 1);
+                        if (ph_token->paramsTemplate) {
+                            paramString = replacePlaceholdersSync(*ph_token->paramsTemplate, ctx, depth + 1);
                         }
 
                         std::string defaultText;
-                        if (placeholder->defaultTemplate) {
-                            defaultText = replacePlaceholdersSync(*placeholder->defaultTemplate, ctx, depth + 1);
+                        if (ph_token->defaultTemplate) {
+                            defaultText = replacePlaceholdersSync(*ph_token->defaultTemplate, ctx, depth + 1);
                         }
 
                         // Execute the placeholder asynchronously. The new signature doesn't need ReplaceState.
                         auto resultFut = executePlaceholderAsync(
-                            placeholder->pluginName,
-                            placeholder->placeholderName,
+                            ph_token->pluginName,
+                            ph_token->placeholderName,
                             paramString,
                             defaultText,
                             ctx
                         );
                         return resultFut.get();
                     });
-                futures.push_back(std::move(placeholderFuture));
+                futures->push_back(std::move(ph_future));
             }
         }
     };
@@ -443,10 +461,10 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
     process(tpl, 0);
 
     // Enqueue a final task that waits for all futures and concatenates the results.
-    return mThreadPool->enqueue([futures = std::move(futures), sourceSize = tpl.source.size()]() mutable -> std::string {
+    return mThreadPool->enqueue([futures, sourceSize = tpl.source.size()]() -> std::string {
         std::string result;
         result.reserve(sourceSize);
-        for (auto& f : futures) {
+        for (auto& f : *futures) {
             result.append(f.get());
         }
         return result;
@@ -468,7 +486,22 @@ PlaceholderManager::replacePlaceholdersSync(const CompiledTemplate& tpl, const P
 
     for (const auto& token : tpl.tokens) {
         if (auto* literal = std::get_if<LiteralToken>(&token)) {
-            result.append(literal->text);
+            std::string_view text = literal->text;
+            for (size_t i = 0; i < text.size(); ++i) {
+                if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
+                    if (text[i] == '{' && text[i + 1] == '{') {
+                        result.push_back('{');
+                        i++; // Skip the second brace
+                        continue;
+                    }
+                    if (text[i] == '}' && text[i + 1] == '}') {
+                        result.push_back('}');
+                        i++; // Skip the second brace
+                        continue;
+                    }
+                }
+                result.push_back(text[i]);
+            }
         } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
             std::string paramString;
             if (placeholder->paramsTemplate) {
