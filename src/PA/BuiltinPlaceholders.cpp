@@ -77,8 +77,11 @@ void registerBuiltinPlaceholders() {
         "pa",
         "time",
         std::function<std::string(const Utils::ParsedParams&)>([](const Utils::ParsedParams& params) -> std::string {
-            auto format_str = params.get("format").value_or("%Y-%m-%d %H:%M:%S");
-            auto tz_str     = params.get("tz").value_or("");
+            auto format_str_user = params.get("format").value_or("%Y-%m-%d %H:%M:%S");
+            auto tz_str          = params.get("tz").value_or("");
+
+            // 构造 C++20 chrono 所需的格式字符串，例如 "{:%Y-%m-%d}"
+            auto format_str = std::format("{{:{}}}", format_str_user);
 
             if (tz_str.empty()) {
                 // 使用本地时区
@@ -86,17 +89,36 @@ void registerBuiltinPlaceholders() {
                 return std::vformat(format_str, std::make_format_args(time_point));
             }
 
-            int offset_hours = 0, offset_minutes = 0;
-            if (sscanf_s(std::string(tz_str).c_str(), "UTC%d:%d", &offset_hours, &offset_minutes) >= 1) {
-                auto offset      = std::chrono::hours(offset_hours) + std::chrono::minutes(offset_minutes);
-                auto utc_now     = std::chrono::utc_clock::now();
-                auto target_time = utc_now + offset;
-                return std::vformat(format_str, std::make_format_args(target_time));
-            }
+            // 统一解析 UTC 偏移，支持 "UTC", "UTC+8", "UTC+8:00", "UTC-5:30"
+            if (tz_str.starts_with("UTC")) {
+                auto offset_sv = std::string_view(tz_str).substr(3);
+                try {
+                    if (offset_sv.empty()) { // Just "UTC"
+                        auto time_point = std::chrono::utc_clock::now();
+                        return std::vformat(format_str, std::make_format_args(time_point));
+                    }
 
-            if (tz_str == "UTC") {
-                auto time_point = std::chrono::utc_clock::now();
-                return std::vformat(format_str, std::make_format_args(time_point));
+                    size_t pos     = 0;
+                    int    hours   = std::stoi(std::string(offset_sv), &pos);
+                    int    minutes = 0;
+
+                    if (pos < offset_sv.length() && offset_sv[pos] == ':') {
+                        minutes = std::stoi(std::string(offset_sv.substr(pos + 1)));
+                    }
+
+                    if (hours < 0) {
+                        minutes = -std::abs(minutes);
+                    }
+
+                    auto offset      = std::chrono::hours(hours) + std::chrono::minutes(minutes);
+                    auto target_time = std::chrono::utc_clock::now() + offset;
+                    return std::vformat(format_str, std::make_format_args(target_time));
+
+                } catch (const std::exception&) {
+                    // 解析失败，回退到本地时间
+                    auto time_point = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+                    return std::vformat(format_str, std::make_format_args(time_point));
+                }
             }
 
             // 尝试解析命名时区，例如 "Asia/Shanghai"
@@ -113,7 +135,8 @@ void registerBuiltinPlaceholders() {
     );
 
     // 兼容旧版
-    auto getTimeComponent = [](const char* format_str) -> std::string {
+    auto getTimeComponent = [](const char* format_str_user) -> std::string {
+        auto format_str = std::format("{{:{}}}", format_str_user);
         auto time_point = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
         return std::vformat(format_str, std::make_format_args(time_point));
     };
