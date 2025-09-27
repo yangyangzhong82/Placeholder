@@ -215,6 +215,25 @@ void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
     mUpcastCache.clear(); // 插件注销可能影响类型，为安全起见清空
 }
 
+PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() const {
+    AllPlaceholders  result;
+    std::shared_lock lk(mMutex);
+
+    for (const auto& [pluginName, placeholders] : mServerPlaceholders) {
+        for (const auto& [placeholderName, entry] : placeholders) {
+            result.serverPlaceholders[pluginName].push_back(placeholderName);
+        }
+    }
+
+    for (const auto& [pluginName, placeholders] : mContextPlaceholders) {
+        for (const auto& [placeholderName, entries] : placeholders) {
+            result.contextPlaceholders[pluginName].push_back(placeholderName);
+        }
+    }
+
+    return result;
+}
+
 // ==== Context 构造 ====
 
 PlaceholderContext PlaceholderManager::makeContextRaw(void* ptr, const std::string& typeKeyStr) {

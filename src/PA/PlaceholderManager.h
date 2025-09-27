@@ -194,6 +194,14 @@ public:
     // 注销某插件的所有占位符
     PA_API void unregisterPlaceholders(const std::string& pluginName);
 
+    // [新] 查询已注册的所有占位符
+    struct AllPlaceholders {
+        // plugin -> placeholder_name
+        std::unordered_map<std::string, std::vector<std::string>> serverPlaceholders;
+        std::unordered_map<std::string, std::vector<std::string>> contextPlaceholders;
+    };
+    PA_API AllPlaceholders getAllPlaceholders() const;
+
     // 替换占位符（无上下文）
     PA_API std::string replacePlaceholders(const std::string& text);
 
