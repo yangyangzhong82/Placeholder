@@ -83,11 +83,16 @@ std::string        truncateVisible(
            std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
        );
 inline std::string stripColorCodes(std::string_view s);
-inline std::string addThousandSeparators(std::string s);
+inline std::string addThousandSeparators(std::string s, char groupSep = ',', char decimalSep = '.');
 inline std::string siScale(double v, int base, int decimals, bool doRound);
 inline std::string formatNumber(double x, int decimals, bool doRound);
 inline bool        matchCond(double v, const std::string& condRaw);
-inline std::optional<std::string> evalThresholds(double v, const std::string& spec);
+// 增强版 evalThresholds
+struct ThresholdResult {
+    std::string text;
+    bool        matched{false};
+};
+inline std::optional<ThresholdResult> evalThresholds(double v, const std::string& spec);
 inline std::optional<std::string> evalMap(const std::string& raw, const std::string& spec);
 inline std::optional<std::string> evalMapCI(const std::string& raw, const std::string& spec);
 

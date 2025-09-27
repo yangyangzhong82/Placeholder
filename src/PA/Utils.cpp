@@ -376,7 +376,7 @@ inline std::string stripColorCodes(std::string_view s) {
     return out;
 }
 
-inline std::string addThousandSeparators(std::string s) {
+inline std::string addThousandSeparators(std::string s, char groupSep, char decimalSep) {
     // 仅处理纯数字段（可带 +/- 和小数点），不处理科学计数法
     std::string sign;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) {
@@ -387,13 +387,17 @@ inline std::string addThousandSeparators(std::string s) {
     std::string intPart  = dot == std::string::npos ? s : s.substr(0, dot);
     std::string fracPart = dot == std::string::npos ? "" : s.substr(dot);
 
+    if (fracPart.length() > 0 && decimalSep != '.') {
+        fracPart[0] = decimalSep;
+    }
+
     std::string out;
     out.reserve(s.size() + s.size() / 3);
     int count = 0;
     for (int i = (int)intPart.size() - 1; i >= 0; --i) {
         out.push_back(intPart[(size_t)i]);
         if (++count == 3 && i > 0) {
-            out.push_back(',');
+            out.push_back(groupSep);
             count = 0;
         }
     }
@@ -402,12 +406,28 @@ inline std::string addThousandSeparators(std::string s) {
 }
 
 // SI 缩放
-inline std::string siScale(double v, int base, int decimals, bool doRound) {
-    static const char* units1000[] = {"", "K", "M", "G", "T", "P", "E"};
-    static const char* units1024[] = {"", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei"};
-    const char**       units       = (base == 1024) ? units1024 : units1000;
-    int                idx         = 0;
-    double             x           = std::fabs(v);
+inline std::string siScale(
+    double      v,
+    int         base,
+    int         decimals,
+    bool        doRound,
+    bool        space,
+    std::string unitCase
+) {
+    static const char* units1000[]    = {"", "K", "M", "G", "T", "P", "E"};
+    static const char* units1000_low[] = {"", "k", "m", "g", "t", "p", "e"};
+    static const char* units1024[]    = {"", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei"};
+    static const char* units1024_low[] = {"", "ki", "mi", "gi", "ti", "pi", "ei"};
+
+    const char** units;
+    if (base == 1024) {
+        units = (unitCase == "lower") ? units1024_low : units1024;
+    } else {
+        units = (unitCase == "lower") ? units1000_low : units1000;
+    }
+
+    int    idx = 0;
+    double x   = std::fabs(v);
     while (x >= base && idx < 6) {
         x /= base;
         v /= base;
@@ -417,7 +437,11 @@ inline std::string siScale(double v, int base, int decimals, bool doRound) {
     double y      = doRound ? std::round(v * factor) / factor : std::trunc(v * factor) / factor;
 
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(std::max(0, decimals)) << y << units[idx];
+    oss << std::fixed << std::setprecision(std::max(0, decimals)) << y;
+    if (idx > 0) {
+        if (space) oss << " ";
+        oss << units[idx];
+    }
     return oss.str();
 }
 
@@ -479,10 +503,12 @@ inline bool matchCond(double v, const std::string& condRaw) {
     return false;
 }
 
-inline std::optional<std::string> evalThresholds(double v, const std::string& spec) {
+inline std::optional<ThresholdResult> evalThresholds(double v, const std::string& spec) {
+    ThresholdResult   result;
     std::string       defaultVal;
     std::stringstream ss(spec);
     std::string       item;
+    bool              found = false;
 
     while (std::getline(ss, item, ',')) {
         auto part = trim(item);
@@ -498,11 +524,19 @@ inline std::optional<std::string> evalThresholds(double v, const std::string& sp
             continue;
         }
         if (matchCond(v, lhs)) {
-            return rhs;
+            result.text    = rhs;
+            result.matched = true;
+            found          = true;
+            break; // 找到第一个就停止
         }
     }
 
-    if (!defaultVal.empty()) return defaultVal;
+    if (!found && !defaultVal.empty()) {
+        result.text    = defaultVal;
+        result.matched = true;
+    }
+
+    if (result.matched) return result;
     return std::nullopt;
 }
 
@@ -628,8 +662,10 @@ void applyNumberFormatting(
 
         // SI 缩放
         if (params.getBool("si").value_or(false)) {
-            int base = params.getInt("base").value_or(1000) == 1024 ? 1024 : 1000;
-            out      = siScale(v, base, decimals < 0 ? 2 : decimals, doRound);
+            int         base     = params.getInt("base").value_or(1000) == 1024 ? 1024 : 1000;
+            bool        space    = params.getBool("space").value_or(true);
+            std::string unitCase = toLower(trim(std::string(params.get("unitcase").value_or("upper"))));
+            out = siScale(v, base, decimals < 0 ? 2 : decimals, doRound, space, unitCase);
         } else {
             // 默认数字格式
             out = formatNumber(v, decimals, doRound);
@@ -637,17 +673,20 @@ void applyNumberFormatting(
 
         // 阈值 -> 样式/文本
         if (auto it = params.get("thresholds")) {
-            if (auto matched = evalThresholds(v, std::string(*it))) {
-                std::string codes = styleSpecToCodes(*matched);
-                if (!codes.empty()) {
-                    out = codes + out;
+            if (auto matched_res = evalThresholds(v, std::string(*it))) {
+                std::string tpl       = matched_res->text;
+                bool        replace   = params.getBool("replace").value_or(false);
+                std::string prepend   = std::string(params.get("prepend").value_or(""));
+                std::string append    = std::string(params.get("append").value_or(""));
+                std::string styleCode = styleSpecToCodes(tpl);
+
+                if (replace) {
+                    out = tpl;
                 } else {
-                    bool showValue = params.getBool("showvalue").value_or(true);
-                    if (!showValue) {
-                        out = *matched;
-                    } else {
-                        out = *matched; // 再附加值可自定
+                    if (!styleCode.empty()) {
+                        out = styleCode + out;
                     }
+                    out = prepend + out + append;
                 }
             }
         }
@@ -753,7 +792,29 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 
     // 千分位
     if (params.getBool("commas").value_or(false)) {
-        out = addThousandSeparators(out);
+        char groupSep   = ',';
+        char decimalSep = '.';
+
+        if (auto locale = params.get("locale")) {
+            auto loc_sv = toLower(trim(std::string(*locale)));
+            if (loc_sv == "zh_cn") {
+                // default is fine
+            } else if (loc_sv == "en_us") {
+                // default is fine
+            } else if (loc_sv == "de_de") {
+                groupSep   = '.';
+                decimalSep = ',';
+            }
+        }
+
+        if (auto g = params.get("group")) {
+            if (!g->empty()) groupSep = (*g)[0];
+        }
+        if (auto d = params.get("decimal")) {
+            if (!d->empty()) decimalSep = (*d)[0];
+        }
+
+        out = addThousandSeparators(out, groupSep, decimalSep);
     }
 
     // 颜色/样式
@@ -768,12 +829,12 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 
     // 截断
     if (auto maxlenOpt = params.getInt("maxlen")) {
-        size_t maxlen = std::max(0, *maxlenOpt);
-        if (visibleLength(out) > maxlen) {
-            std::string ell = "...";
-            if (auto e = params.get("ellipsis")) ell = *e;
-            bool preserve = params.getBool("preserve_styles").value_or(true);
-            out           = truncateVisible(out, maxlen, ell, preserve);
+        size_t maxlen_val = std::max(0, *maxlenOpt);
+        if (visibleLength(out) > maxlen_val) {
+            std::string ellipsis_val = "...";
+            if (auto e = params.get("ellipsis")) ellipsis_val = *e;
+            bool preserve_styles_val = params.getBool("preserve_styles").value_or(true);
+            out                      = truncateVisible(out, maxlen_val, ellipsis_val, preserve_styles_val);
         }
     }
 

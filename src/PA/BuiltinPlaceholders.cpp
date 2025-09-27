@@ -184,6 +184,45 @@ void registerBuiltinPlaceholders() {
     });
 
     // 时间类
+    manager.registerServerPlaceholderWithParams(
+        "pa",
+        "time",
+        std::function<std::string(const Utils::ParsedParams&)>([](const Utils::ParsedParams& params) -> std::string {
+            auto format = params.get("format").value_or("%Y-%m-%d %H:%M:%S");
+            auto tz     = params.get("tz").value_or("");
+
+            auto now   = std::chrono::system_clock::now();
+            auto in_time_t = std::chrono::system_clock::to_time_t(now);
+
+            // 处理时区偏移
+            if (!tz.empty()) {
+                int offset_hours = 0, offset_minutes = 0;
+                if (sscanf(std::string(tz).c_str(), "UTC%d:%d", &offset_hours, &offset_minutes) >= 1) {
+                    in_time_t += offset_hours * 3600 + offset_minutes * 60;
+                    // 如果本地不是UTC, 需要减去本地时区偏移
+#ifdef _WIN32
+                    long local_offset_secs;
+                    _get_timezone(&local_offset_secs);
+                    in_time_t -= local_offset_secs;
+#else
+                    in_time_t -= timezone;
+#endif
+                }
+            }
+
+            std::tm buf;
+#ifdef _WIN32
+            gmtime_s(&buf, &in_time_t);
+#else
+            gmtime_r(&in_time_t, &buf);
+#endif
+            std::stringstream ss;
+            ss << std::put_time(&buf, std::string(format).c_str());
+            return ss.str();
+        })
+    );
+
+    // 兼容旧版
     auto getTimeComponent = [](const char* format) -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -197,16 +236,23 @@ void registerBuiltinPlaceholders() {
         ss << std::put_time(&buf, format);
         return ss.str();
     };
-
-    manager.registerServerPlaceholder("pa", "time", [getTimeComponent]() {
-        return getTimeComponent("%Y-%m-%d %H:%M:%S");
-    });
     manager.registerServerPlaceholder("pa", "year", [getTimeComponent]() { return getTimeComponent("%Y"); });
     manager.registerServerPlaceholder("pa", "month", [getTimeComponent]() { return getTimeComponent("%m"); });
     manager.registerServerPlaceholder("pa", "day", [getTimeComponent]() { return getTimeComponent("%d"); });
     manager.registerServerPlaceholder("pa", "hour", [getTimeComponent]() { return getTimeComponent("%H"); });
     manager.registerServerPlaceholder("pa", "minute", [getTimeComponent]() { return getTimeComponent("%M"); });
     manager.registerServerPlaceholder("pa", "second", [getTimeComponent]() { return getTimeComponent("%S"); });
+
+    // Unix 时间戳
+    manager.registerServerPlaceholder("pa", "unix_timestamp", []() -> std::string {
+        auto now = std::chrono::system_clock::now();
+        return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    });
+    manager.registerServerPlaceholder("pa", "unix_timestamp_ms", []() -> std::string {
+        auto now = std::chrono::system_clock::now();
+        return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    });
+
 
     // --- 新增：服务器启动至今秒数 ---
     static const auto startSteady = std::chrono::steady_clock::now();
