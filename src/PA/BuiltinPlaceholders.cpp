@@ -12,12 +12,11 @@
 
 #include <chrono>
 #include <cmath>
-#include <ctime>
-#include <iomanip>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <string>
+#include <format> // C++20 for std::format
 #include <string_view>
 #include <vector>
 
@@ -78,53 +77,45 @@ void registerBuiltinPlaceholders() {
         "pa",
         "time",
         std::function<std::string(const Utils::ParsedParams&)>([](const Utils::ParsedParams& params) -> std::string {
-            auto format = params.get("format").value_or("%Y-%m-%d %H:%M:%S");
-            auto tz     = params.get("tz").value_or("");
+            auto format_str = params.get("format").value_or("%Y-%m-%d %H:%M:%S");
+            auto tz_str     = params.get("tz").value_or("");
 
-            auto now   = std::chrono::system_clock::now();
-            auto in_time_t = std::chrono::system_clock::to_time_t(now);
-
-            // 处理时区偏移
-            if (!tz.empty()) {
-                int offset_hours = 0, offset_minutes = 0;
-                if (sscanf(std::string(tz).c_str(), "UTC%d:%d", &offset_hours, &offset_minutes) >= 1) {
-                    in_time_t += offset_hours * 3600 + offset_minutes * 60;
-                    // 如果本地不是UTC, 需要减去本地时区偏移
-#ifdef _WIN32
-                    long local_offset_secs;
-                    _get_timezone(&local_offset_secs);
-                    in_time_t -= local_offset_secs;
-#else
-                    in_time_t -= timezone;
-#endif
-                }
+            if (tz_str.empty()) {
+                // 使用本地时区
+                auto time_point = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+                return std::vformat(format_str, std::make_format_args(time_point));
             }
 
-            std::tm buf;
-#ifdef _WIN32
-            gmtime_s(&buf, &in_time_t);
-#else
-            gmtime_r(&in_time_t, &buf);
-#endif
-            std::stringstream ss;
-            ss << std::put_time(&buf, std::string(format).c_str());
-            return ss.str();
+            int offset_hours = 0, offset_minutes = 0;
+            if (sscanf_s(std::string(tz_str).c_str(), "UTC%d:%d", &offset_hours, &offset_minutes) >= 1) {
+                auto offset      = std::chrono::hours(offset_hours) + std::chrono::minutes(offset_minutes);
+                auto utc_now     = std::chrono::utc_clock::now();
+                auto target_time = utc_now + offset;
+                return std::vformat(format_str, std::make_format_args(target_time));
+            }
+
+            if (tz_str == "UTC") {
+                auto time_point = std::chrono::utc_clock::now();
+                return std::vformat(format_str, std::make_format_args(time_point));
+            }
+
+            // 尝试解析命名时区，例如 "Asia/Shanghai"
+            try {
+                auto tz = std::chrono::locate_zone(tz_str);
+                auto zt = std::chrono::zoned_time(tz, std::chrono::system_clock::now());
+                return std::vformat(format_str, std::make_format_args(zt));
+            } catch (const std::runtime_error&) {
+                // 如果时区无效，则回退到本地时间
+                auto time_point = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+                return std::vformat(format_str, std::make_format_args(time_point));
+            }
         })
     );
 
     // 兼容旧版
-    auto getTimeComponent = [](const char* format) -> std::string {
-        auto    now       = std::chrono::system_clock::now();
-        auto    in_time_t = std::chrono::system_clock::to_time_t(now);
-        std::tm buf;
-#ifdef _WIN32
-        localtime_s(&buf, &in_time_t);
-#else
-        localtime_r(&in_time_t, &buf);
-#endif
-        std::stringstream ss;
-        ss << std::put_time(&buf, format);
-        return ss.str();
+    auto getTimeComponent = [](const char* format_str) -> std::string {
+        auto time_point = std::chrono::current_zone()->to_local(std::chrono::system_clock::now());
+        return std::vformat(format_str, std::make_format_args(time_point));
     };
     manager.registerServerPlaceholder("pa", "year", [getTimeComponent]() { return getTimeComponent("%Y"); });
     manager.registerServerPlaceholder("pa", "month", [getTimeComponent]() { return getTimeComponent("%m"); });
