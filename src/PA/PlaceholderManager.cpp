@@ -27,6 +27,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <future>
 
 #include "PA/Config/ConfigManager.h" // 引入 ConfigManager
 #include "PA/logger.h"               // 引入 logger
@@ -208,6 +209,71 @@ void PlaceholderManager::registerPlaceholderForTypeKeyWithParams(
     registerPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
 }
 
+
+// --- 新：异步占位符注册 ---
+
+void PlaceholderManager::registerAsyncServerPlaceholder(
+    const std::string&    pluginName,
+    const std::string&    placeholder,
+    AsyncServerReplacer&& replacer
+) {
+    std::unique_lock lk(mMutex);
+    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer)};
+}
+
+void PlaceholderManager::registerAsyncServerPlaceholderWithParams(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    AsyncServerReplacerWithParams&& replacer
+) {
+    std::unique_lock lk(mMutex);
+    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer)};
+}
+
+void PlaceholderManager::registerAsyncPlaceholderForTypeId(
+    const std::string&    pluginName,
+    const std::string&    placeholder,
+    std::size_t           targetTypeId,
+    AsyncAnyPtrReplacer&& replacer
+) {
+    std::unique_lock lk(mMutex);
+    mAsyncContextPlaceholders[pluginName][placeholder].push_back(
+        AsyncTypedReplacer{targetTypeId, std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer))}
+    );
+}
+
+void PlaceholderManager::registerAsyncPlaceholderForTypeId(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    std::size_t                  targetTypeId,
+    AsyncAnyPtrReplacerWithParams&& replacer
+) {
+    std::unique_lock lk(mMutex);
+    mAsyncContextPlaceholders[pluginName][placeholder].push_back(
+        AsyncTypedReplacer{targetTypeId, std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer))}
+    );
+}
+
+void PlaceholderManager::registerAsyncPlaceholderForTypeKey(
+    const std::string&    pluginName,
+    const std::string&    placeholder,
+    const std::string&    typeKeyStr,
+    AsyncAnyPtrReplacer&& replacer
+) {
+    auto id = ensureTypeId(typeKeyStr);
+    registerAsyncPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+}
+
+void PlaceholderManager::registerAsyncPlaceholderForTypeKeyWithParams(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    const std::string&           typeKeyStr,
+    AsyncAnyPtrReplacerWithParams&& replacer
+) {
+    auto id = ensureTypeId(typeKeyStr);
+    registerAsyncPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+}
+
 // ==== 注销 ====
 
 void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
@@ -215,6 +281,12 @@ void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
     mServerPlaceholders.erase(pluginName);
     mContextPlaceholders.erase(pluginName);
     mUpcastCache.clear(); // 插件注销可能影响类型，为安全起见清空
+}
+
+void PlaceholderManager::unregisterAsyncPlaceholders(const std::string& pluginName) {
+    std::unique_lock lk(mMutex);
+    mAsyncServerPlaceholders.erase(pluginName);
+    mAsyncContextPlaceholders.erase(pluginName);
 }
 
 PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() const {
@@ -284,6 +356,83 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, con
 
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
     return replacePlaceholders(text, makeContext(player));
+}
+
+// --- 新：异步替换 ---
+
+std::future<std::string>
+PlaceholderManager::replacePlaceholdersAsync(const std::string& text, const PlaceholderContext& ctx) {
+    auto tpl = compileTemplate(text);
+    return replacePlaceholdersAsync(tpl, ctx);
+}
+
+std::future<std::string>
+PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx) {
+    // 使用 std::async 在后台执行整个替换过程
+    return std::async(std::launch::async, [this, &tpl, &ctx]() -> std::string {
+        ReplaceState                                st;
+        std::vector<std::future<std::string>>       futures;
+        std::function<void(const CompiledTemplate&)> process;
+
+        // 递归函数，用于处理模板和其嵌套的模板
+        process = [&](const CompiledTemplate& currentTpl) {
+            if (st.depth > mMaxRecursionDepth) {
+                return;
+            }
+            for (const auto& token : currentTpl.tokens) {
+                if (auto* literal = std::get_if<LiteralToken>(&token)) {
+                    // 对于字面量，创建一个已就绪的 future
+                    std::promise<std::string> p;
+                    p.set_value(std::string(literal->text));
+                    futures.push_back(p.get_future());
+                } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
+                    // 对于占位符，我们需要异步地解析其参数和默认值，然后执行它
+                    auto placeholderFuture =
+                        std::async(std::launch::async, [this, placeholder, &ctx, &st, &process]() -> std::string {
+                            st.depth++;
+
+                            // 异步解析参数
+                            std::string paramString;
+                            if (placeholder->paramsTemplate) {
+                                auto fut = replacePlaceholdersAsync(*placeholder->paramsTemplate, ctx);
+                                paramString = fut.get();
+                            }
+
+                            // 异步解析默认值
+                            std::string defaultText;
+                            if (placeholder->defaultTemplate) {
+                                auto fut = replacePlaceholdersAsync(*placeholder->defaultTemplate, ctx);
+                                defaultText = fut.get();
+                            }
+
+                            st.depth--;
+
+                            // 执行占位符并等待结果
+                            auto resultFut = executePlaceholderAsync(
+                                placeholder->pluginName,
+                                placeholder->placeholderName,
+                                paramString,
+                                defaultText,
+                                ctx,
+                                st
+                            );
+                            return resultFut.get();
+                        });
+                    futures.push_back(std::move(placeholderFuture));
+                }
+            }
+        };
+
+        process(tpl);
+
+        // 等待所有 future 完成并拼接结果
+        std::string result;
+        result.reserve(tpl.source.size());
+        for (auto& f : futures) {
+            result.append(f.get());
+        }
+        return result;
+    });
 }
 
 // [新] 编译模板
@@ -508,6 +657,10 @@ std::string PlaceholderManager::executePlaceholder(
         }
     }
 
+    // `executePlaceholder` 现在只处理同步占位符。
+    // 异步占位符的同步调用由 `executePlaceholderAsync` 的回退逻辑处理，
+    // 然后由 `replacePlaceholders` -> `replacePlaceholdersAsync` -> `future.get()` 阻塞。
+
     if (!replaced) {
         std::variant<ServerReplacer, ServerReplacerWithParams> serverFn;
         bool                                                   hasServer = false;
@@ -562,144 +715,79 @@ std::string PlaceholderManager::executePlaceholder(
     return finalOut;
 }
 
+// [新] 私有辅助函数：执行单个占位符的异步查找与替换
+std::future<std::string> PlaceholderManager::executePlaceholderAsync(
+    std::string_view        pluginName,
+    std::string_view        placeholderName,
+    const std::string&      paramString,
+    const std::string&      defaultText,
+    const PlaceholderContext& ctx,
+    ReplaceState&           st
+) {
+    // 1. 检查异步上下文占位符
+    {
+        std::shared_lock lk(mMutex);
+        auto             plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
+        if (plugin_it != mAsyncContextPlaceholders.end()) {
+            auto ph_it = plugin_it->second.find(std::string(placeholderName));
+            if (ph_it != plugin_it->second.end()) {
+                // (简化) 我们只处理第一个匹配的候选，不处理继承链以简化实现
+                for (const auto& entry : ph_it->second) {
+                    if (entry.targetTypeId == ctx.typeId) {
+                        PA::Utils::ParsedParams params(paramString);
+                        if (std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)) {
+                            return std::get<AsyncAnyPtrReplacer>(entry.fn)(ctx.ptr);
+                        } else {
+                            return std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(ctx.ptr, params);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 检查异步服务器占位符
+    {
+        std::shared_lock lk(mMutex);
+        auto             plugin_it = mAsyncServerPlaceholders.find(std::string(pluginName));
+        if (plugin_it != mAsyncServerPlaceholders.end()) {
+            auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
+            if (placeholder_it != plugin_it->second.end()) {
+                PA::Utils::ParsedParams params(paramString);
+                const auto&             fn = placeholder_it->second.fn;
+                if (std::holds_alternative<AsyncServerReplacer>(fn)) {
+                    return std::get<AsyncServerReplacer>(fn)();
+                } else {
+                    return std::get<AsyncServerReplacerWithParams>(fn)(params);
+                }
+            }
+        }
+    }
+
+    // 3. 如果没有找到异步占位符，则回退到同步执行，并将其结果包装在 future 中
+    std::promise<std::string> promise;
+    promise.set_value(executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st));
+    return promise.get_future();
+}
+
 // [新] 使用编译模板进行替换
 std::string
 PlaceholderManager::replacePlaceholders(const CompiledTemplate& tpl, const PlaceholderContext& ctx) {
-    ReplaceState st; // 每个顶层调用都有自己的状态
-    std::string  result;
-
-    // 预估大小: 至少为源文本大小，并为占位符替换增加一些余量
-    size_t estimatedSize = tpl.source.size() + tpl.tokens.size() * 16;
-    result.reserve(estimatedSize);
-
-    std::function<void(const CompiledTemplate&, ReplaceState&)> process =
-        [&](const CompiledTemplate& currentTpl, ReplaceState& currentState) {
-            if (currentState.depth > mMaxRecursionDepth) {
-                return;
-            }
-            for (const auto& token : currentTpl.tokens) {
-                if (auto* literal = std::get_if<LiteralToken>(&token)) {
-                    result.append(literal->text);
-                } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
-                    // 渲染嵌套模板
-                    std::string defaultText;
-                    if (placeholder->defaultTemplate) {
-                        currentState.depth++;
-                        // 嵌套渲染需要独立的 result string
-                        std::string tempResult = result;
-                        result.clear();
-                        process(*placeholder->defaultTemplate, currentState);
-                        defaultText = result;
-                        result      = tempResult; // 恢复
-                        currentState.depth--;
-                    }
-                    std::string paramString;
-                    if (placeholder->paramsTemplate) {
-                        currentState.depth++;
-                        std::string tempResult = result;
-                        result.clear();
-                        process(*placeholder->paramsTemplate, currentState);
-                        paramString = result;
-                        result      = tempResult; // 恢复
-                        currentState.depth--;
-                    }
-
-                    // 执行替换
-                    result.append(executePlaceholder(
-                        placeholder->pluginName,
-                        placeholder->placeholderName,
-                        paramString,
-                        defaultText,
-                        ctx,
-                        currentState
-                    ));
-                }
-            }
-        };
-
-    process(tpl, st);
-    return result;
+    // 同步调用现在可以利用异步接口并阻塞等待结果
+    auto future = replacePlaceholdersAsync(tpl, ctx);
+    return future.get();
 }
 
 
 // 内部实现：带嵌套/转义/默认值/参数
 std::string
 PlaceholderManager::replacePlaceholdersImpl(const std::string& text, const PlaceholderContext& ctx, ReplaceState& st) {
+    // 旧的实现方式，现在通过编译和同步执行新模板系统来完成
     if (st.depth > mMaxRecursionDepth) {
-        return text; // 超深度：直接原样返回，避免递归膨胀
+        return text;
     }
-
-    std::string result;
-    result.reserve(text.size() * 1.2);
-
-    const char* s = text.c_str();
-    size_t      n = text.size();
-
-    for (size_t i = 0; i < n;) {
-        char c = s[i];
-
-        // 转义：双大括号输出单大括号
-        if (mEnableDoubleBraceEscape && c == '{' && i + 1 < n && s[i + 1] == '{') {
-            result.push_back('{');
-            i += 2;
-            continue;
-        }
-        if (mEnableDoubleBraceEscape && c == '}' && i + 1 < n && s[i + 1] == '}') {
-            result.push_back('}');
-            i += 2;
-            continue;
-        }
-
-        if (c != '{') {
-            result.push_back(c);
-            ++i;
-            continue;
-        }
-
-        // 找到匹配的 '}'
-        size_t j       = i + 1;
-        int    depth   = 1;
-        bool   matched = false;
-        while (j < n) {
-            if (mEnableDoubleBraceEscape && s[j] == '{' && j + 1 < n && s[j + 1] == '{') {
-                j += 2;
-                continue;
-            }
-            if (mEnableDoubleBraceEscape && s[j] == '}' && j + 1 < n && s[j + 1] == '}') {
-                j += 2;
-                continue;
-            }
-            if (s[j] == '{') {
-                ++depth;
-                ++j;
-                continue;
-            }
-            if (s[j] == '}') {
-                --depth;
-                if (depth == 0) {
-                    matched = true;
-                    break;
-                }
-            }
-            ++j;
-        }
-
-        if (!matched) {
-            // 没有匹配：余下原样拷贝
-            result.append(s + i, n - i);
-            break;
-        }
-
-        // 提取占位符内部并编译执行
-        // 注意：这里为了兼容旧接口，每次都即时编译和执行，性能较低
-        // 新的流程应优先使用 compileTemplate + replacePlaceholders(tpl)
-        auto tpl = compileTemplate(std::string(text.substr(i, j - i + 1)));
-        result.append(replacePlaceholders(tpl, ctx));
-
-        i = j + 1;
-    }
-
-    return result;
+    auto tpl = compileTemplate(text);
+    return replacePlaceholders(tpl, ctx);
 }
 
 } // namespace PA

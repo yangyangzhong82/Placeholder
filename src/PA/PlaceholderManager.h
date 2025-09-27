@@ -8,6 +8,7 @@
 // 标准库头文件
 #include <any>          // 用于存储任意类型的数据
 #include <functional>   // 用于 std::function
+#include <future>       // 用于 std::future，实现异步操作
 #include <optional>     // 用于可选值
 #include <shared_mutex> // 用于读写锁，实现线程安全
 #include <string>       // 用于字符串
@@ -117,6 +118,17 @@ public:
     // 服务器占位符（带参数）：不依赖上下文，但接受解析后的参数
     using ServerReplacerWithParams = std::function<std::string(const Utils::ParsedParams& params)>;
 
+    // --- 新：异步占位符 ---
+    // 异步服务器占位符
+    using AsyncServerReplacer = std::function<std::future<std::string>()>;
+    using AsyncServerReplacerWithParams = std::function<std::future<std::string>(const Utils::ParsedParams& params)>;
+
+    // 异步上下文占位符
+    using AsyncAnyPtrReplacer = std::function<std::future<std::string>(void*)>;
+    using AsyncAnyPtrReplacerWithParams =
+        std::function<std::future<std::string>(void*, const Utils::ParsedParams& params)>;
+
+
     // 上下文占位符：接受一个 void* 指针，并返回字符串。内部会进行类型转换。
     using AnyPtrReplacer = std::function<std::string(void*)>;
     // 上下文占位符（带参数）：接受一个 void* 指针和解析后的参数，并返回字符串。
@@ -151,6 +163,30 @@ public:
         const std::string&         pluginName,
         const std::string&         placeholder,
         ServerReplacerWithParams&& replacer
+    );
+
+    /**
+     * @brief [新] 注册一个异步的、不依赖上下文的服务器级占位符
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，返回 std::future<std::string>
+     */
+    PA_API void registerAsyncServerPlaceholder(
+        const std::string& pluginName,
+        const std::string& placeholder,
+        AsyncServerReplacer&& replacer
+    );
+
+    /**
+     * @brief [新] 注册一个带参数的异步服务器级占位符
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 ParsedParams，返回 std::future<std::string>
+     */
+    PA_API void registerAsyncServerPlaceholderWithParams(
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        AsyncServerReplacerWithParams&& replacer
     );
 
     /**
@@ -203,6 +239,31 @@ public:
     }
 
     /**
+     * @brief [新] 注册异步上下文占位符（模板版）
+     * @tparam T 目标类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T* 指针，返回 std::future<std::string>
+     */
+    template <typename T>
+    void registerAsyncPlaceholder(
+        const std::string&                     pluginName,
+        const std::string&                     placeholder,
+        std::function<std::future<std::string>(T*)>&& replacer
+    ) {
+        auto                targetId = ensureTypeId(typeKey<T>());
+        AsyncAnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::future<std::string> {
+            if (!p) {
+                std::promise<std::string> promise;
+                promise.set_value({});
+                return promise.get_future();
+            }
+            return r(reinterpret_cast<T*>(p));
+        };
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+    }
+
+    /**
      * @brief [新] 注册上下文占位符（模板版，带参数，兼容旧版）
      * @tparam T 目标类型
      * @param pluginName 插件名称
@@ -248,6 +309,32 @@ public:
     }
 
     /**
+     * @brief [新] 注册异步上下文占位符（模板版，带参数）
+     * @tparam T 目标类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T* 和 ParsedParams，返回 std::future<std::string>
+     */
+    template <typename T>
+    void registerAsyncPlaceholderWithParams(
+        const std::string&                                           pluginName,
+        const std::string&                                           placeholder,
+        std::function<std::future<std::string>(T*, const Utils::ParsedParams&)>&& replacer
+    ) {
+        auto                     targetId = ensureTypeId(typeKey<T>());
+        AsyncAnyPtrReplacerWithParams fn =
+            [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::future<std::string> {
+            if (!p) {
+                std::promise<std::string> promise;
+                promise.set_value({});
+                return promise.get_future();
+            }
+            return r(reinterpret_cast<T*>(p), params);
+        };
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+    }
+
+    /**
      * @brief [新] 注册上下文占位符（显式类型键版）
      *
      * 允许直接传入类型键字符串来注册占位符，适用于无法使用模板的场景。
@@ -275,6 +362,34 @@ public:
         const std::string&         placeholder,
         const std::string&         typeKeyStr,
         AnyPtrReplacerWithParams&& replacer
+    );
+
+    /**
+     * @brief [新] 注册异步上下文占位符（显式类型键版）
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param typeKeyStr 目标类型的字符串键
+     * @param replacer 替换函数，接受 void* 指针，返回 std::future<std::string>
+     */
+    PA_API void registerAsyncPlaceholderForTypeKey(
+        const std::string&    pluginName,
+        const std::string&    placeholder,
+        const std::string&    typeKeyStr,
+        AsyncAnyPtrReplacer&& replacer
+    );
+
+    /**
+     * @brief [新] 注册异步上下文占位符（显式类型键版，带参数）
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param typeKeyStr 目标类型的字符串键
+     * @param replacer 替换函数，接受 void* 和 ParsedParams，返回 std::future<std::string>
+     */
+    PA_API void registerAsyncPlaceholderForTypeKeyWithParams(
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        const std::string&           typeKeyStr,
+        AsyncAnyPtrReplacerWithParams&& replacer
     );
 
     /**
@@ -309,6 +424,12 @@ public:
      * @param pluginName 要注销的插件名称
      */
     PA_API void unregisterPlaceholders(const std::string& pluginName);
+
+    /**
+     * @brief [新] 注销某个插件注册的所有异步占位符
+     * @param pluginName 要注销的插件名称
+     */
+    PA_API void unregisterAsyncPlaceholders(const std::string& pluginName);
 
     /**
      * @brief [新] 查询已注册的所有占位符
@@ -374,6 +495,26 @@ public:
      * @return 替换后的文本
      */
     PA_API std::string replacePlaceholders(const CompiledTemplate& tpl, const PlaceholderContext& ctx);
+
+    /**
+     * @brief [新] 异步替换占位符（推荐）
+     *
+     * 收集所有异步占位符并并发执行它们，最后组合结果。
+     * @param text 包含占位符的原始文本
+     * @param ctx 占位符上下文
+     * @return 一个 future，其值为最终替换后的字符串
+     */
+    PA_API std::future<std::string>
+    replacePlaceholdersAsync(const std::string& text, const PlaceholderContext& ctx);
+
+    /**
+     * @brief [新] 使用已编译的模板进行异步替换
+     * @param tpl 已编译的模板
+     * @param ctx 占位符上下文
+     * @return 一个 future，其值为最终替换后的字符串
+     */
+    PA_API std::future<std::string>
+    replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx);
 
 
     /**
@@ -444,6 +585,26 @@ public:
     );
 
     /**
+     * @brief 注册异步上下文占位符（目标类型ID版）
+     */
+    PA_API void registerAsyncPlaceholderForTypeId(
+        const std::string&    pluginName,
+        const std::string&    placeholder,
+        std::size_t           targetTypeId,
+        AsyncAnyPtrReplacer&& replacer
+    );
+
+    /**
+     * @brief 注册异步上下文占位符（目标类型ID版，带参数）
+     */
+    PA_API void registerAsyncPlaceholderForTypeId(
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        std::size_t                  targetTypeId,
+        AsyncAnyPtrReplacerWithParams&& replacer
+    );
+
+    /**
      * @brief 确保并获取给定类型键的唯一类型ID
      *
      * 如果类型键已注册，返回其ID；否则，分配一个新的ID并注册。
@@ -502,6 +663,13 @@ private:
     };
 
     /**
+     * @brief 异步服务器占位符的内部存储条目
+     */
+    struct AsyncServerReplacerEntry {
+        std::variant<AsyncServerReplacer, AsyncServerReplacerWithParams> fn;
+    };
+
+    /**
      * @brief 上下文占位符的内部存储条目
      *
      * 存储上下文占位符的目标类型ID和替换函数。
@@ -509,6 +677,14 @@ private:
     struct TypedReplacer {
         std::size_t                                            targetTypeId{0}; // 目标类型ID
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;            // 替换函数变体
+    };
+
+    /**
+     * @brief 异步上下文占位符的内部存储条目
+     */
+    struct AsyncTypedReplacer {
+        std::size_t                                                  targetTypeId{0};
+        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
     };
 
     /**
@@ -523,9 +699,13 @@ private:
 
     // 服务器占位符映射：插件名 -> (占位符名 -> 替换函数条目)
     std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>> mServerPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, AsyncServerReplacerEntry>>
+        mAsyncServerPlaceholders;
 
     // 上下文占位符（多态）映射：插件名 -> (占位符名 -> [候选替换函数列表])
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<AsyncTypedReplacer>>>
+        mAsyncContextPlaceholders;
 
     // 类型系统映射：类型键字符串 <-> 类型ID
     std::unordered_map<std::string, std::size_t> mTypeKeyToId; // 类型键到ID的映射
@@ -586,6 +766,18 @@ private:
      * @return 替换后的字符串
      */
     std::string executePlaceholder(
+        std::string_view        pluginName,
+        std::string_view        placeholderName,
+        const std::string&      paramString,
+        const std::string&      defaultText,
+        const PlaceholderContext& ctx,
+        ReplaceState&           st
+    );
+
+    /**
+     * @brief [新] 私有辅助函数：执行单个占位符的异步查找与替换
+     */
+    std::future<std::string> executePlaceholderAsync(
         std::string_view        pluginName,
         std::string_view        placeholderName,
         const std::string&      paramString,
