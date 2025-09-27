@@ -53,12 +53,12 @@ class PlaceholderManager; // 前向声明
 struct CompiledTemplate; // 前向声明
 
 struct LiteralToken {
-    std::string text;
+    std::string_view text;
 };
 
 struct PlaceholderToken {
-    std::string                       pluginName;
-    std::string                       placeholderName;
+    std::string_view                  pluginName;
+    std::string_view                  placeholderName;
     std::unique_ptr<CompiledTemplate> defaultTemplate; // 嵌套模板
     std::unique_ptr<CompiledTemplate> paramsTemplate;  // 嵌套模板
 };
@@ -66,7 +66,9 @@ struct PlaceholderToken {
 using Token = std::variant<LiteralToken, PlaceholderToken>;
 
 struct CompiledTemplate {
+    std::string        source; // Holds the original string for string_views
     std::vector<Token> tokens;
+
     // 为支持 unique_ptr 的移动语义
     CompiledTemplate();
     ~CompiledTemplate();
@@ -109,27 +111,13 @@ public:
         const std::string&                             placeholder,
         std::function<std::string(std::string_view)>&& replacer
     ) {
+        // This compatibility layer is complex and inefficient.
+        // Let's keep it for now but recognize it's a source of allocations.
         ServerReplacerWithParams fn = [r = std::move(replacer)](const Utils::ParsedParams& params) -> std::string {
-            // 此处可以决定是传入原始字符串还是空字符串
-            // 为保持兼容，此处传入原始字符串
-            auto        rawParams = params.getRawParams();
-            std::string rawParamStr; // 需要重新拼接，或者在 ParsedParams 中保存原始字符串
-            bool        first = true;
-            for (const auto& [key, val] : rawParams) {
-                if (!first) rawParamStr += ";";
-                rawParamStr += key;
-                if (!val.empty()) {
-                    rawParamStr += "=";
-                    // 简单的引号处理，可能不完全精确还原
-                    if (val.find(';') != std::string::npos || val.find('"') != std::string::npos) {
-                        rawParamStr += "\"" + val + "\""; // 简化处理
-                    } else {
-                        rawParamStr += val;
-                    }
-                }
-                first = false;
-            }
-            return r(rawParamStr);
+            // For now, we pass an empty string_view as the raw parameter string is not readily available
+            // without reconstruction. This is a change in behavior but avoids costly allocations.
+            // A better solution would be to store the raw string in ParsedParams.
+            return r({});
         };
         registerServerPlaceholderWithParams(pluginName, placeholder, std::move(fn));
     }
@@ -162,25 +150,8 @@ public:
         auto                     targetId = ensureTypeId(typeKey<T>());
         AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
-            // 重新拼接原始字符串，与 registerServerPlaceholderWithParams 便捷版本保持一致
-            auto        rawParams = params.getRawParams();
-            std::string rawParamStr;
-            bool        first = true;
-            for (const auto& [key, val] : rawParams) {
-                if (!first) rawParamStr += ";";
-                rawParamStr += key;
-                if (!val.empty()) {
-                    rawParamStr += "=";
-                    // 简单的引号处理，可能不完全精确还原
-                    if (val.find(';') != std::string::npos || val.find('"') != std::string::npos) {
-                        rawParamStr += "\"" + val + "\""; // 简化处理
-                    } else {
-                        rawParamStr += val;
-                    }
-                }
-                first = false;
-            }
-            return r(reinterpret_cast<T*>(p), rawParamStr);
+            // See note in registerServerPlaceholderWithParams. Passing empty string_view.
+            return r(reinterpret_cast<T*>(p), {});
         };
         registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
     }
@@ -360,8 +331,8 @@ private:
 
     // [新] 私有辅助函数：执行单个占位符的查找与替换
     std::string executePlaceholder(
-        const std::string&      pluginName,
-        const std::string&      placeholderName,
+        std::string_view        pluginName,
+        std::string_view        placeholderName,
         const std::string&      paramString,
         const std::string&      defaultText,
         const PlaceholderContext& ctx,

@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <algorithm>
+#include <cctype>
 
 namespace PA::Utils {
 
@@ -13,10 +15,25 @@ namespace PA::Utils {
 class ParsedParams;
 
 // 字符串处理
-inline bool isSpace(unsigned char ch);
+inline bool isSpace(unsigned char ch) { return std::isspace(ch) != 0; }
+
+inline std::string_view ltrim_sv(std::string_view s) {
+    auto it = std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !isSpace(ch); });
+    s.remove_prefix(std::distance(s.begin(), it));
+    return s;
+}
+inline std::string_view rtrim_sv(std::string_view s) {
+    auto it = std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !isSpace(ch); });
+    s.remove_suffix(std::distance(s.rbegin(), it));
+    return s;
+}
+inline std::string_view trim_sv(std::string_view s) { return ltrim_sv(rtrim_sv(s)); }
+
+
 inline std::string ltrim(std::string s);
 inline std::string rtrim(std::string s);
 inline std::string trim(std::string s);
+
 inline std::string toLower(std::string s);
 inline bool iequals(std::string a, std::string b);
 
@@ -32,7 +49,7 @@ inline std::optional<bool>   parseBoolish(const std::string& s);
  */
 class ParsedParams {
 public:
-    ParsedParams(const std::string& paramStr);
+    ParsedParams(std::string_view paramStr);
 
     // 获取原始字符串值
     std::optional<std::string_view> get(const std::string& key) const;

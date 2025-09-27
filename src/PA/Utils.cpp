@@ -15,19 +15,18 @@
 namespace PA::Utils {
 
 // 内部使用的参数解析实现
-static std::unordered_map<std::string, std::string> parseParamsInternal(const std::string& paramStr) {
+static std::unordered_map<std::string, std::string> parseParamsInternal(std::string_view s) {
     // 支持引号、转义：key=value;key2="a;b\"c";key3='x\';y'
     std::unordered_map<std::string, std::string> params;
-    std::string                                  s = paramStr;
     size_t                                       i = 0, n = s.size();
 
     auto skipSpaces = [&]() {
-        while (i < n && std::isspace((unsigned char)s[i])) ++i;
+        while (i < n && isSpace((unsigned char)s[i])) ++i;
     };
-    auto readKey = [&]() -> std::string {
+    auto readKey = [&]() -> std::string_view {
         size_t start = i;
         while (i < n && s[i] != '=' && s[i] != ';') ++i;
-        return trim(s.substr(start, i - start));
+        return trim_sv(s.substr(start, i - start));
     };
     auto readValue = [&]() -> std::string {
         if (i >= n) return "";
@@ -64,20 +63,21 @@ static std::unordered_map<std::string, std::string> parseParamsInternal(const st
         } else {
             size_t start = i;
             while (i < n && s[i] != ';') ++i;
-            return trim(s.substr(start, i - start));
+            return std::string(trim_sv(s.substr(start, i - start)));
         }
     };
 
     while (i < n) {
         skipSpaces();
         if (i >= n) break;
-        std::string key = readKey();
+        std::string_view key_sv = readKey();
+        std::string      key    = toLower(std::string(key_sv));
         if (i < n && s[i] == '=') {
             ++i;
-            std::string val      = readValue();
-            params[toLower(key)] = val;
+            std::string val = readValue();
+            params[key]     = val;
         } else {
-            if (!key.empty()) params[toLower(key)] = "";
+            if (!key.empty()) params[key] = "";
         }
         if (i < n && s[i] == ';') ++i;
     }
@@ -86,7 +86,7 @@ static std::unordered_map<std::string, std::string> parseParamsInternal(const st
 
 
 // ParsedParams 实现
-ParsedParams::ParsedParams(const std::string& paramStr) { mParams = parseParamsInternal(paramStr); }
+ParsedParams::ParsedParams(std::string_view paramStr) { mParams = parseParamsInternal(paramStr); }
 
 std::optional<std::string_view> ParsedParams::get(const std::string& key) const {
     auto it = mParams.find(key);
@@ -128,9 +128,7 @@ std::optional<double> ParsedParams::getDouble(const std::string& key) const {
 
 bool ParsedParams::has(const std::string& key) const { return mParams.count(key) > 0; }
 
-
-inline bool isSpace(unsigned char ch) { return std::isspace(ch) != 0; }
-
+// a bit of repetition, but this avoids linking errors with inline functions in different translation units.
 inline std::string ltrim(std::string s) {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !isSpace(ch); }));
     return s;

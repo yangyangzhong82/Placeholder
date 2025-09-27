@@ -268,8 +268,9 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, Pla
 // [新] 编译模板
 CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
     CompiledTemplate tpl;
-    const char*      s = text.c_str();
-    size_t           n = text.size();
+    tpl.source       = text; // Keep the source string alive
+    std::string_view s = tpl.source;
+    size_t           n = s.size();
 
     for (size_t i = 0; i < n;) {
         char c = s[i];
@@ -285,7 +286,7 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
                     break;
                 }
             }
-            tpl.tokens.emplace_back(LiteralToken{text.substr(i, literalEnd - i)});
+            tpl.tokens.emplace_back(LiteralToken{s.substr(i, literalEnd - i)});
             i = literalEnd;
             continue;
         }
@@ -298,24 +299,24 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
                     break;
                 }
             }
-            tpl.tokens.emplace_back(LiteralToken{text.substr(i, literalEnd - i)});
+            tpl.tokens.emplace_back(LiteralToken{s.substr(i, literalEnd - i)});
             i = literalEnd;
             continue;
         }
 
         // 寻找占位符的开始 '{'
-        size_t placeholderStart = text.find('{', i);
+        size_t placeholderStart = s.find('{', i);
         if (placeholderStart == std::string::npos) {
             // 剩余全是文本
             if (i < n) {
-                tpl.tokens.emplace_back(LiteralToken{text.substr(i)});
+                tpl.tokens.emplace_back(LiteralToken{s.substr(i)});
             }
             break;
         }
 
         // i 到 placeholderStart 之间是文本
         if (placeholderStart > i) {
-            tpl.tokens.emplace_back(LiteralToken{text.substr(i, placeholderStart - i)});
+            tpl.tokens.emplace_back(LiteralToken{s.substr(i, placeholderStart - i)});
         }
 
         // 寻找匹配的 '}'
@@ -345,45 +346,47 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
 
         if (!matched) {
             // 无匹配，后面全是文本
-            tpl.tokens.emplace_back(LiteralToken{text.substr(placeholderStart)});
+            tpl.tokens.emplace_back(LiteralToken{s.substr(placeholderStart)});
             break;
         }
 
         // 提取占位符内部
-        std::string inside(text.substr(placeholderStart + 1, j - (placeholderStart + 1)));
+        std::string_view inside = s.substr(placeholderStart + 1, j - (placeholderStart + 1));
 
         // 解析
         auto colonPosOpt = PA::Utils::findSepOutside(inside, ":");
         if (!colonPosOpt) {
             // 非法格式，视为文本
-            tpl.tokens.emplace_back(LiteralToken{"{" + inside + "}"});
+            tpl.tokens.emplace_back(LiteralToken{s.substr(placeholderStart, j - placeholderStart + 1)});
             i = j + 1;
             continue;
         }
 
         PlaceholderToken token;
-        token.pluginName = PA::Utils::trim(inside.substr(0, *colonPosOpt));
-        std::string rest = inside.substr(*colonPosOpt + 1);
+        token.pluginName = PA::Utils::trim_sv(inside.substr(0, *colonPosOpt));
+        std::string_view rest = inside.substr(*colonPosOpt + 1);
 
         auto defaultPosOpt = PA::Utils::findSepOutside(rest, ":-");
         auto pipePosOpt    = PA::Utils::findSepOutside(rest, "|");
 
-        size_t nameEnd         = std::min(defaultPosOpt.value_or(rest.size()), pipePosOpt.value_or(rest.size()));
-        token.placeholderName = PA::Utils::trim(rest.substr(0, nameEnd));
+        size_t nameEnd        = std::min(defaultPosOpt.value_or(rest.size()), pipePosOpt.value_or(rest.size()));
+        token.placeholderName = PA::Utils::trim_sv(rest.substr(0, nameEnd));
 
         if (defaultPosOpt) {
             size_t defaultStart = *defaultPosOpt + 2;
             size_t defaultEnd   = pipePosOpt ? *pipePosOpt : rest.size();
             if (defaultStart < defaultEnd) {
-                token.defaultTemplate =
-                    std::make_unique<CompiledTemplate>(compileTemplate(rest.substr(defaultStart, defaultEnd - defaultStart)));
+                token.defaultTemplate = std::make_unique<CompiledTemplate>(
+                    compileTemplate(std::string(rest.substr(defaultStart, defaultEnd - defaultStart)))
+                );
             }
         }
 
         if (pipePosOpt) {
             size_t paramStart = *pipePosOpt + 1;
             if (paramStart < rest.size()) {
-                token.paramsTemplate = std::make_unique<CompiledTemplate>(compileTemplate(rest.substr(paramStart)));
+                token.paramsTemplate =
+                    std::make_unique<CompiledTemplate>(compileTemplate(std::string(rest.substr(paramStart))));
             }
         }
 
@@ -395,8 +398,8 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
 
 // [新] 私有辅助函数：执行单个占位符的查找与替换
 std::string PlaceholderManager::executePlaceholder(
-    const std::string&      pluginName,
-    const std::string&      placeholderName,
+    std::string_view        pluginName,
+    std::string_view        placeholderName,
     const std::string&      paramString,
     const std::string&      defaultText,
     const PlaceholderContext& ctx,
@@ -404,7 +407,7 @@ std::string PlaceholderManager::executePlaceholder(
 ) {
     // 构造缓存 key
     std::string cacheKey;
-    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 32);
+    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 40);
     cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.ptr)));
     cacheKey.push_back('#');
     cacheKey.append(std::to_string(ctx.typeId));
@@ -433,9 +436,9 @@ std::string PlaceholderManager::executePlaceholder(
     {
         std::shared_lock lk(mMutex);
         if (ctx.ptr != nullptr && ctx.typeId != 0) {
-            auto plugin_it = mContextPlaceholders.find(pluginName);
+            auto plugin_it = mContextPlaceholders.find(std::string(pluginName));
             if (plugin_it != mContextPlaceholders.end()) {
-                auto ph_it = plugin_it->second.find(placeholderName);
+                auto ph_it = plugin_it->second.find(std::string(placeholderName));
                 if (ph_it != plugin_it->second.end()) {
                     potentialReplacers = ph_it->second;
                 }
@@ -486,9 +489,9 @@ std::string PlaceholderManager::executePlaceholder(
         bool                                                   hasServer = false;
         {
             std::shared_lock lk(mMutex);
-            auto             plugin_it = mServerPlaceholders.find(pluginName);
+            auto             plugin_it = mServerPlaceholders.find(std::string(pluginName));
             if (plugin_it != mServerPlaceholders.end()) {
-                auto placeholder_it = plugin_it->second.find(placeholderName);
+                auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
                 if (placeholder_it != plugin_it->second.end()) {
                     serverFn  = placeholder_it->second.fn;
                     hasServer = true;
@@ -512,10 +515,11 @@ std::string PlaceholderManager::executePlaceholder(
         finalOut = PA::Utils::applyFormatting(replaced_val, params);
     } else {
         // 保留原样
-        finalOut = "{" + pluginName + ":" + placeholderName;
-        if (!defaultText.empty()) finalOut += ":-" + defaultText;
-        if (!paramString.empty()) finalOut += "|" + paramString;
-        finalOut += "}";
+        finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
+        finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+        if (!defaultText.empty()) finalOut.append(":-").append(defaultText);
+        if (!paramString.empty()) finalOut.append("|").append(paramString);
+        finalOut.append("}");
     }
 
     if (finalOut.empty() && !defaultText.empty()) {
@@ -532,16 +536,9 @@ PlaceholderManager::replacePlaceholders(const CompiledTemplate& tpl, const Place
     ReplaceState st; // 每个顶层调用都有自己的状态
     std::string  result;
 
-    // 预估大小
-    size_t reserveSize = 0;
-    for (const auto& token : tpl.tokens) {
-        if (auto* literal = std::get_if<LiteralToken>(&token)) {
-            reserveSize += literal->text.size();
-        } else {
-            reserveSize += 32; // 估算占位符长度
-        }
-    }
-    result.reserve(reserveSize);
+    // 预估大小: 至少为源文本大小，并为占位符替换增加一些余量
+    size_t estimatedSize = tpl.source.size() + tpl.tokens.size() * 16;
+    result.reserve(estimatedSize);
 
     std::function<void(const CompiledTemplate&, ReplaceState&)> process =
         [&](const CompiledTemplate& currentTpl, ReplaceState& currentState) {
@@ -664,7 +661,7 @@ PlaceholderManager::replacePlaceholdersImpl(const std::string& text, const Place
         // 提取占位符内部并编译执行
         // 注意：这里为了兼容旧接口，每次都即时编译和执行，性能较低
         // 新的流程应优先使用 compileTemplate + replacePlaceholders(tpl)
-        auto tpl = compileTemplate(text.substr(i, j - i + 1));
+        auto tpl = compileTemplate(std::string(text.substr(i, j - i + 1)));
         result.append(replacePlaceholders(tpl, ctx));
 
         i = j + 1;
