@@ -796,7 +796,7 @@ private:
         std::unordered_map<std::string, std::string> cache;
     };
 
-    std::string replacePlaceholdersImpl(const std::string& text, const PlaceholderContext& ctx, ReplaceState& st);
+    std::string replacePlaceholdersSync(const CompiledTemplate& tpl, const PlaceholderContext& ctx, int depth);
 
     /**
      * @brief [新] 私有辅助函数：执行单个占位符的查找与替换
@@ -829,7 +829,6 @@ private:
         const std::string&           paramString,
         const std::string&           defaultText,
         const PlaceholderContext&      ctx,
-        ReplaceState&                st,
         std::optional<CacheDuration> cache_duration_override = std::nullopt
     );
 };
