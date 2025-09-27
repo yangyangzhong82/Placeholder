@@ -766,30 +766,43 @@ std::string PlaceholderManager::executePlaceholder(
         }
     }
 
-    std::string finalOut;
+    std::string formatted_val;
     if (replaced) {
-        finalOut = PA::Utils::applyFormatting(replaced_val, params);
-    } else {
-        if (ConfigManager::getInstance().get().debugMode) {
-            logger.warn(
-                "Placeholder '{}:{}' not found or returned empty. Context ptr: {}, typeId: {}. Params: '{}'.",
-                std::string(pluginName),
-                std::string(placeholderName),
-                reinterpret_cast<uintptr_t>(ctx.ptr),
-                ctx.typeId,
-                paramString
-            );
-        }
-        // 保留原样
-        finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
-        finalOut.append("{").append(pluginName).append(":").append(placeholderName);
-        if (!defaultText.empty()) finalOut.append(":-").append(defaultText);
-        if (!paramString.empty()) finalOut.append("|").append(paramString);
-        finalOut.append("}");
+        formatted_val = PA::Utils::applyFormatting(replaced_val, params);
     }
 
-    if (finalOut.empty() && !defaultText.empty()) {
-        finalOut = defaultText;
+    std::string finalOut;
+    // 统一收敛逻辑
+    // 条件：占位符被成功替换，并且格式化后的结果不是空的，或者允许为空
+    if (replaced && (!formatted_val.empty() || allowEmpty)) {
+        finalOut = formatted_val;
+    } else {
+        // 否则，使用默认值
+        if (!defaultText.empty()) {
+            finalOut = defaultText;
+        } else {
+            // 没有默认值，根据配置决定如何处理
+            if (ConfigManager::getInstance().get().debugMode) {
+                if (!replaced) { // 仅在未找到占位符时警告
+                    logger.warn(
+                        "Placeholder '{}:{}' not found or returned empty, and no default value provided. Context ptr: {}, typeId: {}. Params: '{}'.",
+                        std::string(pluginName),
+                        std::string(placeholderName),
+                        reinterpret_cast<uintptr_t>(ctx.ptr),
+                        ctx.typeId,
+                        paramString
+                    );
+                }
+                // 调试模式下保留原样（不含默认值部分）
+                finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
+                finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+                if (!paramString.empty()) finalOut.append("|").append(paramString);
+                finalOut.append("}");
+            } else {
+                // 生产模式下返回空字符串
+                finalOut = "";
+            }
+        }
     }
 
     // 3. 写入缓存
@@ -947,32 +960,42 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     // 统一处理异步结果的格式化和默认值
     return mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), pluginName, placeholderName, paramString, defaultText, allowEmpty, cacheKey, cacheDuration]() mutable {
         std::string replaced_val = fut.get();
-        std::string finalOut;
         bool        replaced = !replaced_val.empty() || allowEmpty;
 
+        PA::Utils::ParsedParams params(paramString); // 重新解析参数以应用格式化
+        std::string formatted_val;
         if (replaced) {
-            PA::Utils::ParsedParams params(paramString); // 重新解析参数以应用格式化
-            finalOut = PA::Utils::applyFormatting(replaced_val, params);
-        } else {
-            if (ConfigManager::getInstance().get().debugMode) {
-                logger.warn(
-                    "Placeholder '{}:{}' not found or returned empty. Context ptr: {}. Params: '{}'.",
-                    std::string(pluginName),
-                    std::string(placeholderName),
-                    reinterpret_cast<uintptr_t>(nullptr), // ctx.ptr 无法在此处直接访问，使用 nullptr
-                    paramString
-                );
-            }
-            // 保留原样
-            finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
-            finalOut.append("{").append(pluginName).append(":").append(placeholderName);
-            if (!defaultText.empty()) finalOut.append(":-").append(defaultText);
-            if (!paramString.empty()) finalOut.append("|").append(paramString);
-            finalOut.append("}");
+            formatted_val = PA::Utils::applyFormatting(replaced_val, params);
         }
 
-        if (finalOut.empty() && !defaultText.empty()) {
-            finalOut = defaultText;
+        std::string finalOut;
+        // 统一收敛逻辑
+        if (replaced && (!formatted_val.empty() || allowEmpty)) {
+            finalOut = formatted_val;
+        } else {
+            // 否则，使用默认值
+            if (!defaultText.empty()) {
+                finalOut = defaultText;
+            } else {
+                // 没有默认值，根据配置决定如何处理
+                if (ConfigManager::getInstance().get().debugMode) {
+                    logger.warn(
+                        "Placeholder '{}:{}' not found or returned empty, and no default value provided. Context ptr: {}. Params: '{}'.",
+                        std::string(pluginName),
+                        std::string(placeholderName),
+                        reinterpret_cast<uintptr_t>(nullptr), // ctx.ptr 无法在此处直接访问，使用 nullptr
+                        paramString
+                    );
+                    // 调试模式下保留原样（不含默认值部分）
+                    finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
+                    finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+                    if (!paramString.empty()) finalOut.append("|").append(paramString);
+                    finalOut.append("}");
+                } else {
+                    // 生产模式下返回空字符串
+                    finalOut = "";
+                }
+            }
         }
 
         // 写入单次替换缓存 (这里是异步线程中的缓存，与同步的 ReplaceState::cache 不同)
