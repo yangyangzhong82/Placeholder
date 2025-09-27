@@ -18,6 +18,7 @@
 #include <variant>      // 用于变体类型
 #include <vector>       // 用于动态数组
 #include <memory>       // 用于智能指针，例如 unique_ptr
+#include <chrono>       // 用于时间相关的操作，例如缓存过期
 
 class Player; // 前向声明 Minecraft 玩家类，避免循环引用
 
@@ -120,6 +121,9 @@ public:
     // 服务器占位符（带参数）：不依赖上下文，但接受解析后的参数
     using ServerReplacerWithParams = std::function<std::string(const Utils::ParsedParams& params)>;
 
+    // 缓存持续时间类型
+    using CacheDuration = std::chrono::steady_clock::duration;
+
     // --- 新：异步占位符 ---
     // 异步服务器占位符
     using AsyncServerReplacer = std::function<std::future<std::string>()>;
@@ -151,20 +155,27 @@ public:
      * @param pluginName 插件名称
      * @param placeholder 占位符名称 (例如 "player_count")
      * @param replacer 替换函数，无参数，返回替换后的字符串
+     * @param cache_duration 可选的缓存持续时间
      */
-    PA_API void
-    registerServerPlaceholder(const std::string& pluginName, const std::string& placeholder, ServerReplacer replacer);
+    PA_API void registerServerPlaceholder(
+        const std::string&                pluginName,
+        const std::string&                placeholder,
+        ServerReplacer                    replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
+    );
 
     /**
      * @brief [新] 注册一个带参数的服务器级占位符
      * @param pluginName 插件名称
      * @param placeholder 占位符名称
      * @param replacer 替换函数，接受 ParsedParams 参数，返回替换后的字符串
+     * @param cache_duration 可选的缓存持续时间
      */
     PA_API void registerServerPlaceholderWithParams(
-        const std::string&         pluginName,
-        const std::string&         placeholder,
-        ServerReplacerWithParams&& replacer
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        ServerReplacerWithParams&&   replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
     );
 
     /**
@@ -172,11 +183,13 @@ public:
      * @param pluginName 插件名称
      * @param placeholder 占位符名称
      * @param replacer 替换函数，返回 std::future<std::string>
+     * @param cache_duration 可选的缓存持续时间
      */
     PA_API void registerAsyncServerPlaceholder(
-        const std::string& pluginName,
-        const std::string& placeholder,
-        AsyncServerReplacer&& replacer
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        AsyncServerReplacer&&        replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
     );
 
     /**
@@ -184,11 +197,13 @@ public:
      * @param pluginName 插件名称
      * @param placeholder 占位符名称
      * @param replacer 替换函数，接受 ParsedParams，返回 std::future<std::string>
+     * @param cache_duration 可选的缓存持续时间
      */
     PA_API void registerAsyncServerPlaceholderWithParams(
-        const std::string&           pluginName,
-        const std::string&           placeholder,
-        AsyncServerReplacerWithParams&& replacer
+        const std::string&            pluginName,
+        const std::string&            placeholder,
+        AsyncServerReplacerWithParams&& replacer,
+        std::optional<CacheDuration>  cache_duration = std::nullopt
     );
 
     /**
@@ -230,14 +245,15 @@ public:
     void registerPlaceholder(
         const std::string&               pluginName,
         const std::string&               placeholder,
-        std::function<std::string(T*)>&& replacer
+        std::function<std::string(T*)>&& replacer,
+        std::optional<CacheDuration>     cache_duration = std::nullopt
     ) {
         auto           targetId = ensureTypeId(typeKey<T>()); // 获取目标类型的内部ID
         AnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::string {
             if (!p) return std::string{}; // 空指针检查
             return r(reinterpret_cast<T*>(p)); // 转换为 T* 并调用替换函数
         };
-        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
     }
 
     /**
@@ -249,9 +265,10 @@ public:
      */
     template <typename T>
     void registerAsyncPlaceholder(
-        const std::string&                     pluginName,
-        const std::string&                     placeholder,
-        std::function<std::future<std::string>(T*)>&& replacer
+        const std::string&                          pluginName,
+        const std::string&                          placeholder,
+        std::function<std::future<std::string>(T*)>&& replacer,
+        std::optional<CacheDuration>                cache_duration = std::nullopt
     ) {
         auto                targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::future<std::string> {
@@ -262,7 +279,7 @@ public:
             }
             return r(reinterpret_cast<T*>(p));
         };
-        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
     }
 
     /**
@@ -298,16 +315,17 @@ public:
      */
     template <typename T>
     void registerPlaceholderWithParams(
-        const std::string&                                     pluginName,
-        const std::string&                                     placeholder,
-        std::function<std::string(T*, const Utils::ParsedParams&)>&& replacer
+        const std::string&                                          pluginName,
+        const std::string&                                          placeholder,
+        std::function<std::string(T*, const Utils::ParsedParams&)>&& replacer,
+        std::optional<CacheDuration>                                cache_duration = std::nullopt
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
         AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
             return r(reinterpret_cast<T*>(p), params);
         };
-        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
     }
 
     /**
@@ -319,9 +337,10 @@ public:
      */
     template <typename T>
     void registerAsyncPlaceholderWithParams(
-        const std::string&                                           pluginName,
-        const std::string&                                           placeholder,
-        std::function<std::future<std::string>(T*, const Utils::ParsedParams&)>&& replacer
+        const std::string&                                                pluginName,
+        const std::string&                                                placeholder,
+        std::function<std::future<std::string>(T*, const Utils::ParsedParams&)>&& replacer,
+        std::optional<CacheDuration>                                      cache_duration = std::nullopt
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacerWithParams fn =
@@ -333,7 +352,7 @@ public:
             }
             return r(reinterpret_cast<T*>(p), params);
         };
-        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
     }
 
     /**
@@ -564,10 +583,11 @@ public:
      * @param replacer 替换函数
      */
     PA_API void registerPlaceholderForTypeId(
-        const std::string& pluginName,
-        const std::string& placeholder,
-        std::size_t        targetTypeId,
-        AnyPtrReplacer     replacer
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        std::size_t                  targetTypeId,
+        AnyPtrReplacer               replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
     );
 
     /**
@@ -580,30 +600,33 @@ public:
      * @param replacer 替换函数（带参数）
      */
     PA_API void registerPlaceholderForTypeId(
-        const std::string&         pluginName,
-        const std::string&         placeholder,
-        std::size_t                targetTypeId,
-        AnyPtrReplacerWithParams&& replacer
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        std::size_t                  targetTypeId,
+        AnyPtrReplacerWithParams&&   replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
     );
 
     /**
      * @brief 注册异步上下文占位符（目标类型ID版）
      */
     PA_API void registerAsyncPlaceholderForTypeId(
-        const std::string&    pluginName,
-        const std::string&    placeholder,
-        std::size_t           targetTypeId,
-        AsyncAnyPtrReplacer&& replacer
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        std::size_t                  targetTypeId,
+        AsyncAnyPtrReplacer&&        replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt
     );
 
     /**
      * @brief 注册异步上下文占位符（目标类型ID版，带参数）
      */
     PA_API void registerAsyncPlaceholderForTypeId(
-        const std::string&           pluginName,
-        const std::string&           placeholder,
-        std::size_t                  targetTypeId,
-        AsyncAnyPtrReplacerWithParams&& replacer
+        const std::string&            pluginName,
+        const std::string&            placeholder,
+        std::size_t                   targetTypeId,
+        AsyncAnyPtrReplacerWithParams&& replacer,
+        std::optional<CacheDuration>  cache_duration = std::nullopt
     );
 
     /**
@@ -662,6 +685,7 @@ private:
      */
     struct ServerReplacerEntry {
         std::variant<ServerReplacer, ServerReplacerWithParams> fn; // 替换函数变体
+        std::optional<CacheDuration>                           cacheDuration;
     };
 
     /**
@@ -669,6 +693,7 @@ private:
      */
     struct AsyncServerReplacerEntry {
         std::variant<AsyncServerReplacer, AsyncServerReplacerWithParams> fn;
+        std::optional<CacheDuration>                                     cacheDuration;
     };
 
     /**
@@ -679,6 +704,7 @@ private:
     struct TypedReplacer {
         std::size_t                                            targetTypeId{0}; // 目标类型ID
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;            // 替换函数变体
+        std::optional<CacheDuration>                           cacheDuration;
     };
 
     /**
@@ -687,6 +713,7 @@ private:
     struct AsyncTypedReplacer {
         std::size_t                                                  targetTypeId{0};
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
+        std::optional<CacheDuration>                                     cacheDuration;
     };
 
     /**
@@ -697,6 +724,14 @@ private:
     struct UpcastCacheEntry {
         bool                success; // 是否成功找到路径
         std::vector<Caster> chain;   // 上行转换函数链
+    };
+
+    /**
+     * @brief 全局缓存条目
+     */
+    struct CacheEntry {
+        std::string                               result;    // 缓存的结果
+        std::chrono::steady_clock::time_point expiresAt; // 过期时间点
     };
 
     // 服务器占位符映射：插件名 -> (占位符名 -> 替换函数条目)
@@ -720,6 +755,9 @@ private:
     // 上行链缓存：用于存储已计算过的上行转换路径，避免重复计算
     // 缓存键由 fromTypeId 和 toTypeId 组合而成
     mutable std::unordered_map<uint64_t, UpcastCacheEntry> mUpcastCache;
+
+    // 全局占位符结果缓存
+    mutable std::unordered_map<std::string, CacheEntry> mGlobalCache;
 
     // 线程安全：使用读写锁保护内部数据结构
     mutable std::shared_mutex mMutex;
@@ -771,24 +809,26 @@ private:
      * @return 替换后的字符串
      */
     std::string executePlaceholder(
-        std::string_view        pluginName,
-        std::string_view        placeholderName,
-        const std::string&      paramString,
-        const std::string&      defaultText,
-        const PlaceholderContext& ctx,
-        ReplaceState&           st
+        std::string_view             pluginName,
+        std::string_view             placeholderName,
+        const std::string&           paramString,
+        const std::string&           defaultText,
+        const PlaceholderContext&      ctx,
+        ReplaceState&                st,
+        std::optional<CacheDuration> cache_duration_override = std::nullopt
     );
 
     /**
      * @brief [新] 私有辅助函数：执行单个占位符的异步查找与替换
      */
     std::future<std::string> executePlaceholderAsync(
-        std::string_view        pluginName,
-        std::string_view        placeholderName,
-        const std::string&      paramString,
-        const std::string&      defaultText,
-        const PlaceholderContext& ctx,
-        ReplaceState&           st
+        std::string_view             pluginName,
+        std::string_view             placeholderName,
+        const std::string&           paramString,
+        const std::string&           defaultText,
+        const PlaceholderContext&      ctx,
+        ReplaceState&                st,
+        std::optional<CacheDuration> cache_duration_override = std::nullopt
     );
 };
 

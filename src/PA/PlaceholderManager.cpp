@@ -153,46 +153,53 @@ bfs_end:
 // ==== 占位符注册 ====
 
 void PlaceholderManager::registerServerPlaceholder(
-    const std::string& pluginName,
-    const std::string& placeholder,
-    ServerReplacer     replacer
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    ServerReplacer               replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
-    mServerPlaceholders[pluginName][placeholder] = ServerReplacerEntry{replacer};
+    mServerPlaceholders[pluginName][placeholder] = ServerReplacerEntry{replacer, cache_duration};
 }
 
 void PlaceholderManager::registerServerPlaceholderWithParams(
-    const std::string&         pluginName,
-    const std::string&         placeholder,
-    ServerReplacerWithParams&& replacer
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    ServerReplacerWithParams&&   replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
-    mServerPlaceholders[pluginName][placeholder] = ServerReplacerEntry{ServerReplacerWithParams(std::move(replacer))};
+    mServerPlaceholders[pluginName][placeholder] =
+        ServerReplacerEntry{ServerReplacerWithParams(std::move(replacer)), cache_duration};
 }
 
 void PlaceholderManager::registerPlaceholderForTypeId(
-    const std::string& pluginName,
-    const std::string& placeholder,
-    std::size_t        targetTypeId,
-    AnyPtrReplacer     replacer
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    std::size_t                  targetTypeId,
+    AnyPtrReplacer               replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
     mContextPlaceholders[pluginName][placeholder].push_back(TypedReplacer{
         targetTypeId,
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
+        cache_duration,
     });
 }
 
 void PlaceholderManager::registerPlaceholderForTypeId(
-    const std::string&         pluginName,
-    const std::string&         placeholder,
-    std::size_t                targetTypeId,
-    AnyPtrReplacerWithParams&& replacer
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    std::size_t                  targetTypeId,
+    AnyPtrReplacerWithParams&&   replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
     mContextPlaceholders[pluginName][placeholder].push_back(TypedReplacer{
         targetTypeId,
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
+        cache_duration,
     });
 }
 
@@ -220,45 +227,53 @@ void PlaceholderManager::registerPlaceholderForTypeKeyWithParams(
 // --- 新：异步占位符注册 ---
 
 void PlaceholderManager::registerAsyncServerPlaceholder(
-    const std::string&    pluginName,
-    const std::string&    placeholder,
-    AsyncServerReplacer&& replacer
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    AsyncServerReplacer&&        replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
-    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer)};
+    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer), cache_duration};
 }
 
 void PlaceholderManager::registerAsyncServerPlaceholderWithParams(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    AsyncServerReplacerWithParams&& replacer
+    const std::string&            pluginName,
+    const std::string&            placeholder,
+    AsyncServerReplacerWithParams&& replacer,
+    std::optional<CacheDuration>  cache_duration
 ) {
     std::unique_lock lk(mMutex);
-    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer)};
-}
-
-void PlaceholderManager::registerAsyncPlaceholderForTypeId(
-    const std::string&    pluginName,
-    const std::string&    placeholder,
-    std::size_t           targetTypeId,
-    AsyncAnyPtrReplacer&& replacer
-) {
-    std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].push_back(
-        AsyncTypedReplacer{targetTypeId, std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer))}
-    );
+    mAsyncServerPlaceholders[pluginName][placeholder] = AsyncServerReplacerEntry{std::move(replacer), cache_duration};
 }
 
 void PlaceholderManager::registerAsyncPlaceholderForTypeId(
     const std::string&           pluginName,
     const std::string&           placeholder,
     std::size_t                  targetTypeId,
-    AsyncAnyPtrReplacerWithParams&& replacer
+    AsyncAnyPtrReplacer&&        replacer,
+    std::optional<CacheDuration> cache_duration
 ) {
     std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].push_back(
-        AsyncTypedReplacer{targetTypeId, std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer))}
-    );
+    mAsyncContextPlaceholders[pluginName][placeholder].push_back(AsyncTypedReplacer{
+        targetTypeId,
+        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
+        cache_duration
+    });
+}
+
+void PlaceholderManager::registerAsyncPlaceholderForTypeId(
+    const std::string&            pluginName,
+    const std::string&            placeholder,
+    std::size_t                   targetTypeId,
+    AsyncAnyPtrReplacerWithParams&& replacer,
+    std::optional<CacheDuration>  cache_duration
+) {
+    std::unique_lock lk(mMutex);
+    mAsyncContextPlaceholders[pluginName][placeholder].push_back(AsyncTypedReplacer{
+        targetTypeId,
+        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
+        cache_duration
+    });
 }
 
 void PlaceholderManager::registerAsyncPlaceholderForTypeKey(
@@ -578,12 +593,13 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
 
 // [新] 私有辅助函数：执行单个占位符的查找与替换
 std::string PlaceholderManager::executePlaceholder(
-    std::string_view        pluginName,
-    std::string_view        placeholderName,
-    const std::string&      paramString,
-    const std::string&      defaultText,
-    const PlaceholderContext& ctx,
-    ReplaceState&           st
+    std::string_view             pluginName,
+    std::string_view             placeholderName,
+    const std::string&           paramString,
+    const std::string&           defaultText,
+    const PlaceholderContext&      ctx,
+    ReplaceState&                st,
+    std::optional<CacheDuration> cache_duration_override
 ) {
     // 构造缓存 key
     std::string cacheKey;
@@ -598,6 +614,7 @@ std::string PlaceholderManager::executePlaceholder(
     cacheKey.push_back('|');
     cacheKey.append(paramString);
 
+    // 1. 检查单次替换缓存
     auto itCache = st.cache.find(cacheKey);
     if (itCache != st.cache.end()) {
         std::string out = itCache->second;
@@ -605,10 +622,28 @@ std::string PlaceholderManager::executePlaceholder(
         return out;
     }
 
+    // 2. 检查全局缓存
+    std::optional<CacheDuration> cacheDuration;
+    if (cache_duration_override) {
+        cacheDuration = cache_duration_override;
+    }
+    if (cacheDuration) {
+        std::shared_lock lk(mMutex);
+        auto             itGlobalCache = mGlobalCache.find(cacheKey);
+        if (itGlobalCache != mGlobalCache.end() && itGlobalCache->second.expiresAt > std::chrono::steady_clock::now()) {
+            std::string out = itGlobalCache->second.result;
+            st.cache.emplace(std::move(cacheKey), out); // 写入单次缓存
+            if (out.empty() && !defaultText.empty()) out = defaultText;
+            return out;
+        }
+    }
+
+
     // 查询候选
     struct Candidate {
         std::vector<Caster>                                    chain;
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;
+        std::optional<CacheDuration>                           cacheDuration;
     };
     std::vector<std::pair<int, Candidate>> candidates;
 
@@ -629,9 +664,9 @@ std::string PlaceholderManager::executePlaceholder(
     for (auto& entry : potentialReplacers) {
         std::vector<Caster> chain;
         if (entry.targetTypeId == ctx.typeId) {
-            candidates.push_back({0, Candidate{{}, entry.fn}});
+            candidates.push_back({0, Candidate{{}, entry.fn, entry.cacheDuration}});
         } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-            candidates.push_back({(int)chain.size(), Candidate{std::move(chain), entry.fn}});
+            candidates.push_back({(int)chain.size(), Candidate{std::move(chain), entry.fn, entry.cacheDuration}});
         }
     }
 
@@ -659,7 +694,8 @@ std::string PlaceholderManager::executePlaceholder(
             replaced_val = std::get<AnyPtrReplacerWithParams>(cand.fn)(p, params);
         }
         if (!replaced_val.empty() || allowEmpty) {
-            replaced = true;
+            replaced      = true;
+            cacheDuration = cand.cacheDuration; // 找到后更新缓存时间
             break;
         }
     }
@@ -669,27 +705,28 @@ std::string PlaceholderManager::executePlaceholder(
     // 然后由 `replacePlaceholders` -> `replacePlaceholdersAsync` -> `future.get()` 阻塞。
 
     if (!replaced) {
-        std::variant<ServerReplacer, ServerReplacerWithParams> serverFn;
-        bool                                                   hasServer = false;
+        ServerReplacerEntry serverEntry;
+        bool                hasServer = false;
         {
             std::shared_lock lk(mMutex);
             auto             plugin_it = mServerPlaceholders.find(std::string(pluginName));
             if (plugin_it != mServerPlaceholders.end()) {
                 auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
                 if (placeholder_it != plugin_it->second.end()) {
-                    serverFn  = placeholder_it->second.fn;
-                    hasServer = true;
+                    serverEntry = placeholder_it->second;
+                    hasServer   = true;
                 }
             }
         }
         if (hasServer) {
-            if (std::holds_alternative<ServerReplacer>(serverFn)) {
-                replaced_val = std::get<ServerReplacer>(serverFn)();
+            if (std::holds_alternative<ServerReplacer>(serverEntry.fn)) {
+                replaced_val = std::get<ServerReplacer>(serverEntry.fn)();
             } else {
-                replaced_val = std::get<ServerReplacerWithParams>(serverFn)(params);
+                replaced_val = std::get<ServerReplacerWithParams>(serverEntry.fn)(params);
             }
             if (!replaced_val.empty() || allowEmpty) {
-                replaced = true;
+                replaced      = true;
+                cacheDuration = serverEntry.cacheDuration;
             }
         }
     }
@@ -699,12 +736,14 @@ std::string PlaceholderManager::executePlaceholder(
         finalOut = PA::Utils::applyFormatting(replaced_val, params);
     } else {
         if (ConfigManager::getInstance().get().debugMode) {
-            logger.warn("Placeholder '{}:{}' not found or returned empty. Context ptr: {}, typeId: {}. Params: '{}'.",
-                        std::string(pluginName),
-                        std::string(placeholderName),
-                        reinterpret_cast<uintptr_t>(ctx.ptr),
-                        ctx.typeId,
-                        paramString);
+            logger.warn(
+                "Placeholder '{}:{}' not found or returned empty. Context ptr: {}, typeId: {}. Params: '{}'.",
+                std::string(pluginName),
+                std::string(placeholderName),
+                reinterpret_cast<uintptr_t>(ctx.ptr),
+                ctx.typeId,
+                paramString
+            );
         }
         // 保留原样
         finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
@@ -718,20 +757,55 @@ std::string PlaceholderManager::executePlaceholder(
         finalOut = defaultText;
     }
 
-    st.cache.emplace(std::move(cacheKey), finalOut);
+    // 3. 写入缓存
+    st.cache.emplace(cacheKey, finalOut);
+    if (cacheDuration && replaced) { // 只有成功替换且需要缓存时才写入全局缓存
+        std::unique_lock lk(mMutex);
+        mGlobalCache[cacheKey] = {finalOut, std::chrono::steady_clock::now() + *cacheDuration};
+    }
     return finalOut;
 }
 
+
 // [新] 私有辅助函数：执行单个占位符的异步查找与替换
 std::future<std::string> PlaceholderManager::executePlaceholderAsync(
-    std::string_view        pluginName,
-    std::string_view        placeholderName,
-    const std::string&      paramString,
-    const std::string&      defaultText,
-    const PlaceholderContext& ctx,
-    ReplaceState&           st
+    std::string_view             pluginName,
+    std::string_view             placeholderName,
+    const std::string&           paramString,
+    const std::string&           defaultText,
+    const PlaceholderContext&      ctx,
+    ReplaceState&                st,
+    std::optional<CacheDuration> cache_duration_override
 ) {
-    // 1. 检查异步上下文占位符
+    // 构造缓存 key
+    std::string cacheKey;
+    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 40);
+    cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.ptr)));
+    cacheKey.push_back('#');
+    cacheKey.append(std::to_string(ctx.typeId));
+    cacheKey.push_back('#');
+    cacheKey.append(pluginName);
+    cacheKey.push_back(':');
+    cacheKey.append(placeholderName);
+    cacheKey.push_back('|');
+    cacheKey.append(paramString);
+
+    // 1. 检查全局缓存
+    std::optional<CacheDuration> cacheDuration;
+    if (cache_duration_override) {
+        cacheDuration = cache_duration_override;
+    }
+    if (cacheDuration) {
+        std::shared_lock lk(mMutex);
+        auto             itGlobalCache = mGlobalCache.find(cacheKey);
+        if (itGlobalCache != mGlobalCache.end() && itGlobalCache->second.expiresAt > std::chrono::steady_clock::now()) {
+            std::promise<std::string> promise;
+            promise.set_value(itGlobalCache->second.result);
+            return promise.get_future();
+        }
+    }
+
+    // 2. 检查异步上下文占位符
     {
         std::shared_lock lk(mMutex);
         auto             plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
@@ -742,18 +816,28 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                 for (const auto& entry : ph_it->second) {
                     if (entry.targetTypeId == ctx.typeId) {
                         PA::Utils::ParsedParams params(paramString);
-                        if (std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)) {
-                            return std::get<AsyncAnyPtrReplacer>(entry.fn)(ctx.ptr);
-                        } else {
-                            return std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(ctx.ptr, params);
+                        auto                    fut = std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)
+                                       ? std::get<AsyncAnyPtrReplacer>(entry.fn)(ctx.ptr)
+                                       : std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(ctx.ptr, params);
+
+                        // 缓存结果
+                        if (entry.cacheDuration) {
+                            auto cacheKeyCopy = cacheKey; // 捕获副本
+                            return mThreadPool->enqueue([this, fut = std::move(fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
+                                std::string result = fut.get();
+                                std::unique_lock lk(mMutex);
+                                mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
+                                return result;
+                            });
                         }
+                        return fut;
                     }
                 }
             }
         }
     }
 
-    // 2. 检查异步服务器占位符
+    // 3. 检查异步服务器占位符
     {
         std::shared_lock lk(mMutex);
         auto             plugin_it = mAsyncServerPlaceholders.find(std::string(pluginName));
@@ -761,19 +845,29 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
             if (placeholder_it != plugin_it->second.end()) {
                 PA::Utils::ParsedParams params(paramString);
-                const auto&             fn = placeholder_it->second.fn;
-                if (std::holds_alternative<AsyncServerReplacer>(fn)) {
-                    return std::get<AsyncServerReplacer>(fn)();
-                } else {
-                    return std::get<AsyncServerReplacerWithParams>(fn)(params);
+                const auto&             entry = placeholder_it->second;
+                auto                    fut   = std::holds_alternative<AsyncServerReplacer>(entry.fn)
+                                  ? std::get<AsyncServerReplacer>(entry.fn)()
+                                  : std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
+
+                // 缓存结果
+                if (entry.cacheDuration) {
+                    auto cacheKeyCopy = cacheKey; // 捕获副本
+                    return mThreadPool->enqueue([this, fut = std::move(fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
+                        std::string result = fut.get();
+                        std::unique_lock lk(mMutex);
+                        mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
+                        return result;
+                    });
                 }
+                return fut;
             }
         }
     }
 
-    // 3. 如果没有找到异步占位符，则回退到同步执行，并将其结果包装在 future 中
+    // 4. 如果没有找到异步占位符，则回退到同步执行，并将其结果包装在 future 中
     std::promise<std::string> promise;
-    promise.set_value(executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st));
+    promise.set_value(executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cacheDuration));
     return promise.get_future();
 }
 
