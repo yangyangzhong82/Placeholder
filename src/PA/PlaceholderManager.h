@@ -23,6 +23,8 @@ class Player; // 前向声明 Minecraft 玩家类，避免循环引用
 
 namespace PA { // PlaceholderAPI 命名空间
 
+class ThreadPool; // 前向声明线程池类
+
 namespace Utils {
 class ParsedParams; // 前向声明参数解析类
 } // namespace Utils
@@ -721,6 +723,9 @@ private:
 
     // 线程安全：使用读写锁保护内部数据结构
     mutable std::shared_mutex mMutex;
+
+    // 全局线程池
+    std::unique_ptr<ThreadPool> mThreadPool;
 
     // 解析配置
     int  mMaxRecursionDepth{12};     // 最大递归深度，默认 12

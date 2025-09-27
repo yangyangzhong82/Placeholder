@@ -1,4 +1,5 @@
 #include "PlaceholderManager.h"
+#include "ThreadPool.h"
 #include "Utils.h"
 
 #include "ll/api/service/Bedrock.h"
@@ -49,7 +50,13 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-PlaceholderManager::PlaceholderManager() = default;
+PlaceholderManager::PlaceholderManager() {
+    unsigned int concurrency = std::thread::hardware_concurrency();
+    if (concurrency == 0) {
+        concurrency = 2; // 硬件并发未知时的默认值
+    }
+    mThreadPool = std::make_unique<ThreadPool>(concurrency);
+}
 
 // ==== 类型系统实现 ====
 
@@ -368,8 +375,8 @@ PlaceholderManager::replacePlaceholdersAsync(const std::string& text, const Plac
 
 std::future<std::string>
 PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx) {
-    // 使用 std::async 在后台执行整个替换过程
-    return std::async(std::launch::async, [this, &tpl, &ctx]() -> std::string {
+    // 使用线程池在后台执行整个替换过程
+    return mThreadPool->enqueue([this, &tpl, &ctx]() -> std::string {
         ReplaceState                                st;
         std::vector<std::future<std::string>>       futures;
         std::function<void(const CompiledTemplate&)> process;
@@ -388,7 +395,7 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
                 } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
                     // 对于占位符，我们需要异步地解析其参数和默认值，然后执行它
                     auto placeholderFuture =
-                        std::async(std::launch::async, [this, placeholder, &ctx, &st, &process]() -> std::string {
+                        mThreadPool->enqueue([this, placeholder, &ctx, &st, &process]() -> std::string {
                             st.depth++;
 
                             // 异步解析参数
