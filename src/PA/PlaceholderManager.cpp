@@ -28,6 +28,8 @@
 #include <variant>
 #include <vector>
 
+#include "PA/Config/ConfigManager.h" // 引入 ConfigManager
+#include "PA/logger.h"               // 引入 logger
 
 namespace PA {
 
@@ -376,6 +378,9 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
         auto colonPosOpt = PA::Utils::findSepOutside(inside, ":");
         if (!colonPosOpt) {
             // 非法格式，视为文本
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.warn("Placeholder format error: '{}' is not a valid placeholder format. Expected 'plugin:placeholder'.", std::string(inside));
+            }
             tpl.tokens.emplace_back(LiteralToken{s.substr(placeholderStart, j - placeholderStart + 1)});
             i = j + 1;
             continue;
@@ -533,6 +538,14 @@ std::string PlaceholderManager::executePlaceholder(
     if (replaced) {
         finalOut = PA::Utils::applyFormatting(replaced_val, params);
     } else {
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn("Placeholder '{}:{}' not found or returned empty. Context ptr: {}, typeId: {}. Params: '{}'.",
+                        std::string(pluginName),
+                        std::string(placeholderName),
+                        reinterpret_cast<uintptr_t>(ctx.ptr),
+                        ctx.typeId,
+                        paramString);
+        }
         // 保留原样
         finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
         finalOut.append("{").append(pluginName).append(":").append(placeholderName);

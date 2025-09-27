@@ -14,6 +14,9 @@
 #include <stdexcept>
 #include <string_view>
 
+#include "PA/Config/ConfigManager.h" // 引入 ConfigManager
+#include "PA/logger.h"               // 引入 logger
+
 namespace PA::Utils {
 
 // 内部使用的参数解析实现
@@ -898,6 +901,9 @@ std::optional<double> evalMathExpression(const std::string& expression_str, cons
     parser<double> parser;
     if (!parser.compile(expression_str, expression)) {
         // 编译失败，返回空
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn("Math expression '{}' failed to parse. Error: {}", expression_str, parser.error().c_str());
+        }
         return std::nullopt;
     }
 
