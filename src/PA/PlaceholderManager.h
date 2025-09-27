@@ -203,14 +203,15 @@ public:
     }
 
     /**
-     * @brief [新] 注册上下文占位符（模板版，带参数）
+     * @brief [新] 注册上下文占位符（模板版，带参数，兼容旧版）
      * @tparam T 目标类型
      * @param pluginName 插件名称
      * @param placeholder 占位符名称
      * @param replacer 替换函数，接受 T* 指针和 string_view 参数，返回替换后的字符串
+     * @warning 此函数为兼容性保留，但无法传递实际参数。推荐使用接受 ParsedParams 的重载。
      */
     template <typename T>
-    void registerPlaceholderWithParams(
+    [[deprecated]]  void registerPlaceholderWithParams(
         const std::string&                                 pluginName,
         const std::string&                                 placeholder,
         std::function<std::string(T*, std::string_view)>&& replacer
@@ -220,6 +221,28 @@ public:
             if (!p) return std::string{}; // 空指针检查
             // 参见 registerServerPlaceholderWithParams 中的注释。传递空 string_view。
             return r(reinterpret_cast<T*>(p), {}); // 转换为 T* 并调用替换函数
+        };
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
+    }
+
+    /**
+     * @brief [新] 注册上下文占位符（模板版，带参数，推荐）
+     *
+     * @tparam T 目标类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T* 指针和 const Utils::ParsedParams& 参数，返回替换后的字符串
+     */
+    template <typename T>
+    void registerPlaceholderWithParams(
+        const std::string&                                     pluginName,
+        const std::string&                                     placeholder,
+        std::function<std::string(T*, const Utils::ParsedParams&)>&& replacer
+    ) {
+        auto                     targetId = ensureTypeId(typeKey<T>());
+        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
+            if (!p) return std::string{};
+            return r(reinterpret_cast<T*>(p), params);
         };
         registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
     }

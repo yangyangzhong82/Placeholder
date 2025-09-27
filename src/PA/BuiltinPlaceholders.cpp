@@ -193,18 +193,19 @@ void registerBuiltinPlaceholders() {
     manager.registerPlaceholderWithParams<Mob>(
         "pa",
         "calc",
-        [&](Mob* mob, std::string_view paramStr) -> std::string {
-            Utils::ParsedParams params{std::string(paramStr)};
-            auto                exprOpt = params.get("expr");
-            if (!exprOpt) return "";
+        std::function<std::string(Mob*, const Utils::ParsedParams&)>(
+            [&](Mob* mob, const Utils::ParsedParams& params) -> std::string {
+                auto exprOpt = params.get("expr");
+                if (!exprOpt) return "";
 
-            auto  expr = std::string(*exprOpt);
-            auto& mgr  = PlaceholderManager::getInstance();
-            // 传入上下文（多态）展开 expr 内的占位符
-            expr = mgr.replacePlaceholders(expr, mob);
-            if (auto v = PA::Utils::evalMathExpression(expr, params)) return std::to_string(*v);
-            return "";
-        }
+                auto  expr = std::string(*exprOpt);
+                auto& mgr  = PlaceholderManager::getInstance();
+                // 传入上下文（多态）展开 expr 内的占位符
+                expr = mgr.replacePlaceholders(expr, mob);
+                if (auto v = PA::Utils::evalMathExpression(expr, params)) return std::to_string(*v);
+                return "";
+            }
+        )
     );
 }
 
