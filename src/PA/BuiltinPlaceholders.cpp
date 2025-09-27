@@ -23,116 +23,6 @@
 
 namespace PA {
 
-static std::optional<double> evalExpr(std::string_view expr) {
-    // 去空白
-    std::string s;
-    s.reserve(expr.size());
-    for (char c : expr)
-        if (!PA::Utils::isSpace((unsigned char)c)) s.push_back(c);
-    if (s.empty()) return std::nullopt;
-
-    // Shunting-yard
-    std::vector<double> val;
-    std::vector<char>   op;
-
-    auto apply = [&](char o) {
-        if (o == '~') {
-            if (val.empty()) return false;
-            double a = val.back();
-            val.pop_back();
-            val.push_back(-a);
-            return true;
-        }
-        if (val.size() < 2) return false;
-        double b = val.back();
-        val.pop_back();
-        double a = val.back();
-        val.pop_back();
-        switch (o) {
-        case '+':
-            val.push_back(a + b);
-            break;
-        case '-':
-            val.push_back(a - b);
-            break;
-        case '*':
-            val.push_back(a * b);
-            break;
-        case '/':
-            if (b == 0.0) return false; // 除以零，返回失败
-            val.push_back(a / b);
-            break;
-        default:
-            return false;
-        }
-        return true;
-    };
-
-    auto prec = [&](char o) -> int {
-        if (o == '~') return 3;
-        if (o == '*' || o == '/') return 2;
-        if (o == '+' || o == '-') return 1;
-        return 0;
-    };
-
-    bool mayUnary = true;
-    for (size_t i = 0; i < s.size();) {
-        char c = s[i];
-        if (std::isdigit((unsigned char)c) || c == '.') {
-            size_t j = i + 1;
-            while (j < s.size() && (std::isdigit((unsigned char)s[j]) || s[j] == '.')) ++j;
-            try {
-                double v = std::stod(s.substr(i, j - i));
-                val.push_back(v);
-            } catch (...) {
-                return std::nullopt;
-            }
-            i        = j;
-            mayUnary = false;
-        } else if (c == '(') {
-            op.push_back(c);
-            ++i;
-            mayUnary = true;
-        } else if (c == ')') {
-            while (!op.empty() && op.back() != '(') {
-                if (!apply(op.back())) return std::nullopt;
-                op.pop_back();
-            }
-            if (op.empty() || op.back() != '(') return std::nullopt;
-            op.pop_back();
-            ++i;
-            mayUnary = false;
-        } else {
-            char curOp = c;
-            if ((c == '+' || c == '-') && mayUnary) {
-                if (c == '-') curOp = '~'; // 一元负号
-                else {                     // 一元正号，忽略
-                    ++i;
-                    continue;
-                }
-            } else if (c == '+' || c == '-' || c == '*' || c == '/') {
-                // 二元
-            } else {
-                return std::nullopt;
-            }
-            while (!op.empty() && op.back() != '(' && prec(op.back()) >= prec(curOp)) {
-                if (!apply(op.back())) return std::nullopt;
-                op.pop_back();
-            }
-            op.push_back(curOp);
-            ++i;
-            mayUnary = true;
-        }
-    }
-    while (!op.empty()) {
-        if (op.back() == '(') return std::nullopt;
-        if (!apply(op.back())) return std::nullopt;
-        op.pop_back();
-    }
-    if (val.size() != 1) return std::nullopt;
-    return val.back();
-}
-
 void registerBuiltinPlaceholders() {
     auto& manager = PlaceholderManager::getInstance();
 
@@ -293,7 +183,7 @@ void registerBuiltinPlaceholders() {
                 // 先把 expr 中的占位符在“无上下文”下展开（如需上下文版本可使用上下文版 calc）
                 auto& mgr = PlaceholderManager::getInstance();
                 expr      = mgr.replacePlaceholders(expr);
-                if (auto v = evalExpr(expr)) return std::to_string(*v);
+                if (auto v = PA::Utils::evalMathExpression(expr, params)) return std::to_string(*v);
                 return "";
             }
         )
@@ -312,7 +202,7 @@ void registerBuiltinPlaceholders() {
             auto& mgr  = PlaceholderManager::getInstance();
             // 传入上下文（多态）展开 expr 内的占位符
             expr = mgr.replacePlaceholders(expr, mob);
-            if (auto v = evalExpr(expr)) return std::to_string(*v);
+            if (auto v = PA::Utils::evalMathExpression(expr, params)) return std::to_string(*v);
             return "";
         }
     );
