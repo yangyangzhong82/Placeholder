@@ -35,6 +35,21 @@ inline std::optional<std::string> evalThresholds(double v, const std::string& sp
 inline std::optional<std::string> evalMap(const std::string& raw, const std::string& spec);
 inline std::optional<std::string> evalMapCI(const std::string& raw, const std::string& spec);
 
+// 数学函数
+inline double math_sqrt(double v);
+inline double math_round(double v);
+inline double math_floor(double v);
+inline double math_ceil(double v);
+inline double math_abs(double v);
+inline double math_min(double a, double b);
+inline double math_max(double a, double b);
+
+// 数学表达式求值
+std::optional<double> evalMathExpression(
+    const std::string&                                 expression,
+    const std::unordered_map<std::string, std::string>& params
+);
+
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
     std::string&                                       out,

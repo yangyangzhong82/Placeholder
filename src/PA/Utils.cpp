@@ -1,5 +1,6 @@
 #include "Utils.h"
 
+#include "exprtk.hpp"
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -7,6 +8,9 @@
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <stack>
+#include <stdexcept>
+#include <string_view>
 
 namespace PA::Utils {
 
@@ -394,6 +398,15 @@ inline std::optional<std::string> evalMapCI(const std::string& raw, const std::s
     return evalMap(raw, spec); // 已经小写比对
 }
 
+// 数学函数实现
+inline double math_sqrt(double v) { return std::sqrt(v); }
+inline double math_round(double v) { return std::round(v); }
+inline double math_floor(double v) { return std::floor(v); }
+inline double math_ceil(double v) { return std::ceil(v); }
+inline double math_abs(double v) { return std::fabs(v); }
+inline double math_min(double a, double b) { return std::min(a, b); }
+inline double math_max(double a, double b) { return std::max(a, b); }
+
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
     std::string&                                       out,
@@ -458,8 +471,18 @@ void applyNumberFormatting(
     if (maybeNum.has_value()) {
         double v = *maybeNum;
 
-        if (auto it = params.find("abs"); it != params.end()) {
-            if (auto bv = parseBoolish(it->second); bv && *bv) v = std::fabs(v);
+        // 数学函数
+        if (auto it = params.find("math"); it != params.end()) {
+            // 尝试将当前值作为参数传入数学表达式
+            std::string expr = it->second;
+            // 替换表达式中的特殊变量 `_` 为当前值
+            size_t pos = expr.find("_");
+            if (pos != std::string::npos) {
+                expr.replace(pos, 1, formatNumber(v, -1, false)); // 使用原始值，不进行格式化
+            }
+            if (auto result = evalMathExpression(expr, params)) {
+                v = *result;
+            }
         }
 
         int  decimals = -1;
@@ -610,6 +633,7 @@ void applyTextEffects(
                     esc.push_back(c);
                     break;
                 }
+                // TODO: 更多控制字符转义
             }
             out.swap(esc);
         }
@@ -680,6 +704,43 @@ void applyTextEffects(
         if (auto it = params.find("emptytext"); it != params.end()) out = it->second;
     }
 }
+
+std::optional<double> evalMathExpression(
+    const std::string&                                 expression_str,
+    const std::unordered_map<std::string, std::string>& params
+) {
+    using namespace exprtk;
+
+    symbol_table<double> symbol_table;
+
+    // 注册变量
+    for (const auto& [key, value_str] : params) {
+        if (auto num = parseDouble(value_str)) {
+            symbol_table.add_variable(key, *num);
+        }
+    }
+
+    // 注册数学函数
+    symbol_table.add_function("sqrt",  math_sqrt);
+    symbol_table.add_function("round", math_round);
+    symbol_table.add_function("floor", math_floor);
+    symbol_table.add_function("ceil",  math_ceil);
+    symbol_table.add_function("abs",   math_abs);
+    symbol_table.add_function("min",   math_min);
+    symbol_table.add_function("max",   math_max);
+
+    expression<double> expression;
+    expression.register_symbol_table(symbol_table);
+
+    parser<double> parser;
+    if (!parser.compile(expression_str, expression)) {
+        // 编译失败，返回空
+        return std::nullopt;
+    }
+
+    return expression.value();
+}
+
 
 std::string applyFormatting(const std::string& rawValue, const std::string& paramStr) {
     if (paramStr.empty()) return rawValue;

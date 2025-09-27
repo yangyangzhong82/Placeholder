@@ -471,11 +471,8 @@ PlaceholderManager::replacePlaceholdersImpl(const std::string& text, const Place
         std::string finalOut;
         if (replaced) {
             // 格式化
-            if (!paramString.empty()) {
-                finalOut = PA::Utils::applyFormatting(replaced_val, paramString);
-            } else {
-                finalOut = replaced_val;
-            }
+            // paramString 已经递归处理过，现在可以直接解析并应用格式
+            finalOut = PA::Utils::applyFormatting(replaced_val, paramString);
         } else {
             // 保留原样
             finalOut = "{" + inside + "}";
