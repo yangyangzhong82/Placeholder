@@ -396,69 +396,54 @@ PlaceholderManager::replacePlaceholdersAsync(const std::string& text, const Plac
 std::future<std::string>
 PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx) {
     auto futures = std::make_shared<std::vector<std::future<std::string>>>();
+    futures->reserve(tpl.tokens.size());
 
-    // Use a local recursive lambda to process templates and collect futures.
-    // Pass depth to control recursion.
-    std::function<void(const CompiledTemplate&, int)> process;
-    process = [&](const CompiledTemplate& currentTpl, int depth) {
-        if (depth > mMaxRecursionDepth) {
-            return;
-        }
-
-        for (const auto& token : currentTpl.tokens) {
-            if (auto* literal = std::get_if<LiteralToken>(&token)) {
-                std::promise<std::string> p;
-                std::string               unescaped;
-                std::string_view          text = literal->text;
-                unescaped.reserve(text.size());
-                for (size_t i = 0; i < text.size(); ++i) {
-                    if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
-                        if (text[i] == '{' && text[i + 1] == '{') {
-                            unescaped.push_back('{');
-                            i++; // Skip the second brace
-                            continue;
-                        }
-                        if (text[i] == '}' && text[i + 1] == '}') {
-                            unescaped.push_back('}');
-                            i++; // Skip the second brace
-                            continue;
-                        }
+    for (const auto& token : tpl.tokens) {
+        if (auto* literal = std::get_if<LiteralToken>(&token)) {
+            std::promise<std::string> p;
+            std::string               unescaped;
+            std::string_view          text = literal->text;
+            unescaped.reserve(text.size());
+            for (size_t i = 0; i < text.size(); ++i) {
+                if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
+                    if (text[i] == '{' && text[i + 1] == '{') {
+                        unescaped.push_back('{');
+                        i++; // Skip the second brace
+                        continue;
                     }
-                    unescaped.push_back(text[i]);
+                    if (text[i] == '}' && text[i + 1] == '}') {
+                        unescaped.push_back('}');
+                        i++; // Skip the second brace
+                        continue;
+                    }
                 }
-                p.set_value(unescaped);
-                futures->push_back(p.get_future());
-            } else if (auto* ph_token = std::get_if<PlaceholderToken>(&token)) {
-                // For each placeholder, enqueue a task to resolve it.
-                auto ph_future =
-                    mThreadPool->enqueue([this, ph_token, &ctx, depth]() -> std::string {
-                        // Resolve params and default value SYNCHRONOUSLY to avoid deadlocks.
-                        std::string paramString;
-                        if (ph_token->paramsTemplate) {
-                            paramString = replacePlaceholdersSync(*ph_token->paramsTemplate, ctx, depth + 1);
-                        }
-
-                        std::string defaultText;
-                        if (ph_token->defaultTemplate) {
-                            defaultText = replacePlaceholdersSync(*ph_token->defaultTemplate, ctx, depth + 1);
-                        }
-
-                        // Execute the placeholder asynchronously. The new signature doesn't need ReplaceState.
-                        auto resultFut = executePlaceholderAsync(
-                            ph_token->pluginName,
-                            ph_token->placeholderName,
-                            paramString,
-                            defaultText,
-                            ctx
-                        );
-                        return resultFut.get();
-                    });
-                futures->push_back(std::move(ph_future));
+                unescaped.push_back(text[i]);
             }
-        }
-    };
+            p.set_value(std::move(unescaped));
+            futures->push_back(p.get_future());
+        } else if (auto* ph_token = std::get_if<PlaceholderToken>(&token)) {
+            // Resolve params and default value SYNCHRONOUSLY on the calling thread.
+            std::string paramString;
+            if (ph_token->paramsTemplate) {
+                paramString = replacePlaceholdersSync(*ph_token->paramsTemplate, ctx, 1);
+            }
 
-    process(tpl, 0);
+            std::string defaultText;
+            if (ph_token->defaultTemplate) {
+                defaultText = replacePlaceholdersSync(*ph_token->defaultTemplate, ctx, 1);
+            }
+
+            // Execute the placeholder asynchronously and get a future.
+            auto ph_future = executePlaceholderAsync(
+                ph_token->pluginName,
+                ph_token->placeholderName,
+                paramString,
+                defaultText,
+                ctx
+            );
+            futures->push_back(std::move(ph_future));
+        }
+    }
 
     // Enqueue a final task that waits for all futures and concatenates the results.
     return mThreadPool->enqueue([futures, sourceSize = tpl.source.size()]() -> std::string {
