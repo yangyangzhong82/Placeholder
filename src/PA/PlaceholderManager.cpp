@@ -806,35 +806,76 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     }
 
     // 2. 检查异步上下文占位符
+    struct AsyncCandidate {
+        std::vector<Caster>                                        chain;
+        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
+        std::optional<CacheDuration>                                 cacheDuration;
+    };
+    std::vector<std::pair<int, AsyncCandidate>> asyncCandidates;
+
+    std::vector<AsyncTypedReplacer> potentialAsyncReplacers;
     {
         std::shared_lock lk(mMutex);
-        auto             plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
-        if (plugin_it != mAsyncContextPlaceholders.end()) {
-            auto ph_it = plugin_it->second.find(std::string(placeholderName));
-            if (ph_it != plugin_it->second.end()) {
-                // (简化) 我们只处理第一个匹配的候选，不处理继承链以简化实现
-                for (const auto& entry : ph_it->second) {
-                    if (entry.targetTypeId == ctx.typeId) {
-                        PA::Utils::ParsedParams params(paramString);
-                        auto                    fut = std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)
-                                       ? std::get<AsyncAnyPtrReplacer>(entry.fn)(ctx.ptr)
-                                       : std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(ctx.ptr, params);
-
-                        // 缓存结果
-                        if (entry.cacheDuration) {
-                            auto cacheKeyCopy = cacheKey; // 捕获副本
-                            return mThreadPool->enqueue([this, fut = std::move(fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
-                                std::string result = fut.get();
-                                std::unique_lock lk(mMutex);
-                                mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
-                                return result;
-                            });
-                        }
-                        return fut;
-                    }
+        if (ctx.ptr != nullptr && ctx.typeId != 0) {
+            auto plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
+            if (plugin_it != mAsyncContextPlaceholders.end()) {
+                auto ph_it = plugin_it->second.find(std::string(placeholderName));
+                if (ph_it != plugin_it->second.end()) {
+                    potentialAsyncReplacers = ph_it->second;
                 }
             }
         }
+    }
+
+    for (auto& entry : potentialAsyncReplacers) {
+        std::vector<Caster> chain;
+        if (entry.targetTypeId == ctx.typeId) {
+            asyncCandidates.push_back({0, AsyncCandidate{{}, entry.fn, entry.cacheDuration}});
+        } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
+            asyncCandidates.push_back({(int)chain.size(), AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration}});
+        }
+    }
+
+    if (!asyncCandidates.empty()) {
+        std::sort(asyncCandidates.begin(), asyncCandidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
+    }
+
+    PA::Utils::ParsedParams params(paramString);
+    bool                    allowEmpty = params.getBool("allowempty").value_or(false);
+
+    std::future<std::string> async_replaced_fut;
+    bool                     async_replaced = false;
+
+    for (auto& [dist, cand] : asyncCandidates) {
+        void* p = ctx.ptr;
+        for (auto& cfun : cand.chain) {
+            p = cfun(p);
+            if (!p) break;
+        }
+        if (!p) continue;
+
+        if (std::holds_alternative<AsyncAnyPtrReplacer>(cand.fn)) {
+            async_replaced_fut = std::get<AsyncAnyPtrReplacer>(cand.fn)(p);
+        } else {
+            async_replaced_fut = std::get<AsyncAnyPtrReplacerWithParams>(cand.fn)(p, params);
+        }
+
+        // 异步占位符的缓存处理
+        if (cand.cacheDuration) {
+            auto cacheKeyCopy = cacheKey; // 捕获副本
+            async_replaced_fut = mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *cand.cacheDuration]() mutable {
+                std::string result = fut.get();
+                std::unique_lock lk(mMutex);
+                mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
+                return result;
+            });
+        }
+        async_replaced = true;
+        break; // 找到第一个匹配的就停止
+    }
+
+    if (async_replaced) {
+        return async_replaced_fut;
     }
 
     // 3. 检查异步服务器占位符
@@ -846,29 +887,73 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             if (placeholder_it != plugin_it->second.end()) {
                 PA::Utils::ParsedParams params(paramString);
                 const auto&             entry = placeholder_it->second;
-                auto                    fut   = std::holds_alternative<AsyncServerReplacer>(entry.fn)
+                async_replaced_fut = std::holds_alternative<AsyncServerReplacer>(entry.fn)
                                   ? std::get<AsyncServerReplacer>(entry.fn)()
                                   : std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
 
                 // 缓存结果
                 if (entry.cacheDuration) {
                     auto cacheKeyCopy = cacheKey; // 捕获副本
-                    return mThreadPool->enqueue([this, fut = std::move(fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
+                    async_replaced_fut = mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *entry.cacheDuration]() mutable {
                         std::string result = fut.get();
                         std::unique_lock lk(mMutex);
                         mGlobalCache[cacheKeyCopy] = {result, std::chrono::steady_clock::now() + duration};
                         return result;
                     });
                 }
-                return fut;
+                async_replaced = true;
             }
         }
     }
 
-    // 4. 如果没有找到异步占位符，则回退到同步执行，并将其结果包装在 future 中
-    std::promise<std::string> promise;
-    promise.set_value(executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cacheDuration));
-    return promise.get_future();
+    // 4. 如果没有找到异步占位符，则回退到同步执行
+    if (!async_replaced) {
+        std::promise<std::string> promise;
+        promise.set_value(executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cacheDuration));
+        async_replaced_fut = promise.get_future();
+    }
+
+    // 统一处理异步结果的格式化和默认值
+    return mThreadPool->enqueue([this, fut = std::move(async_replaced_fut), pluginName, placeholderName, paramString, defaultText, allowEmpty, cacheKey, cacheDuration]() mutable {
+        std::string replaced_val = fut.get();
+        std::string finalOut;
+        bool        replaced = !replaced_val.empty() || allowEmpty;
+
+        if (replaced) {
+            PA::Utils::ParsedParams params(paramString); // 重新解析参数以应用格式化
+            finalOut = PA::Utils::applyFormatting(replaced_val, params);
+        } else {
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.warn(
+                    "Placeholder '{}:{}' not found or returned empty. Context ptr: {}. Params: '{}'.",
+                    std::string(pluginName),
+                    std::string(placeholderName),
+                    reinterpret_cast<uintptr_t>(nullptr), // ctx.ptr 无法在此处直接访问，使用 nullptr
+                    paramString
+                );
+            }
+            // 保留原样
+            finalOut.reserve(pluginName.size() + placeholderName.size() + defaultText.size() + paramString.size() + 5);
+            finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+            if (!defaultText.empty()) finalOut.append(":-").append(defaultText);
+            if (!paramString.empty()) finalOut.append("|").append(paramString);
+            finalOut.append("}");
+        }
+
+        if (finalOut.empty() && !defaultText.empty()) {
+            finalOut = defaultText;
+        }
+
+        // 写入单次替换缓存 (这里是异步线程中的缓存，与同步的 ReplaceState::cache 不同)
+        // st.cache.emplace(cacheKey, finalOut); // ReplaceState::cache 是同步的，不能在这里修改
+
+        // 写入全局缓存 (如果之前没有被异步占位符的缓存逻辑处理过)
+        if (cacheDuration && replaced) {
+            std::unique_lock lk(mMutex);
+            mGlobalCache[cacheKey] = {finalOut, std::chrono::steady_clock::now() + *cacheDuration};
+        }
+        return finalOut;
+    });
 }
 
 // [新] 使用编译模板进行替换
