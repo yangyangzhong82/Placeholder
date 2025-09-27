@@ -14,6 +14,121 @@
 
 namespace PA::Utils {
 
+// 内部使用的参数解析实现
+static std::unordered_map<std::string, std::string> parseParamsInternal(const std::string& paramStr) {
+    // 支持引号、转义：key=value;key2="a;b\"c";key3='x\';y'
+    std::unordered_map<std::string, std::string> params;
+    std::string                                  s = paramStr;
+    size_t                                       i = 0, n = s.size();
+
+    auto skipSpaces = [&]() {
+        while (i < n && std::isspace((unsigned char)s[i])) ++i;
+    };
+    auto readKey = [&]() -> std::string {
+        size_t start = i;
+        while (i < n && s[i] != '=' && s[i] != ';') ++i;
+        return trim(s.substr(start, i - start));
+    };
+    auto readValue = [&]() -> std::string {
+        if (i >= n) return "";
+        if (s[i] == '"' || s[i] == '\'') {
+            char        quote = s[i++];
+            std::string val;
+            while (i < n) {
+                char c = s[i++];
+                if (c == '\\') {
+                    if (i < n) {
+                        char esc = s[i++];
+                        switch (esc) {
+                        case 'n':
+                            val.push_back('\n');
+                            break;
+                        case 't':
+                            val.push_back('\t');
+                            break;
+                        case 'r':
+                            val.push_back('\r');
+                            break;
+                        default:
+                            val.push_back(esc);
+                            break;
+                        }
+                    }
+                } else if (c == quote) {
+                    break;
+                } else {
+                    val.push_back(c);
+                }
+            }
+            return val;
+        } else {
+            size_t start = i;
+            while (i < n && s[i] != ';') ++i;
+            return trim(s.substr(start, i - start));
+        }
+    };
+
+    while (i < n) {
+        skipSpaces();
+        if (i >= n) break;
+        std::string key = readKey();
+        if (i < n && s[i] == '=') {
+            ++i;
+            std::string val      = readValue();
+            params[toLower(key)] = val;
+        } else {
+            if (!key.empty()) params[toLower(key)] = "";
+        }
+        if (i < n && s[i] == ';') ++i;
+    }
+    return params;
+}
+
+
+// ParsedParams 实现
+ParsedParams::ParsedParams(const std::string& paramStr) { mParams = parseParamsInternal(paramStr); }
+
+std::optional<std::string_view> ParsedParams::get(const std::string& key) const {
+    auto it = mParams.find(key);
+    if (it != mParams.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> ParsedParams::getBool(const std::string& key) const {
+    auto it = mBoolCache.find(key);
+    if (it != mBoolCache.end()) return it->second;
+
+    auto val = get(key);
+    if (!val) return mBoolCache[key] = std::nullopt;
+
+    return mBoolCache[key] = parseBoolish(std::string(*val));
+}
+
+std::optional<int> ParsedParams::getInt(const std::string& key) const {
+    auto it = mIntCache.find(key);
+    if (it != mIntCache.end()) return it->second;
+
+    auto val = get(key);
+    if (!val) return mIntCache[key] = std::nullopt;
+
+    return mIntCache[key] = parseInt(std::string(*val));
+}
+
+std::optional<double> ParsedParams::getDouble(const std::string& key) const {
+    auto it = mDoubleCache.find(key);
+    if (it != mDoubleCache.end()) return it->second;
+
+    auto val = get(key);
+    if (!val) return mDoubleCache[key] = std::nullopt;
+
+    return mDoubleCache[key] = parseDouble(std::string(*val));
+}
+
+bool ParsedParams::has(const std::string& key) const { return mParams.count(key) > 0; }
+
+
 inline bool isSpace(unsigned char ch) { return std::isspace(ch) != 0; }
 
 inline std::string ltrim(std::string s) {
@@ -213,75 +328,6 @@ inline std::string siScale(double v, int base, int decimals, bool doRound) {
     return oss.str();
 }
 
-inline std::unordered_map<std::string, std::string> parseParams(const std::string& paramStr) {
-    // 支持引号、转义：key=value;key2="a;b\"c";key3='x\';y'
-    std::unordered_map<std::string, std::string> params;
-    std::string                                  s = paramStr;
-    size_t                                       i = 0, n = s.size();
-
-    auto skipSpaces = [&]() {
-        while (i < n && isSpace((unsigned char)s[i])) ++i;
-    };
-    auto readKey = [&]() -> std::string {
-        size_t start = i;
-        while (i < n && s[i] != '=' && s[i] != ';') ++i;
-        return trim(s.substr(start, i - start));
-    };
-    auto readValue = [&]() -> std::string {
-        if (i >= n) return "";
-        if (s[i] == '"' || s[i] == '\'') {
-            char        quote = s[i++];
-            std::string val;
-            while (i < n) {
-                char c = s[i++];
-                if (c == '\\') {
-                    if (i < n) {
-                        char esc = s[i++];
-                        switch (esc) {
-                        case 'n':
-                            val.push_back('\n');
-                            break;
-                        case 't':
-                            val.push_back('\t');
-                            break;
-                        case 'r':
-                            val.push_back('\r');
-                            break;
-                        default:
-                            val.push_back(esc);
-                            break;
-                        }
-                    }
-                } else if (c == quote) {
-                    break;
-                } else {
-                    val.push_back(c);
-                }
-            }
-            return val;
-        } else {
-            size_t start = i;
-            while (i < n && s[i] != ';') ++i;
-            return trim(s.substr(start, i - start));
-        }
-    };
-
-    while (i < n) {
-        skipSpaces();
-        if (i >= n) break;
-        std::string key = readKey();
-        if (i < n && s[i] == '=') {
-            ++i;
-            std::string val      = readValue();
-            params[toLower(key)] = val;
-        } else {
-            if (!key.empty()) params[toLower(key)] = "";
-        }
-        if (i < n && s[i] == ';') ++i;
-    }
-    return params;
-}
-
 inline std::string formatNumber(double x, int decimals, bool doRound) {
     if (decimals < 0) {
         // 默认尽可能精简地输出
@@ -409,54 +455,51 @@ inline double math_max(double a, double b) { return std::max(a, b); }
 
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
-    std::string&                                       out,
-    const std::string&                                 rawValue,
-    const std::optional<double>&                       maybeNum,
-    const std::unordered_map<std::string, std::string>& params
+    std::string&                 out,
+    const std::string&           rawValue,
+    const std::optional<double>& maybeNum,
+    const ParsedParams&          params
 ) {
-    if (auto it = params.find("cond"); it != params.end()) {
+    if (auto cond = params.get("cond")) {
         if (maybeNum) {
-            bool ok = matchCond(*maybeNum, it->second);
+            bool ok = matchCond(*maybeNum, std::string(*cond));
             if (ok) {
-                if (auto th = params.find("then"); th != params.end()) out = th->second;
+                if (auto th = params.get("then")) out = *th;
             } else {
-                if (auto el = params.find("else"); el != params.end()) out = el->second;
+                if (auto el = params.get("else")) out = *el;
             }
         }
     }
-    if (auto it = params.find("equals"); it != params.end()) {
-        bool ci = false;
-        if (auto ciit = params.find("ci"); ciit != params.end()) {
-            if (auto bv = parseBoolish(ciit->second)) ci = *bv;
-        }
-        bool ok = ci ? iequals(out, it->second) : (trim(out) == trim(it->second));
+    if (auto equals = params.get("equals")) {
+        bool ci = params.getBool("ci").value_or(false);
+        bool ok = ci ? iequals(out, std::string(*equals)) : (trim(out) == trim(std::string(*equals)));
         if (ok) {
-            if (auto th = params.find("then"); th != params.end()) out = th->second;
+            if (auto th = params.get("then")) out = *th;
         } else {
-            if (auto el = params.find("else"); el != params.end()) out = el->second;
+            if (auto el = params.get("else")) out = *el;
         }
     }
 }
 
 // 辅助函数：处理布尔值专用映射
 void applyBooleanFormatting(
-    std::string&                                       out,
-    const std::optional<bool>&                         maybeBool,
-    const std::unordered_map<std::string, std::string>& params
+    std::string&               out,
+    const std::optional<bool>& maybeBool,
+    const ParsedParams&        params
 ) {
     if (maybeBool.has_value()) {
         bool b   = *maybeBool;
-        auto itT = params.find("truetext");
-        auto itF = params.find("falsetext");
-        if (itT != params.end() || itF != params.end()) {
-            out = b ? (itT != params.end() ? itT->second : "true") : (itF != params.end() ? itF->second : "false");
-        } else if (auto itMap = params.find("map"); itMap != params.end()) {
-            auto mapped = evalMap(b ? "true" : "false", itMap->second);
-            if (!mapped) mapped = evalMap(b ? "1" : "0", itMap->second);
+        auto itT = params.get("truetext");
+        auto itF = params.get("falsetext");
+        if (itT || itF) {
+            out = b ? (itT ? std::string(*itT) : "true") : (itF ? std::string(*itF) : "false");
+        } else if (auto itMap = params.get("map")) {
+            auto mapped = evalMap(b ? "true" : "false", std::string(*itMap));
+            if (!mapped) mapped = evalMap(b ? "1" : "0", std::string(*itMap));
             if (mapped) out = *mapped;
-        } else if (auto itMapci = params.find("mapci"); itMapci != params.end()) {
-            auto mapped = evalMapCI(b ? "true" : "false", itMapci->second);
-            if (!mapped) mapped = evalMapCI(b ? "1" : "0", itMapci->second);
+        } else if (auto itMapci = params.get("mapci")) {
+            auto mapped = evalMapCI(b ? "true" : "false", std::string(*itMapci));
+            if (!mapped) mapped = evalMapCI(b ? "1" : "0", std::string(*itMapci));
             if (mapped) out = *mapped;
         }
     }
@@ -464,63 +507,49 @@ void applyBooleanFormatting(
 
 // 辅助函数：处理数字格式化
 void applyNumberFormatting(
-    std::string&                                       out,
-    const std::optional<double>&                       maybeNum,
-    const std::unordered_map<std::string, std::string>& params
+    std::string&                 out,
+    const std::optional<double>& maybeNum,
+    const ParsedParams&          params
 ) {
     if (maybeNum.has_value()) {
         double v = *maybeNum;
 
         // 数学函数
-        if (auto it = params.find("math"); it != params.end()) {
+        if (auto exprOpt = params.get("math")) {
             // 尝试将当前值作为参数传入数学表达式
-            std::string expr = it->second;
+            std::string expr = std::string(*exprOpt);
             // 替换表达式中的特殊变量 `_` 为当前值
-            size_t pos = expr.find("_");
-            if (pos != std::string::npos) {
-                expr.replace(pos, 1, formatNumber(v, -1, false)); // 使用原始值，不进行格式化
+            std::string formatted_v = formatNumber(v, -1, false); // 使用原始值，不进行格式化
+            size_t      pos         = expr.find("_");
+            while (pos != std::string::npos) {
+                expr.replace(pos, 1, formatted_v);
+                pos = expr.find("_", pos + formatted_v.length());
             }
             if (auto result = evalMathExpression(expr, params)) {
                 v = *result;
             }
         }
 
-        int  decimals = -1;
-        bool doRound  = true;
-        if (auto it = params.find("decimals"); it != params.end()) {
-            if (auto iv = parseInt(it->second)) decimals = *iv;
-        }
-        if (auto it = params.find("round"); it != params.end()) {
-            if (auto bv = parseBoolish(it->second)) doRound = *bv;
-        }
+        int  decimals = params.getInt("decimals").value_or(-1);
+        bool doRound  = params.getBool("round").value_or(true);
 
         // SI 缩放
-        if (auto it = params.find("si"); it != params.end()) {
-            if (auto bv = parseBoolish(it->second); bv && *bv) {
-                int base = 1000;
-                if (auto b = params.find("base"); b != params.end()) {
-                    if (auto iv = parseInt(b->second)) base = (*iv == 1024 ? 1024 : 1000);
-                }
-                out = siScale(v, base, decimals < 0 ? 2 : decimals, doRound);
-            } else {
-                // 默认数字格式
-                out = formatNumber(v, decimals, doRound);
-            }
+        if (params.getBool("si").value_or(false)) {
+            int base = params.getInt("base").value_or(1000) == 1024 ? 1024 : 1000;
+            out      = siScale(v, base, decimals < 0 ? 2 : decimals, doRound);
         } else {
+            // 默认数字格式
             out = formatNumber(v, decimals, doRound);
         }
 
         // 阈值 -> 样式/文本
-        if (auto it = params.find("thresholds"); it != params.end()) {
-            if (auto matched = evalThresholds(v, it->second)) {
+        if (auto it = params.get("thresholds")) {
+            if (auto matched = evalThresholds(v, std::string(*it))) {
                 std::string codes = styleSpecToCodes(*matched);
                 if (!codes.empty()) {
                     out = codes + out;
                 } else {
-                    bool showValue = true;
-                    if (auto sv = params.find("showvalue"); sv != params.end()) {
-                        if (auto bv = parseBoolish(sv->second)) showValue = *bv;
-                    }
+                    bool showValue = params.getBool("showvalue").value_or(true);
                     if (!showValue) {
                         out = *matched;
                     } else {
@@ -534,27 +563,25 @@ void applyNumberFormatting(
 
 // 辅助函数：处理通用映射
 void applyStringMapping(
-    std::string&                                       out,
-    const std::optional<bool>&                         maybeBool,
+    std::string&               out,
+    const std::optional<bool>& maybeBool,
     const std::optional<double>&                       maybeNum,
-    const std::unordered_map<std::string, std::string>& params
+    const ParsedParams&        params
 ) {
     if (!maybeBool.has_value() && !maybeNum.has_value()) {
-        if (auto it = params.find("map"); it != params.end()) {
-            if (auto mapped = evalMap(out, it->second)) out = *mapped;
-        } else if (auto it = params.find("mapci"); it != params.end()) {
-            if (auto mapped = evalMapCI(out, it->second)) out = *mapped;
+        if (auto it = params.get("map")) {
+            if (auto mapped = evalMap(out, std::string(*it))) out = *mapped;
+        } else if (auto it = params.get("mapci")) {
+            if (auto mapped = evalMapCI(out, std::string(*it))) out = *mapped;
         }
     }
 }
 
 // 辅助函数：处理字符串替换
-void applyStringReplacement(
-    std::string&                                       out,
-    const std::unordered_map<std::string, std::string>& params
-) {
-    if (auto it = params.find("repl"); it != params.end()) {
-        std::stringstream ss(it->second);
+void applyStringReplacement(std::string& out, const ParsedParams& params) {
+    if (auto it = params.get("repl")) {
+        std::string       replStr(*it);
+        std::stringstream ss(replStr);
         std::string       item;
         while (std::getline(ss, item, ',')) {
             auto arrow = item.find("->");
@@ -573,12 +600,9 @@ void applyStringReplacement(
 }
 
 // 辅助函数：处理大小写转换
-void applyCaseConversion(
-    std::string&                                       out,
-    const std::unordered_map<std::string, std::string>& params
-) {
-    if (auto it = params.find("case"); it != params.end()) {
-        auto v = toLower(it->second);
+void applyCaseConversion(std::string& out, const ParsedParams& params) {
+    if (auto it = params.get("case")) {
+        auto v = toLower(std::string(*it));
         if (v == "lower") {
             std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return (char)std::tolower(c); });
         } else if (v == "upper") {
@@ -598,136 +622,125 @@ void applyCaseConversion(
 }
 
 // 辅助函数：处理文本效果（去色码、JSON转义、千分位、颜色/样式、前缀/后缀、截断、对齐/填充、颜色复位、空值处理）
-void applyTextEffects(
-    std::string&                                       out,
-    const std::unordered_map<std::string, std::string>& params
-) {
+void applyTextEffects(std::string& out, const ParsedParams& params) {
     // 去色码
-    if (auto it = params.find("stripcodes"); it != params.end()) {
-        if (auto bv = parseBoolish(it->second); bv && *bv) out = stripColorCodes(out);
+    if (params.getBool("stripcodes").value_or(false)) {
+        out = stripColorCodes(out);
     }
 
     // JSON 转义
-    if (auto it = params.find("json"); it != params.end()) {
-        if (auto bv = parseBoolish(it->second); bv && *bv) {
-            std::string esc;
-            esc.reserve(out.size() * 1.2);
-            for (char c : out) {
-                switch (c) {
-                case '\\':
-                    esc += "\\\\";
-                    break;
-                case '"':
-                    esc += "\\\"";
-                    break;
-                case '\n':
-                    esc += "\\n";
-                    break;
-                case '\r':
-                    esc += "\\r";
-                    break;
-                case '\t':
-                    esc += "\\t";
-                    break;
-                default:
-                    esc.push_back(c);
-                    break;
-                }
-                // TODO: 更多控制字符转义
+    if (params.getBool("json").value_or(false)) {
+        std::string esc;
+        esc.reserve(out.size() * 1.2);
+        for (char c : out) {
+            switch (c) {
+            case '\\':
+                esc += "\\\\";
+                break;
+            case '"':
+                esc += "\\\"";
+                break;
+            case '\n':
+                esc += "\\n";
+                break;
+            case '\r':
+                esc += "\\r";
+                break;
+            case '\t':
+                esc += "\\t";
+                break;
+            default:
+                esc.push_back(c);
+                break;
             }
-            out.swap(esc);
+            // TODO: 更多控制字符转义
         }
+        out.swap(esc);
     }
 
     // 千分位
-    if (auto it = params.find("commas"); it != params.end()) {
-        if (auto bv = parseBoolish(it->second); bv && *bv) out = addThousandSeparators(out);
+    if (params.getBool("commas").value_or(false)) {
+        out = addThousandSeparators(out);
     }
 
     // 颜色/样式
-    if (auto it = params.find("color"); it != params.end()) {
-        std::string codes = styleSpecToCodes(it->second);
+    if (auto it = params.get("color")) {
+        std::string codes = styleSpecToCodes(std::string(*it));
         if (!codes.empty()) out = codes + out;
     }
 
     // 前后缀
-    if (auto it = params.find("prefix"); it != params.end()) out = it->second + out;
-    if (auto it = params.find("suffix"); it != params.end()) out += it->second;
+    if (auto it = params.get("prefix")) out = std::string(*it) + out;
+    if (auto it = params.get("suffix")) out += std::string(*it);
 
     // 截断
-    if (auto it = params.find("maxlen"); it != params.end()) {
-        if (auto iv = parseInt(it->second)) {
-            int maxlen = std::max(0, *iv);
-            int vis    = (int)visibleLength(out);
-            if (vis > maxlen) {
-                std::string ell = "...";
-                if (auto e = params.find("ellipsis"); e != params.end()) ell = e->second;
-                // 简化处理：按字节近似截断
-                if ((int)out.size() > maxlen) out.resize((size_t)maxlen);
-                out += ell;
-            }
+    if (auto maxlenOpt = params.getInt("maxlen")) {
+        int maxlen = std::max(0, *maxlenOpt);
+        int vis    = (int)visibleLength(out);
+        if (vis > maxlen) {
+            std::string ell = "...";
+            if (auto e = params.get("ellipsis")) ell = *e;
+            // 简化处理：按字节近似截断
+            if ((int)out.size() > maxlen) out.resize((size_t)maxlen);
+            out += ell;
         }
     }
 
     // 对齐/填充
-    int width = 0;
-    if (auto it = params.find("width"); it != params.end()) {
-        if (auto iv = parseInt(it->second)) width = *iv;
-    }
-    if (width > 0) {
-        char fill = ' ';
-        if (auto it = params.find("fill"); it != params.end() && !it->second.empty()) fill = it->second[0];
-        std::string align = "left";
-        if (auto it = params.find("align"); it != params.end()) align = toLower(trim(it->second));
-        int vis = (int)visibleLength(out);
-        if (vis < width) {
-            int         pad = width - vis;
-            std::string pads((size_t)pad, fill);
-            if (align == "right") {
-                out = pads + out;
-            } else if (align == "center" || align == "centre") {
-                int left  = pad / 2;
-                int right = pad - left;
-                out       = std::string((size_t)left, fill) + out + std::string((size_t)right, fill);
-            } else {
-                out = out + pads;
+    if (auto widthOpt = params.getInt("width")) {
+        int width = *widthOpt;
+        if (width > 0) {
+            char        fill  = params.get("fill").value_or(" ").front();
+            std::string align = toLower(trim(std::string(params.get("align").value_or("left"))));
+            int         vis   = (int)visibleLength(out);
+            if (vis < width) {
+                int         pad = width - vis;
+                std::string pads((size_t)pad, fill);
+                if (align == "right") {
+                    out = pads + out;
+                } else if (align == "center" || align == "centre") {
+                    int left  = pad / 2;
+                    int right = pad - left;
+                    out       = std::string((size_t)left, fill) + out + std::string((size_t)right, fill);
+                } else {
+                    out = out + pads;
+                }
             }
         }
     }
 
     // 颜色复位
-    if (auto it = params.find("reset"); it != params.end()) {
-        if (auto bv = parseBoolish(it->second); bv && *bv) out += "§r";
+    if (params.getBool("reset").value_or(false)) {
+        out += "§r";
     }
 
     if (out.empty()) {
-        if (auto it = params.find("emptytext"); it != params.end()) out = it->second;
+        if (auto it = params.get("emptytext")) out = *it;
     }
 }
 
-std::optional<double> evalMathExpression(
-    const std::string&                                 expression_str,
-    const std::unordered_map<std::string, std::string>& params
-) {
+std::optional<double> evalMathExpression(const std::string& expression_str, const ParsedParams& params) {
     using namespace exprtk;
 
-    symbol_table<double> symbol_table;
+    symbol_table<double>                    symbol_table;
+    std::unordered_map<std::string, double> variables; // 持久化存储变量
 
     // 注册变量
-    for (const auto& [key, value_str] : params) {
+    for (const auto& [key, value_str] : params.getRawParams()) {
         if (auto num = parseDouble(value_str)) {
-            symbol_table.add_variable(key, *num);
+            variables[key] = *num; // 存储实际值
+            symbol_table.add_variable(key, variables[key]); // 传入持久化存储的引用
         }
     }
 
     // 注册数学函数
-    symbol_table.add_function("sqrt",  math_sqrt);
+    symbol_table.add_function("sqrt", math_sqrt);
     symbol_table.add_function("round", math_round);
     symbol_table.add_function("floor", math_floor);
-    symbol_table.add_function("ceil",  math_ceil);
-    symbol_table.add_function("abs",   math_abs);
-    symbol_table.add_function("min",   math_min);
-    symbol_table.add_function("max",   math_max);
+    symbol_table.add_function("ceil", math_ceil);
+    symbol_table.add_function("abs", math_abs);
+    symbol_table.add_function("min", math_min);
+    symbol_table.add_function("max", math_max);
 
     expression<double> expression;
     expression.register_symbol_table(symbol_table);
@@ -741,11 +754,8 @@ std::optional<double> evalMathExpression(
     return expression.value();
 }
 
-
-std::string applyFormatting(const std::string& rawValue, const std::string& paramStr) {
-    if (paramStr.empty()) return rawValue;
-    auto params = parseParams(paramStr);
-
+// 新接口
+std::string applyFormatting(const std::string& rawValue, const ParsedParams& params) {
     auto maybeBool = parseBoolish(rawValue);
     auto maybeNum  = parseDouble(rawValue);
 
@@ -761,6 +771,13 @@ std::string applyFormatting(const std::string& rawValue, const std::string& para
 
     return out;
 }
+
+// 旧接口，内部转换为新接口
+std::string applyFormatting(const std::string& rawValue, const std::string& paramStr) {
+    if (paramStr.empty()) return rawValue;
+    return applyFormatting(rawValue, ParsedParams(paramStr));
+}
+
 
 // 寻找分隔符（忽略花括号中的内容以及引号内内容）
 std::optional<size_t> findSepOutside(std::string_view s, std::string_view needle) {

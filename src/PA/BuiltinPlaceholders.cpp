@@ -59,7 +59,8 @@ static std::optional<double> evalExpr(std::string_view expr) {
             val.push_back(a * b);
             break;
         case '/':
-            val.push_back(b == 0.0 ? 0.0 : a / b);
+            if (b == 0.0) return false; // 除以零，返回失败
+            val.push_back(a / b);
             break;
         default:
             return false;
@@ -217,13 +218,10 @@ void registerBuiltinPlaceholders() {
 
     // --- 新增：随机数 ---
     // 用法：{pa:random|min=1;max=10}，支持小数与整数（输出仍由 decimals/round 等参数控制）
-    manager.registerServerPlaceholderWithParams("pa", "random", [](std::string_view params) -> std::string {
-        auto   m  = PA::Utils::parseParams(std::string(params));
-        double lo = 0.0, hi = 1.0;
-        if (auto it = m.find("min"); it != m.end())
-            if (auto v = PA::Utils::parseDouble(it->second)) lo = *v;
-        if (auto it = m.find("max"); it != m.end())
-            if (auto v = PA::Utils::parseDouble(it->second)) hi = *v;
+    manager.registerServerPlaceholderWithParams("pa", "random", [](const Utils::ParsedParams& params) -> std::string {
+        double lo = params.getDouble("min").value_or(0.0);
+        double hi = params.getDouble("max").value_or(1.0);
+
         if (hi < lo) std::swap(hi, lo);
         static thread_local std::mt19937_64    rng{std::random_device{}()};
         std::uniform_real_distribution<double> dist(lo, hi);
@@ -233,11 +231,11 @@ void registerBuiltinPlaceholders() {
 
     // --- 新增：表达式计算 ---
     // 用法：{pa:calc|expr=1+2*(3-4)}；支持在 expr 中嵌套占位符（先求值）
-    manager.registerServerPlaceholderWithParams("pa", "calc", [&](std::string_view params) -> std::string {
-        auto m  = PA::Utils::parseParams(std::string(params));
-        auto it = m.find("expr");
-        if (it == m.end()) return "";
-        auto expr = it->second;
+    manager.registerServerPlaceholderWithParams("pa", "calc", [&](const Utils::ParsedParams& params) -> std::string {
+        auto exprOpt = params.get("expr");
+        if (!exprOpt) return "";
+
+        auto expr = std::string(*exprOpt);
         // 先把 expr 中的占位符在“无上下文”下展开（如需上下文版本可使用上下文版 calc）
         auto& mgr = PlaceholderManager::getInstance();
         expr      = mgr.replacePlaceholders(expr);
@@ -246,18 +244,22 @@ void registerBuiltinPlaceholders() {
     });
 
     // 如需上下文版 calc（可在 expr 中访问玩家/实体占位符），提供 Mob 基类版本
-    manager.registerPlaceholderWithParams<Mob>("pa", "calc", [&](Mob* mob, std::string_view params) -> std::string {
-        (void)mob;
-        auto m  = PA::Utils::parseParams(std::string(params));
-        auto it = m.find("expr");
-        if (it == m.end()) return "";
-        auto  expr = it->second;
-        auto& mgr  = PlaceholderManager::getInstance();
-        // 传入上下文（多态）展开 expr 内的占位符
-        expr = mgr.replacePlaceholders(expr, mob);
-        if (auto v = evalExpr(expr)) return std::to_string(*v);
-        return "";
-    });
+    manager.registerPlaceholderWithParams<Mob>(
+        "pa",
+        "calc",
+        [&](Mob* mob, std::string_view paramStr) -> std::string {
+            Utils::ParsedParams params{std::string(paramStr)};
+            auto                exprOpt = params.get("expr");
+            if (!exprOpt) return "";
+
+            auto  expr = std::string(*exprOpt);
+            auto& mgr  = PlaceholderManager::getInstance();
+            // 传入上下文（多态）展开 expr 内的占位符
+            expr = mgr.replacePlaceholders(expr, mob);
+            if (auto v = evalExpr(expr)) return std::to_string(*v);
+            return "";
+        }
+    );
 }
 
 } // namespace PA

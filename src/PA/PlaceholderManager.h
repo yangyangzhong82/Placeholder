@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Macros.h"
+#include "Utils.h"
 
 #include <any>
 #include <functional>
@@ -12,10 +13,15 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <memory>
 
 class Player; // 前向声明
 
 namespace PA {
+
+namespace Utils {
+class ParsedParams; // 前向声明
+}
 
 // 提供一个编译期稳定的“类型键”字符串（跨插件一致，且不依赖 RTTI）
 template <typename T>
@@ -41,17 +47,45 @@ struct PlaceholderContext {
 /**
  * @brief 负责管理占位符（服务器级、带上下文的多态占位符）以及类型系统（自定义多态/继承）
  */
+class PlaceholderManager; // 前向声明
+
+// --- 新：模板编译系统 ---
+struct CompiledTemplate; // 前向声明
+
+struct LiteralToken {
+    std::string text;
+};
+
+struct PlaceholderToken {
+    std::string                       pluginName;
+    std::string                       placeholderName;
+    std::unique_ptr<CompiledTemplate> defaultTemplate; // 嵌套模板
+    std::unique_ptr<CompiledTemplate> paramsTemplate;  // 嵌套模板
+};
+
+using Token = std::variant<LiteralToken, PlaceholderToken>;
+
+struct CompiledTemplate {
+    std::vector<Token> tokens;
+    // 为支持 unique_ptr 的移动语义
+    CompiledTemplate();
+    ~CompiledTemplate();
+    CompiledTemplate(CompiledTemplate&&) noexcept;
+    CompiledTemplate& operator=(CompiledTemplate&&) noexcept;
+};
+
+
 class PlaceholderManager {
 public:
     // 服务器占位符：无上下文
     using ServerReplacer = std::function<std::string()>;
     // 服务器占位符（带参数）
-    using ServerReplacerWithParams = std::function<std::string(std::string_view params)>;
+    using ServerReplacerWithParams = std::function<std::string(const Utils::ParsedParams& params)>;
 
     // 上下文占位符：内部总以 void* 接口保存；调用前会按类型系统进行“上行转换”使其成为目标类型子对象指针
     using AnyPtrReplacer = std::function<std::string(void*)>;
     // 上下文占位符（带参数）
-    using AnyPtrReplacerWithParams = std::function<std::string(void*, std::string_view params)>;
+    using AnyPtrReplacerWithParams = std::function<std::string(void*, const Utils::ParsedParams& params)>;
 
     using Caster = void* (*)(void*); // Derived* -> Base* 上行转换函数指针
 
@@ -68,6 +102,37 @@ public:
         const std::string&         placeholder,
         ServerReplacerWithParams&& replacer
     );
+
+    // [便捷] 兼容旧的 string_view 签名
+    PA_API void registerServerPlaceholderWithParams(
+        const std::string&                             pluginName,
+        const std::string&                             placeholder,
+        std::function<std::string(std::string_view)>&& replacer
+    ) {
+        ServerReplacerWithParams fn = [r = std::move(replacer)](const Utils::ParsedParams& params) -> std::string {
+            // 此处可以决定是传入原始字符串还是空字符串
+            // 为保持兼容，此处传入原始字符串
+            auto        rawParams = params.getRawParams();
+            std::string rawParamStr; // 需要重新拼接，或者在 ParsedParams 中保存原始字符串
+            bool        first = true;
+            for (const auto& [key, val] : rawParams) {
+                if (!first) rawParamStr += ";";
+                rawParamStr += key;
+                if (!val.empty()) {
+                    rawParamStr += "=";
+                    // 简单的引号处理，可能不完全精确还原
+                    if (val.find(';') != std::string::npos || val.find('"') != std::string::npos) {
+                        rawParamStr += "\"" + val + "\""; // 简化处理
+                    } else {
+                        rawParamStr += val;
+                    }
+                }
+                first = false;
+            }
+            return r(rawParamStr);
+        };
+        registerServerPlaceholderWithParams(pluginName, placeholder, std::move(fn));
+    }
 
     /**
      * @brief [新] 注册上下文占位符（模板版）
@@ -95,9 +160,27 @@ public:
         std::function<std::string(T*, std::string_view)>&& replacer
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
-        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, std::string_view params) -> std::string {
+        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
-            return r(reinterpret_cast<T*>(p), params);
+            // 重新拼接原始字符串，与 registerServerPlaceholderWithParams 便捷版本保持一致
+            auto        rawParams = params.getRawParams();
+            std::string rawParamStr;
+            bool        first = true;
+            for (const auto& [key, val] : rawParams) {
+                if (!first) rawParamStr += ";";
+                rawParamStr += key;
+                if (!val.empty()) {
+                    rawParamStr += "=";
+                    // 简单的引号处理，可能不完全精确还原
+                    if (val.find(';') != std::string::npos || val.find('"') != std::string::npos) {
+                        rawParamStr += "\"" + val + "\""; // 简化处理
+                    } else {
+                        rawParamStr += val;
+                    }
+                }
+                first = false;
+            }
+            return r(reinterpret_cast<T*>(p), rawParamStr);
         };
         registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
     }
@@ -159,6 +242,17 @@ public:
     PA_API std::string replacePlaceholders(const std::string& text, Player* player);
 
     /**
+     * @brief [新] 编译模板字符串为内部 Token 序列，以加速重复替换
+     */
+    PA_API CompiledTemplate compileTemplate(const std::string& text);
+
+    /**
+     * @brief [新] 使用已编译的模板进行替换
+     */
+    PA_API std::string replacePlaceholders(const CompiledTemplate& tpl, const PlaceholderContext& ctx);
+
+
+    /**
      * @brief [便捷] 任意类型指针（模板），按该类型键作为“动态类型”
      */
     template <typename T>
@@ -218,6 +312,12 @@ private:
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;
     };
 
+    // 上行链 BFS 结果缓存
+    struct UpcastCacheEntry {
+        bool                success;
+        std::vector<Caster> chain;
+    };
+
     // 服务器占位符：插件名 -> (占位符 -> 替换函数)
     std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>> mServerPlaceholders;
 
@@ -231,6 +331,9 @@ private:
 
     // 继承图：派生ID -> (基类ID -> 上行转换函数)
     std::unordered_map<std::size_t, std::unordered_map<std::size_t, Caster>> mUpcastEdges;
+
+    // 上行链缓存：(fromTypeId << 32) | toTypeId -> { 成功与否, 链 }
+    mutable std::unordered_map<uint64_t, UpcastCacheEntry> mUpcastCache;
 
     // 线程安全
     mutable std::shared_mutex mMutex;
@@ -254,6 +357,16 @@ private:
     };
 
     std::string replacePlaceholdersImpl(const std::string& text, const PlaceholderContext& ctx, ReplaceState& st);
+
+    // [新] 私有辅助函数：执行单个占位符的查找与替换
+    std::string executePlaceholder(
+        const std::string&      pluginName,
+        const std::string&      placeholderName,
+        const std::string&      paramString,
+        const std::string&      defaultText,
+        const PlaceholderContext& ctx,
+        ReplaceState&           st
+    );
 };
 
 } // namespace PA
