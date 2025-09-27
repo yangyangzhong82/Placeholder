@@ -669,6 +669,33 @@ void applyNumberFormatting(
             out = formatNumber(v, decimals, doRound);
         }
 
+        // 千分位
+        if (params.getBool("commas").value_or(false)) {
+            char groupSep   = ',';
+            char decimalSep = '.';
+
+            if (auto locale = params.get("locale")) {
+                auto loc_sv = toLower(trim(std::string(*locale)));
+                if (loc_sv == "zh_cn") {
+                    // default is fine
+                } else if (loc_sv == "en_us") {
+                    // default is fine
+                } else if (loc_sv == "de_de") {
+                    groupSep   = '.';
+                    decimalSep = ',';
+                }
+            }
+
+            if (auto g = params.get("group")) {
+                if (!g->empty()) groupSep = (*g)[0];
+            }
+            if (auto d = params.get("decimal")) {
+                if (!d->empty()) decimalSep = (*d)[0];
+            }
+
+            out = addThousandSeparators(out, groupSep, decimalSep);
+        }
+
         // 阈值 -> 样式/文本
         if (auto it = params.get("thresholds")) {
             if (auto matched_res = evalThresholds(v, std::string(*it))) {
@@ -786,33 +813,6 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
             // TODO: 更多控制字符转义
         }
         out.swap(esc);
-    }
-
-    // 千分位
-    if (params.getBool("commas").value_or(false)) {
-        char groupSep   = ',';
-        char decimalSep = '.';
-
-        if (auto locale = params.get("locale")) {
-            auto loc_sv = toLower(trim(std::string(*locale)));
-            if (loc_sv == "zh_cn") {
-                // default is fine
-            } else if (loc_sv == "en_us") {
-                // default is fine
-            } else if (loc_sv == "de_de") {
-                groupSep   = '.';
-                decimalSep = ',';
-            }
-        }
-
-        if (auto g = params.get("group")) {
-            if (!g->empty()) groupSep = (*g)[0];
-        }
-        if (auto d = params.get("decimal")) {
-            if (!d->empty()) decimalSep = (*d)[0];
-        }
-
-        out = addThousandSeparators(out, groupSep, decimalSep);
     }
 
     // 颜色/样式
