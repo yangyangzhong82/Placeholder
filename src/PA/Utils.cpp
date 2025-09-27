@@ -1,5 +1,7 @@
 #include "Utils.h"
 
+#include <utf8.h>
+
 #include "exprtk.hpp"
 #include <algorithm>
 #include <cctype>
@@ -253,41 +255,62 @@ inline std::string styleSpecToCodes(const std::string& spec) {
     return result;
 }
 
-// 计算可见长度（忽略 §x 风格码）
+// 计算可见长度（忽略 §x 风格码），支持 UTF-8
 inline size_t visibleLength(std::string_view s) {
-    size_t i = 0, n = s.size(), vis = 0;
-    while (i < n) {
-        if (s[i] == '\xA7') {
-            if (i + 1 < n) i += 2;
-            else ++i;
+    size_t                                vis = 0;
+    std::string_view::const_iterator      it  = s.begin();
+    const std::string_view::const_iterator end = s.end();
+
+    while (it != end) {
+        if (*it == '\xA7') {
+            // 跳过颜色代码
+            it++;
+            if (it != end) {
+                it++;
+            }
         } else {
-            ++vis;
-            ++i;
+            try {
+                // 向前移动一个 UTF-8 码位
+                utf8::next(it, end);
+                vis++;
+            } catch (const std::exception&) {
+                // 处理无效的 UTF-8 序列或不完整的字符
+                // 将其视为单个字节并继续
+                it++;
+                vis++;
+            }
         }
     }
     return vis;
 }
 
-// 可见安全截断
+// 可见安全截断，支持 UTF-8
 std::string truncateVisible(
     std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
 ) {
-    if (s.empty()) return "";
+    if (s.empty() || visibleLength(s) <= maxlen) {
+        return std::string(s);
+    }
 
-    size_t              vis_count = 0;
-    size_t              byte_pos  = 0;
-    std::string         last_styles;
+    size_t                                 vis_count = 0;
+    std::string_view::const_iterator       it        = s.begin();
+    const std::string_view::const_iterator end       = s.end();
+    std::string_view::const_iterator       truncate_it = it;
+
     std::vector<char>   active_formats;
     std::optional<char> last_color;
 
-    for (size_t i = 0; i < s.size();) {
+    while (it != end) {
         if (vis_count >= maxlen) {
-            byte_pos = i;
             break;
         }
 
-        if (s[i] == '\xA7' && i + 1 < s.size()) {
-            char code = tolower(s[i + 1]);
+        truncate_it = it; // 记录当前安全截断点
+
+        if (*it == '\xA7' && std::distance(it, end) > 1) {
+            auto next_it = it;
+            next_it++;
+            char code = tolower(*next_it);
             if (preserve_styles) {
                 if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) {
                     last_color = code;
@@ -302,46 +325,24 @@ std::string truncateVisible(
                     active_formats.clear();
                 }
             }
-            i += 2;
-            continue;
-        }
-
-        // 处理 UTF-8 字符
-        unsigned char c = s[i];
-        size_t        char_len;
-        if (c < 0x80) { // 1-byte char (ASCII)
-            char_len = 1;
-        } else if ((c & 0xE0) == 0xC0) { // 2-byte char
-            char_len = 2;
-        } else if ((c & 0xF0) == 0xE0) { // 3-byte char
-            char_len = 3;
-        } else if ((c & 0xF8) == 0xF0) { // 4-byte char
-            char_len = 4;
+            it++;
+            it++;
         } else {
-            // 无效的 UTF-8 序列，当作单字节处理
-            char_len = 1;
-        }
-
-        if (i + char_len > s.size()) {
-            // 不完整的 UTF-8 字符，停止
-            byte_pos = i;
-            break;
-        }
-
-        vis_count++;
-        i += char_len;
-        if (vis_count >= maxlen) {
-            byte_pos = i;
-            break;
+            try {
+                utf8::next(it, end);
+                vis_count++;
+            } catch (const std::exception&) {
+                it++; // 将无效字节视为单个字符
+                vis_count++;
+            }
         }
     }
-
-    // 如果未截断，直接返回原字符串
-    if (byte_pos == 0 && vis_count < maxlen) {
-        return std::string(s);
+    if (vis_count < maxlen) {
+        truncate_it = end;
     }
 
-    std::string result = std::string(s.substr(0, byte_pos));
+    size_t      byte_pos = std::distance(s.begin(), truncate_it);
+    std::string result   = std::string(s.substr(0, byte_pos));
     result += ellipsis;
 
     if (preserve_styles) {
@@ -354,10 +355,7 @@ std::string truncateVisible(
             styles_to_restore += '\xA7';
             styles_to_restore += fmt;
         }
-        if (!styles_to_restore.empty()) {
-            result.insert(byte_pos, styles_to_restore);
-        }
-        result += "\xA7r";
+        result += styles_to_restore;
     }
 
     return result;
