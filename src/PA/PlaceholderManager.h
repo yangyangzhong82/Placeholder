@@ -100,6 +100,14 @@ struct PlaceholderToken {
 using Token = std::variant<LiteralToken, PlaceholderToken>;
 
 /**
+ * @brief 缓存键加强策略
+ */
+enum class CacheKeyStrategy {
+    Default,    // 默认策略：key 中包含 ctx 指针与 typeId
+    ServerOnly, // 快速路径：纯服务器级占位符，key 中不含 ctx
+};
+
+/**
  * @brief 编译后的模板结构
  *
  * 存储原始模板字符串和解析后的 Token 序列，用于高效地重复替换。
@@ -163,7 +171,8 @@ public:
         const std::string&                pluginName,
         const std::string&                placeholder,
         ServerReplacer                    replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy                  strategy      = CacheKeyStrategy::Default
     );
 
     /**
@@ -177,7 +186,8 @@ public:
         const std::string&           pluginName,
         const std::string&           placeholder,
         ServerReplacerWithParams&&   replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -191,7 +201,8 @@ public:
         const std::string&           pluginName,
         const std::string&           placeholder,
         AsyncServerReplacer&&        replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -205,7 +216,8 @@ public:
         const std::string&            pluginName,
         const std::string&            placeholder,
         AsyncServerReplacerWithParams&& replacer,
-        std::optional<CacheDuration>  cache_duration = std::nullopt
+        std::optional<CacheDuration>  cache_duration = std::nullopt,
+        CacheKeyStrategy              strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -248,14 +260,15 @@ public:
         const std::string&               pluginName,
         const std::string&               placeholder,
         std::function<std::string(T*)>&& replacer,
-        std::optional<CacheDuration>     cache_duration = std::nullopt
+        std::optional<CacheDuration>     cache_duration = std::nullopt,
+        CacheKeyStrategy                 strategy       = CacheKeyStrategy::Default
     ) {
         auto           targetId = ensureTypeId(typeKey<T>()); // 获取目标类型的内部ID
         AnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::string {
             if (!p) return std::string{}; // 空指针检查
             return r(reinterpret_cast<T*>(p)); // 转换为 T* 并调用替换函数
         };
-        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
     /**
@@ -270,7 +283,8 @@ public:
         const std::string&                          pluginName,
         const std::string&                          placeholder,
         std::function<std::future<std::string>(T*)>&& replacer,
-        std::optional<CacheDuration>                cache_duration = std::nullopt
+        std::optional<CacheDuration>                cache_duration = std::nullopt,
+        CacheKeyStrategy                            strategy       = CacheKeyStrategy::Default
     ) {
         auto                targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::future<std::string> {
@@ -281,7 +295,7 @@ public:
             }
             return r(reinterpret_cast<T*>(p));
         };
-        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
     /**
@@ -320,14 +334,15 @@ public:
         const std::string&                                          pluginName,
         const std::string&                                          placeholder,
         std::function<std::string(T*, const Utils::ParsedParams&)>&& replacer,
-        std::optional<CacheDuration>                                cache_duration = std::nullopt
+        std::optional<CacheDuration>                                cache_duration = std::nullopt,
+        CacheKeyStrategy                                            strategy       = CacheKeyStrategy::Default
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
         AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
             return r(reinterpret_cast<T*>(p), params);
         };
-        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
+        registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
     /**
@@ -342,7 +357,8 @@ public:
         const std::string&                                                pluginName,
         const std::string&                                                placeholder,
         std::function<std::future<std::string>(T*, const Utils::ParsedParams&)>&& replacer,
-        std::optional<CacheDuration>                                      cache_duration = std::nullopt
+        std::optional<CacheDuration>                                      cache_duration = std::nullopt,
+        CacheKeyStrategy                                                  strategy       = CacheKeyStrategy::Default
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacerWithParams fn =
@@ -354,7 +370,7 @@ public:
             }
             return r(reinterpret_cast<T*>(p), params);
         };
-        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration);
+        registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
     /**
@@ -589,7 +605,8 @@ public:
         const std::string&           placeholder,
         std::size_t                  targetTypeId,
         AnyPtrReplacer               replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -606,7 +623,8 @@ public:
         const std::string&           placeholder,
         std::size_t                  targetTypeId,
         AnyPtrReplacerWithParams&&   replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -617,7 +635,8 @@ public:
         const std::string&           placeholder,
         std::size_t                  targetTypeId,
         AsyncAnyPtrReplacer&&        replacer,
-        std::optional<CacheDuration> cache_duration = std::nullopt
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -628,7 +647,8 @@ public:
         const std::string&            placeholder,
         std::size_t                   targetTypeId,
         AsyncAnyPtrReplacerWithParams&& replacer,
-        std::optional<CacheDuration>  cache_duration = std::nullopt
+        std::optional<CacheDuration>  cache_duration = std::nullopt,
+        CacheKeyStrategy              strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -650,6 +670,17 @@ public:
      * @return 如果找到路径则返回 true，否则返回 false
      */
     PA_API bool findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain) const;
+
+    /**
+     * @brief 清空所有占位符缓存
+     */
+    PA_API void clearCache();
+
+    /**
+     * @brief 清空指定插件的所有占位符缓存
+     * @param pluginName 插件名称
+     */
+    PA_API void clearCache(const std::string& pluginName);
 
     // 可选：配置解析行为
 
@@ -679,6 +710,14 @@ public:
     PA_API bool getDoubleBraceEscape() const;
 
 private:
+    // 辅助函数
+    std::string buildCacheKey(
+        const PlaceholderContext& ctx,
+        std::string_view          pluginName,
+        std::string_view          placeholderName,
+        const std::string&        paramString,
+        CacheKeyStrategy          strategy
+    );
     // --- 内部结构 ---
     /**
      * @brief 服务器占位符的内部存储条目
@@ -688,6 +727,7 @@ private:
     struct ServerReplacerEntry {
         std::variant<ServerReplacer, ServerReplacerWithParams> fn; // 替换函数变体
         std::optional<CacheDuration>                           cacheDuration;
+        CacheKeyStrategy                                       strategy;
     };
 
     /**
@@ -696,6 +736,7 @@ private:
     struct AsyncServerReplacerEntry {
         std::variant<AsyncServerReplacer, AsyncServerReplacerWithParams> fn;
         std::optional<CacheDuration>                                     cacheDuration;
+        CacheKeyStrategy                                                 strategy;
     };
 
     /**
@@ -707,6 +748,7 @@ private:
         std::size_t                                            targetTypeId{0}; // 目标类型ID
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;            // 替换函数变体
         std::optional<CacheDuration>                           cacheDuration;
+        CacheKeyStrategy                                       strategy;
     };
 
     /**
@@ -716,6 +758,7 @@ private:
         std::size_t                                                  targetTypeId{0};
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
         std::optional<CacheDuration>                                     cacheDuration;
+        CacheKeyStrategy                                                 strategy;
     };
 
     /**

@@ -4,6 +4,7 @@
 #include <optional>
 #include <unordered_map>
 #include <mutex>
+#include <functional> // For std::function
 
 namespace PA {
 
@@ -81,6 +82,19 @@ public:
             Key lruKey = mList.back().first;
             mList.pop_back();
             mMap.erase(lruKey);
+        }
+    }
+
+    // 根据谓词删除条目
+    void remove_if(std::function<bool(const Key&)> pred) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        for (auto it = mMap.begin(); it != mMap.end();) {
+            if (pred(it->first)) {
+                mList.erase(it->second);
+                it = mMap.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
 
