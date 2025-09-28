@@ -5,4 +5,10 @@
 #include <nlohmann/json.hpp>
 
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, version, debugMode, globalCacheSize)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+    Config,
+    version,
+    debugMode,
+    globalCacheSize,
+    asyncThreadPoolSize
+)

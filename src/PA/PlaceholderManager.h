@@ -835,7 +835,8 @@ private:
     mutable std::shared_mutex mMutex;
 
     // 全局线程池
-    std::unique_ptr<ThreadPool> mThreadPool;
+    std::unique_ptr<ThreadPool> mCombinerThreadPool; // 用于合并异步结果
+    std::unique_ptr<ThreadPool> mAsyncThreadPool;    // 用于执行异步占位符
 
     // 解析配置
     int  mMaxRecursionDepth{12};     // 最大递归深度，默认 12

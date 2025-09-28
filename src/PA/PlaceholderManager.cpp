@@ -32,7 +32,7 @@
 
 
 #include "PA/Config/ConfigManager.h" // 引入 ConfigManager
-#include "PA/logger.h"               // 引入 logger
+
 
 namespace PA {
 
@@ -52,15 +52,24 @@ PlaceholderManager& PlaceholderManager::getInstance() {
 }
 
 PlaceholderManager::PlaceholderManager() : mGlobalCache(ConfigManager::getInstance().get().globalCacheSize) {
-    unsigned int concurrency = std::thread::hardware_concurrency();
-    if (concurrency == 0) {
-        concurrency = 2; // 硬件并发未知时的默认值
+    unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
+    if (hardwareConcurrency == 0) {
+        hardwareConcurrency = 2; // 硬件并发未知时的默认值
     }
-    mThreadPool = std::make_unique<ThreadPool>(concurrency);
+
+    mCombinerThreadPool = std::make_unique<ThreadPool>(1); // 合并线程池只需要一个线程
+
+    int asyncPoolSize = ConfigManager::getInstance().get().asyncThreadPoolSize;
+    if (asyncPoolSize <= 0) {
+        asyncPoolSize = hardwareConcurrency;
+    }
+    mAsyncThreadPool = std::make_unique<ThreadPool>(asyncPoolSize);
+
 
     // 注册一个回调，当配置重新加载时，更新缓存大小
     ConfigManager::getInstance().onReload([this](const Config& newConfig) {
         mGlobalCache.setCapacity(newConfig.globalCacheSize);
+        // 注意：线程池大小在运行时不便更改，因此这里不处理 asyncThreadPoolSize 的热重载
     });
 }
 
@@ -498,7 +507,7 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
     }
 
     // Enqueue a final task that waits for all futures and concatenates the results.
-    return mThreadPool->enqueue([futures, sourceSize = tpl.source.size()]() -> std::string {
+    return mCombinerThreadPool->enqueue([futures, sourceSize = tpl.source.size()]() -> std::string {
         std::string result;
         result.reserve(sourceSize);
         for (auto& f : *futures) {
@@ -1020,7 +1029,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         // 异步占位符的缓存处理
         if (cand.cacheDuration) {
             auto cacheKeyCopy  = cacheKey; // 捕获副本
-            async_replaced_fut = mThreadPool->enqueue(
+            async_replaced_fut = mAsyncThreadPool->enqueue(
                 [this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *cand.cacheDuration]() mutable {
                     std::string result = fut.get();
                     mGlobalCache.put(cacheKeyCopy, {result, std::chrono::steady_clock::now() + duration});
@@ -1054,7 +1063,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                 // 缓存结果
                 if (entry.cacheDuration) {
                     auto cacheKeyCopy  = cacheKey; // 捕获副本
-                    async_replaced_fut = mThreadPool->enqueue([this,
+                    async_replaced_fut = mAsyncThreadPool->enqueue([this,
                                                                fut = std::move(async_replaced_fut),
                                                                cacheKeyCopy,
                                                                duration = *entry.cacheDuration]() mutable {
@@ -1079,7 +1088,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     }
 
     // 统一处理异步结果的格式化和默认值
-    return mThreadPool->enqueue([this,
+    return mCombinerThreadPool->enqueue([this,
                                  fut = std::move(async_replaced_fut),
                                  pluginName,
                                  placeholderName,
