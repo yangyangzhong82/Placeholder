@@ -25,6 +25,10 @@ namespace PA {
 void registerBuiltinPlaceholders() {
     auto& manager = PlaceholderManager::getInstance();
 
+    // [新] 注册内置类型的别名
+    manager.registerTypeAlias<Player>("mc:Player");
+    manager.registerTypeAlias<Mob>("mc:Mob");
+
     // 声明内置类型的继承关系（无 RTTI 环境下实现多态的关键）
     // Player : public Mob
     manager.registerInheritance<Player, Mob>();

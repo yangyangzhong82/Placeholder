@@ -88,6 +88,12 @@ void PlaceholderManager::registerInheritanceByKeys(
     mUpcastCache.clear(); // 继承关系变更，清空缓存
 }
 
+void PlaceholderManager::registerTypeAlias(const std::string& alias, const std::string& typeKeyStr) {
+    auto id = ensureTypeId(typeKeyStr);
+    std::unique_lock lk(mMutex);
+    mIdToAlias[id] = alias;
+}
+
 // BFS 查询 from -> to 的“最短上行路径”
 bool PlaceholderManager::findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain)
     const {
@@ -360,7 +366,26 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
 
     for (const auto& [pluginName, placeholders] : mContextPlaceholders) {
         for (const auto& [placeholderName, entries] : placeholders) {
-            result.contextPlaceholders[pluginName].push_back(placeholderName);
+            if (!entries.empty()) {
+                // 假设同一个占位符的所有重载都指向相同的逻辑类型，因此我们只取第一个。
+                auto        targetId = entries.front().targetTypeId;
+                std::string typeName;
+
+                // 优先使用别名
+                auto aliasIt = mIdToAlias.find(targetId);
+                if (aliasIt != mIdToAlias.end()) {
+                    typeName = aliasIt->second;
+                } else {
+                    // 否则回退到内部类型键
+                    auto keyIt = mIdToTypeKey.find(targetId);
+                    if (keyIt != mIdToTypeKey.end()) {
+                        typeName = keyIt->second;
+                    } else {
+                        typeName = "UnknownTypeId(" + std::to_string(targetId) + ")";
+                    }
+                }
+                result.contextPlaceholders[pluginName].push_back({placeholderName, typeName});
+            }
         }
     }
 

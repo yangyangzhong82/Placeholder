@@ -459,6 +459,26 @@ public:
     PA_API void registerInheritanceByKeys(const std::string& derivedKey, const std::string& baseKey, Caster caster);
 
     /**
+     * @brief [新] 为一个类型注册一个稳定的、跨编译器的“类型别名”
+     *
+     * 建议插件在启动时为所有用到的上下文类型注册别名，例如 "mc:Player", "mc:Actor"。
+     * 这个别名将用于调试和观测，并作为未来更稳定 API 的基础。
+     * @tparam T 要注册别名的类型
+     * @param alias 类型的稳定别名字符串
+     */
+    template <typename T>
+    void registerTypeAlias(const std::string& alias) {
+        registerTypeAlias(alias, typeKey<T>());
+    }
+
+    /**
+     * @brief [新] 为一个类型注册一个稳定的、跨编译器的“类型别名”（显式类型键版）
+     * @param alias 类型的稳定别名字符串
+     * @param typeKeyStr 类型的内部键 (通常来自 typeKey<T>())
+     */
+    PA_API void registerTypeAlias(const std::string& alias, const std::string& typeKeyStr);
+
+    /**
      * @brief 注销某个插件注册的所有占位符
      * @param pluginName 要注销的插件名称
      */
@@ -475,10 +495,15 @@ public:
      *
      * 返回一个结构体，包含所有服务器级和上下文相关的占位符列表。
      */
+    struct ContextPlaceholderInfo {
+        std::string name;          // 占位符名称
+        std::string targetTypeKey; // 目标类型的可读名称（优先使用别名）
+    };
     struct AllPlaceholders {
         // 插件名 -> 占位符名称列表
         std::unordered_map<std::string, std::vector<std::string>> serverPlaceholders;
-        std::unordered_map<std::string, std::vector<std::string>> contextPlaceholders;
+        // 插件名 -> 上下文占位符信息列表
+        std::unordered_map<std::string, std::vector<ContextPlaceholderInfo>> contextPlaceholders;
     };
     PA_API AllPlaceholders getAllPlaceholders() const;
 
@@ -792,6 +817,8 @@ private:
     // 类型系统映射：类型键字符串 <-> 类型ID
     std::unordered_map<std::string, std::size_t> mTypeKeyToId; // 类型键到ID的映射
     std::unordered_map<std::size_t, std::string> mIdToTypeKey; // ID到类型键的映射
+    // [新] 类型ID到稳定别名的映射
+    std::unordered_map<std::size_t, std::string> mIdToAlias;
     std::size_t                                  mNextTypeId{1}; // 下一个可用的类型ID，0 保留为“无类型”
 
     // 继承图：派生类ID -> (基类ID -> 上行转换函数)
