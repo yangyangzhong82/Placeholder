@@ -133,61 +133,6 @@ std::optional<double> ParsedParams::getDouble(const std::string& key) const {
 
 bool ParsedParams::has(const std::string& key) const { return mParams.count(key) > 0; }
 
-// a bit of repetition, but this avoids linking errors with inline functions in different translation units.
-inline std::string ltrim(std::string s) {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !isSpace(ch); }));
-    return s;
-}
-inline std::string rtrim(std::string s) {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !isSpace(ch); }).base(), s.end());
-    return s;
-}
-inline std::string trim(std::string s) { return rtrim(ltrim(std::move(s))); }
-
-inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    return s;
-}
-
-inline bool iequals(std::string a, std::string b) { return toLower(trim(std::move(a))) == toLower(trim(std::move(b))); }
-
-// faster parse int
-inline std::optional<int> parseInt(const std::string& s) {
-    auto t     = trim(s);
-    int  v     = 0;
-    auto first = t.data();
-    auto last  = t.data() + t.size();
-    if (first == last) return std::nullopt;
-    std::from_chars_result res = std::from_chars(first, last, v);
-    if (res.ec == std::errc() && res.ptr == last) return v;
-    return std::nullopt;
-}
-
-// faster parse double (C++23: from_chars for double widely supported)
-inline std::optional<double> parseDouble(const std::string& s) {
-    auto t = trim(s);
-    if (t.empty()) return std::nullopt;
-    double v     = 0.0;
-    auto   first = t.data();
-    auto   last  = t.data() + t.size();
-    auto   res   = std::from_chars(first, last, v);
-    if (res.ec == std::errc() && res.ptr == last) return v;
-    // 作为兜底（locale 安全）再试一试 stod
-    try {
-        size_t idx = 0;
-        double x   = std::stod(t, &idx);
-        if (idx == t.size()) return x;
-    } catch (...) {}
-    return std::nullopt;
-}
-
-inline std::optional<bool> parseBoolish(const std::string& s) {
-    auto v = toLower(trim(s));
-    if (v == "true" || v == "yes" || v == "y" || v == "1" || v == "on") return true;
-    if (v == "false" || v == "no" || v == "n" || v == "0" || v == "off") return false;
-    return std::nullopt;
-}
-
 // 颜色/样式映射
 inline const std::unordered_map<std::string, std::string>& colorMap() {
     static const std::unordered_map<std::string, std::string> m = {

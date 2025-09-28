@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 
 namespace PA::Utils {
 
@@ -30,17 +31,58 @@ inline std::string_view rtrim_sv(std::string_view s) {
 inline std::string_view trim_sv(std::string_view s) { return ltrim_sv(rtrim_sv(s)); }
 
 
-inline std::string ltrim(std::string s);
-inline std::string rtrim(std::string s);
-inline std::string trim(std::string s);
+inline std::string ltrim(std::string s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !isSpace(ch); }));
+    return s;
+}
+inline std::string rtrim(std::string s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !isSpace(ch); }).base(), s.end());
+    return s;
+}
+inline std::string trim(std::string s) { return rtrim(ltrim(std::move(s))); }
 
-inline std::string toLower(std::string s);
-inline bool iequals(std::string a, std::string b);
+inline std::string toLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+inline bool iequals(std::string a, std::string b) { return toLower(trim(std::move(a))) == toLower(trim(std::move(b))); }
 
 // 解析
-inline std::optional<int>    parseInt(const std::string& s);
-inline std::optional<double> parseDouble(const std::string& s);
-inline std::optional<bool>   parseBoolish(const std::string& s);
+inline std::optional<int> parseInt(const std::string& s) {
+    auto t     = trim(s);
+    int  v     = 0;
+    auto first = t.data();
+    auto last  = t.data() + t.size();
+    if (first == last) return std::nullopt;
+    std::from_chars_result res = std::from_chars(first, last, v);
+    if (res.ec == std::errc() && res.ptr == last) return v;
+    return std::nullopt;
+}
+
+inline std::optional<double> parseDouble(const std::string& s) {
+    auto t = trim(s);
+    if (t.empty()) return std::nullopt;
+    double v     = 0.0;
+    auto   first = t.data();
+    auto   last  = t.data() + t.size();
+    auto   res   = std::from_chars(first, last, v);
+    if (res.ec == std::errc() && res.ptr == last) return v;
+    // 作为兜底（locale 安全）再试一试 stod
+    try {
+        size_t idx = 0;
+        double x   = std::stod(t, &idx);
+        if (idx == t.size()) return x;
+    } catch (...) {}
+    return std::nullopt;
+}
+
+inline std::optional<bool> parseBoolish(const std::string& s) {
+    auto v = toLower(trim(s));
+    if (v == "true" || v == "yes" || v == "y" || v == "1" || v == "on") return true;
+    if (v == "false" || v == "no" || v == "n" || v == "0" || v == "off") return false;
+    return std::nullopt;
+}
 
 /**
  * @brief 解析后的参数视图，提供类型化访问和缓存
