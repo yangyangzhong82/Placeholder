@@ -51,7 +51,9 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-PlaceholderManager::PlaceholderManager() : mGlobalCache(ConfigManager::getInstance().get().globalCacheSize) {
+PlaceholderManager::PlaceholderManager() :
+    mGlobalCache(ConfigManager::getInstance().get().globalCacheSize),
+    mCompileCache(ConfigManager::getInstance().get().globalCacheSize) {
     unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
     if (hardwareConcurrency == 0) {
         hardwareConcurrency = 2; // 硬件并发未知时的默认值
@@ -69,6 +71,7 @@ PlaceholderManager::PlaceholderManager() : mGlobalCache(ConfigManager::getInstan
     // 注册一个回调，当配置重新加载时，更新缓存大小
     ConfigManager::getInstance().onReload([this](const Config& newConfig) {
         mGlobalCache.setCapacity(newConfig.globalCacheSize);
+        mCompileCache.setCapacity(newConfig.globalCacheSize);
         // 注意：线程池大小在运行时不便更改，因此这里不处理 asyncThreadPoolSize 的热重载
     });
 }
@@ -507,8 +510,12 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, std
 }
 
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, const PlaceholderContext& ctx) {
-    auto tpl = compileTemplate(text);
-    return replacePlaceholders(tpl, ctx);
+    if (auto cachedTpl = mCompileCache.get(text)) {
+        return replacePlaceholders(**cachedTpl, ctx);
+    }
+    auto tpl = std::make_shared<CompiledTemplate>(compileTemplate(text));
+    mCompileCache.put(text, tpl);
+    return replacePlaceholders(*tpl, ctx);
 }
 
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
@@ -604,8 +611,12 @@ void PlaceholderManager::registerRelationalPlaceholderForTypeKeyWithParams(
 
 std::future<std::string>
 PlaceholderManager::replacePlaceholdersAsync(const std::string& text, const PlaceholderContext& ctx) {
-    auto tpl = compileTemplate(text);
-    return replacePlaceholdersAsync(tpl, ctx);
+    if (auto cachedTpl = mCompileCache.get(text)) {
+        return replacePlaceholdersAsync(**cachedTpl, ctx);
+    }
+    auto tpl = std::make_shared<CompiledTemplate>(compileTemplate(text));
+    mCompileCache.put(text, tpl);
+    return replacePlaceholdersAsync(*tpl, ctx);
 }
 
 std::future<std::string>

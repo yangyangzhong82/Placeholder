@@ -1292,6 +1292,9 @@ private:
     // 全局占位符结果缓存
     mutable LRUCache<std::string, CacheEntry> mGlobalCache;
 
+    // 模板编译缓存
+    mutable LRUCache<std::string, std::shared_ptr<CompiledTemplate>> mCompileCache;
+
     // 线程安全：使用读写锁保护内部数据结构
     mutable std::shared_mutex mMutex;
 
