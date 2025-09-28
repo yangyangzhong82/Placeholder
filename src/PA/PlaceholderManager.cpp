@@ -100,15 +100,15 @@ void PlaceholderManager::registerInheritanceByKeys(
 void PlaceholderManager::registerInheritanceByKeysBatch(const std::vector<InheritancePair>& pairs) {
     std::unique_lock lk(mMutex);
     for (const auto& pair : pairs) {
-        auto d = ensureTypeId(pair.derivedKey);
-        auto b = ensureTypeId(pair.baseKey);
+        auto d             = ensureTypeId(pair.derivedKey);
+        auto b             = ensureTypeId(pair.baseKey);
         mUpcastEdges[d][b] = pair.caster;
     }
     mUpcastCache.clear(); // 继承关系变更，清空缓存
 }
 
 void PlaceholderManager::registerTypeAlias(const std::string& alias, const std::string& typeKeyStr) {
-    auto id = ensureTypeId(typeKeyStr);
+    auto             id = ensureTypeId(typeKeyStr);
     std::unique_lock lk(mMutex);
     mIdToAlias[id] = alias;
 }
@@ -365,6 +365,8 @@ void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
     mServerPlaceholders.erase(pluginName);
     mContextPlaceholders.erase(pluginName);
     mRelationalPlaceholders.erase(pluginName);
+    mServerObjectListPlaceholders.erase(pluginName);
+    mContextObjectListPlaceholders.erase(pluginName);
     mUpcastCache.clear(); // 插件注销可能影响类型，为安全起见清空
 }
 
@@ -415,8 +417,8 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
 }
 
 bool PlaceholderManager::hasPlaceholder(
-    const std::string&             pluginName,
-    const std::string&             placeholderName,
+    const std::string&                pluginName,
+    const std::string&                placeholderName,
     const std::optional<std::string>& typeKey
 ) const {
     std::shared_lock lk(mMutex);
@@ -463,11 +465,8 @@ bool PlaceholderManager::hasPlaceholder(
 
 // ==== Context 构造 ====
 
-PlaceholderContext PlaceholderManager::makeContextRaw(
-    void*                     ptr,
-    const std::string&        typeKeyStr,
-    const PlaceholderContext* rel_ctx
-) {
+PlaceholderContext
+PlaceholderManager::makeContextRaw(void* ptr, const std::string& typeKeyStr, const PlaceholderContext* rel_ctx) {
     PlaceholderContext ctx;
     ctx.ptr               = ptr;
     ctx.typeId            = getInstance().ensureTypeId(typeKeyStr);
@@ -520,13 +519,13 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, Pla
 // --- 新：关系型占位符注册 ---
 
 void PlaceholderManager::registerRelationalPlaceholderForTypeId(
-    const std::string&                 pluginName,
-    const std::string&                 placeholder,
-    std::size_t                        targetTypeId,
-    std::size_t                        relationalTypeId,
-    AnyPtrRelationalReplacer&&         replacer,
-    std::optional<CacheDuration>       cache_duration,
-    CacheKeyStrategy                   strategy
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    std::size_t                  targetTypeId,
+    std::size_t                  relationalTypeId,
+    AnyPtrRelationalReplacer&&   replacer,
+    std::optional<CacheDuration> cache_duration,
+    CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
     mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
@@ -539,13 +538,13 @@ void PlaceholderManager::registerRelationalPlaceholderForTypeId(
 }
 
 void PlaceholderManager::registerRelationalPlaceholderForTypeId(
-    const std::string&                  pluginName,
-    const std::string&                  placeholder,
-    std::size_t                         targetTypeId,
-    std::size_t                         relationalTypeId,
+    const std::string&                   pluginName,
+    const std::string&                   placeholder,
+    std::size_t                          targetTypeId,
+    std::size_t                          relationalTypeId,
     AnyPtrRelationalReplacerWithParams&& replacer,
-    std::optional<CacheDuration>        cache_duration,
-    CacheKeyStrategy                    strategy
+    std::optional<CacheDuration>         cache_duration,
+    CacheKeyStrategy                     strategy
 ) {
     std::unique_lock lk(mMutex);
     mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
@@ -1030,6 +1029,66 @@ void PlaceholderManager::registerListPlaceholderForTypeId(
     });
 }
 
+// --- 新：对象列表/集合型占位符注册 ---
+
+void PlaceholderManager::registerServerObjectListPlaceholder(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    ServerObjectListReplacer&&   replacer,
+    std::optional<CacheDuration> cache_duration,
+    CacheKeyStrategy             strategy
+) {
+    std::unique_lock lk(mMutex);
+    mServerObjectListPlaceholders[pluginName][placeholder] =
+        ServerObjectListReplacerEntry{std::move(replacer), cache_duration, strategy};
+}
+
+void PlaceholderManager::registerServerObjectListPlaceholderWithParams(
+    const std::string&                   pluginName,
+    const std::string&                   placeholder,
+    ServerObjectListReplacerWithParams&& replacer,
+    std::optional<CacheDuration>         cache_duration,
+    CacheKeyStrategy                     strategy
+) {
+    std::unique_lock lk(mMutex);
+    mServerObjectListPlaceholders[pluginName][placeholder] =
+        ServerObjectListReplacerEntry{std::move(replacer), cache_duration, strategy};
+}
+
+void PlaceholderManager::registerObjectListPlaceholderForTypeId(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    std::size_t                  targetTypeId,
+    AnyPtrObjectListReplacer&&   replacer,
+    std::optional<CacheDuration> cache_duration,
+    CacheKeyStrategy             strategy
+) {
+    std::unique_lock lk(mMutex);
+    mContextObjectListPlaceholders[pluginName][placeholder].push_back(TypedObjectListReplacer{
+        targetTypeId,
+        std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
+        cache_duration,
+        strategy,
+    });
+}
+
+void PlaceholderManager::registerObjectListPlaceholderForTypeId(
+    const std::string&                   pluginName,
+    const std::string&                   placeholder,
+    std::size_t                          targetTypeId,
+    AnyPtrObjectListReplacerWithParams&& replacer,
+    std::optional<CacheDuration>         cache_duration,
+    CacheKeyStrategy                     strategy
+) {
+    std::unique_lock lk(mMutex);
+    mContextObjectListPlaceholders[pluginName][placeholder].push_back(TypedObjectListReplacer{
+        targetTypeId,
+        std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
+        cache_duration,
+        strategy,
+    });
+}
+
 std::string PlaceholderManager::executePlaceholder(
     std::string_view             pluginName,
     std::string_view             placeholderName,
@@ -1040,7 +1099,16 @@ std::string PlaceholderManager::executePlaceholder(
     std::optional<CacheDuration> cache_duration_override
 ) {
     const auto startTime = std::chrono::high_resolution_clock::now();
-    enum class PlaceholderType { None, Server, Context, Relational, ListServer, ListContext };
+    enum class PlaceholderType {
+        None,
+        Server,
+        Context,
+        Relational,
+        ListServer,
+        ListContext,
+        ObjectListServer,
+        ObjectListContext
+    };
     PlaceholderType type = PlaceholderType::None;
 
     // --- 1. Find Candidate ---
@@ -1064,6 +1132,13 @@ std::string PlaceholderManager::executePlaceholder(
         std::optional<CacheDuration>                                   cacheDuration;
         CacheKeyStrategy                                               strategy;
     };
+
+    struct ObjectListCandidate {
+        std::vector<Caster>                                                        chain;
+        std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams> fn;
+        std::optional<CacheDuration>                                               cacheDuration;
+        CacheKeyStrategy                                                           strategy;
+    };
     std::optional<RelationalCandidate> bestRelationalCandidate;
     if (ctx.ptr != nullptr && ctx.typeId != 0 && ctx.relationalContext != nullptr
         && ctx.relationalContext->ptr != nullptr && ctx.relationalContext->typeId != 0) {
@@ -1085,17 +1160,18 @@ std::string PlaceholderManager::executePlaceholder(
             std::vector<Caster> rel_chain;
             bool main_ok = (entry.targetTypeId == ctx.typeId) || findUpcastChain(ctx.typeId, entry.targetTypeId, chain);
             bool rel_ok  = (entry.relationalTypeId == ctx.relationalContext->typeId)
-                        || findUpcastChain(ctx.relationalContext->typeId, entry.relationalTypeId, rel_chain);
+                       || findUpcastChain(ctx.relationalContext->typeId, entry.relationalTypeId, rel_chain);
 
             if (main_ok && rel_ok) {
                 candidates.push_back({
                     (int)(chain.size() + rel_chain.size()),
                     RelationalCandidate{
-                        std::move(chain),
-                        std::move(rel_chain),
-                        entry.fn,
-                        entry.cacheDuration,
-                        entry.strategy}
+                                        std::move(chain),
+                                        std::move(rel_chain),
+                                        entry.fn,
+                                        entry.cacheDuration,
+                                        entry.strategy
+                    }
                 });
             }
         }
@@ -1107,8 +1183,9 @@ std::string PlaceholderManager::executePlaceholder(
     }
 
 
-    std::optional<Candidate>     bestCandidate;
-    std::optional<ListCandidate> bestListCandidate;
+    std::optional<Candidate>           bestCandidate;
+    std::optional<ListCandidate>       bestListCandidate;
+    std::optional<ObjectListCandidate> bestObjectListCandidate;
 
     if (!bestRelationalCandidate && ctx.ptr != nullptr && ctx.typeId != 0) {
         // 优先查找普通上下文占位符
@@ -1127,11 +1204,15 @@ std::string PlaceholderManager::executePlaceholder(
         for (auto& entry : potentialReplacers) {
             std::vector<Caster> chain;
             if (entry.targetTypeId == ctx.typeId) {
-                candidates.push_back({0, Candidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
+                candidates.push_back({
+                    0,
+                    Candidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
+                });
             } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                candidates.push_back(
-                    {(int)chain.size(), Candidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
-                );
+                candidates.push_back({
+                    (int)chain.size(),
+                    Candidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
+                });
             }
         }
         if (!candidates.empty()) {
@@ -1157,29 +1238,68 @@ std::string PlaceholderManager::executePlaceholder(
             for (auto& entry : potentialListReplacers) {
                 std::vector<Caster> chain;
                 if (entry.targetTypeId == ctx.typeId) {
-                    listCandidates.push_back({0, ListCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
+                    listCandidates.push_back({
+                        0,
+                        ListCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
+                    });
                 } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                    listCandidates.push_back(
-                        {(int)chain.size(),
-                         ListCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
-                    );
+                    listCandidates.push_back({
+                        (int)chain.size(),
+                        ListCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
+                    });
                 }
             }
             if (!listCandidates.empty()) {
-                std::sort(
-                    listCandidates.begin(),
-                    listCandidates.end(),
-                    [](auto& a, auto& b) { return a.first < b.first; }
-                );
+                std::sort(listCandidates.begin(), listCandidates.end(), [](auto& a, auto& b) {
+                    return a.first < b.first;
+                });
                 bestListCandidate = std::move(listCandidates.front().second);
                 type              = PlaceholderType::ListContext;
             }
         }
+
+        // 如果都没找到，再查找对象列表型上下文占位符
+        if (!bestCandidate && !bestListCandidate) {
+            std::vector<TypedObjectListReplacer> potentialObjectListReplacers;
+            {
+                std::shared_lock lk(mMutex);
+                auto             plugin_it = mContextObjectListPlaceholders.find(std::string(pluginName));
+                if (plugin_it != mContextObjectListPlaceholders.end()) {
+                    auto ph_it = plugin_it->second.find(std::string(placeholderName));
+                    if (ph_it != plugin_it->second.end()) {
+                        potentialObjectListReplacers = ph_it->second;
+                    }
+                }
+            }
+            std::vector<std::pair<int, ObjectListCandidate>> objectListCandidates;
+            for (auto& entry : potentialObjectListReplacers) {
+                std::vector<Caster> chain;
+                if (entry.targetTypeId == ctx.typeId) {
+                    objectListCandidates.push_back({
+                        0,
+                        ObjectListCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
+                    });
+                } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
+                    objectListCandidates.push_back({
+                        (int)chain.size(),
+                        ObjectListCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
+                    });
+                }
+            }
+            if (!objectListCandidates.empty()) {
+                std::sort(objectListCandidates.begin(), objectListCandidates.end(), [](auto& a, auto& b) {
+                    return a.first < b.first;
+                });
+                bestObjectListCandidate = std::move(objectListCandidates.front().second);
+                type                    = PlaceholderType::ObjectListContext;
+            }
+        }
     }
 
-    std::optional<ServerReplacerEntry>     serverEntry;
-    std::optional<ServerListReplacerEntry> serverListEntry;
-    if (!bestRelationalCandidate && !bestCandidate && !bestListCandidate) {
+    std::optional<ServerReplacerEntry>           serverEntry;
+    std::optional<ServerListReplacerEntry>       serverListEntry;
+    std::optional<ServerObjectListReplacerEntry> serverObjectListEntry;
+    if (!bestRelationalCandidate && !bestCandidate && !bestListCandidate && !bestObjectListCandidate) {
         std::shared_lock lk(mMutex);
         // 优先查找普通服务器占位符
         auto plugin_it = mServerPlaceholders.find(std::string(pluginName));
@@ -1201,13 +1321,25 @@ std::string PlaceholderManager::executePlaceholder(
                 }
             }
         }
+        // 如果都没找到，再查找对象列表型服务器占位符
+        if (!serverEntry && !serverListEntry) {
+            auto object_list_plugin_it = mServerObjectListPlaceholders.find(std::string(pluginName));
+            if (object_list_plugin_it != mServerObjectListPlaceholders.end()) {
+                auto object_list_placeholder_it = object_list_plugin_it->second.find(std::string(placeholderName));
+                if (object_list_placeholder_it != object_list_plugin_it->second.end()) {
+                    serverObjectListEntry = object_list_placeholder_it->second;
+                    type                  = PlaceholderType::ObjectListServer;
+                }
+            }
+        }
     }
 
     // --- 2. Build Cache Key & Check Cache ---
     std::string                  cacheKey;
     std::optional<CacheDuration> cacheDuration = cache_duration_override;
-    bool hasCandidate                        = bestRelationalCandidate.has_value() || bestCandidate.has_value()
-                       || serverEntry.has_value() || bestListCandidate.has_value() || serverListEntry.has_value();
+    bool hasCandidate = bestRelationalCandidate.has_value() || bestCandidate.has_value() || serverEntry.has_value()
+                     || bestListCandidate.has_value() || serverListEntry.has_value()
+                     || bestObjectListCandidate.has_value() || serverObjectListEntry.has_value();
 
     if (hasCandidate) {
         CacheKeyStrategy strategy = CacheKeyStrategy::Default;
@@ -1242,7 +1374,8 @@ std::string PlaceholderManager::executePlaceholder(
         if (itCache != st.cache.end()) {
             if (ConfigManager::getInstance().get().debugMode) {
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                    std::chrono::high_resolution_clock::now() - startTime)
+                                    std::chrono::high_resolution_clock::now() - startTime
+                )
                                     .count();
                 logger.info(
                     "Placeholder '{}:{}' | Cache Hit: Yes (local) | Type: {} | Time: {}us",
@@ -1262,7 +1395,8 @@ std::string PlaceholderManager::executePlaceholder(
             if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
                 if (ConfigManager::getInstance().get().debugMode) {
                     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                        std::chrono::high_resolution_clock::now() - startTime)
+                                        std::chrono::high_resolution_clock::now() - startTime
+                    )
                                         .count();
                     logger.info(
                         "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
@@ -1360,6 +1494,94 @@ std::string PlaceholderManager::executePlaceholder(
             replaced_val          = PA::Utils::join(result_list, separator);
             replaced              = true;
         }
+    } else if (bestObjectListCandidate) {
+        void* p = ctx.ptr;
+        for (auto& cfun : bestObjectListCandidate->chain) {
+            p = cfun(p);
+        }
+        if (p) {
+            std::vector<PlaceholderContext> object_list;
+            if (std::holds_alternative<AnyPtrObjectListReplacer>(bestObjectListCandidate->fn)) {
+                object_list = std::get<AnyPtrObjectListReplacer>(bestObjectListCandidate->fn)(p);
+            } else {
+                object_list = std::get<AnyPtrObjectListReplacerWithParams>(bestObjectListCandidate->fn)(p, params);
+            }
+
+            if (!object_list.empty() || allowEmpty) {
+                std::string join_separator = std::string(params.get("join").value_or(""));
+                std::string template_str   = std::string(params.get("template").value_or(""));
+
+                std::vector<std::string> replaced_objects;
+                replaced_objects.reserve(object_list.size());
+
+                if (!template_str.empty()) {
+                    auto compiled_template = compileTemplate(template_str);
+                    for (const auto& obj_ctx : object_list) {
+                        replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1));
+                    }
+                } else {
+                    // 如果没有提供模板，则尝试将每个对象的 typeKey 转换为字符串
+                    for (const auto& obj_ctx : object_list) {
+                        std::string typeName;
+                        auto        aliasIt = mIdToAlias.find(obj_ctx.typeId);
+                        if (aliasIt != mIdToAlias.end()) {
+                            typeName = aliasIt->second;
+                        } else {
+                            auto keyIt = mIdToTypeKey.find(obj_ctx.typeId);
+                            if (keyIt != mIdToTypeKey.end()) {
+                                typeName = keyIt->second;
+                            } else {
+                                typeName = "UnknownTypeId(" + std::to_string(obj_ctx.typeId) + ")";
+                            }
+                        }
+                        replaced_objects.push_back(typeName);
+                    }
+                }
+                replaced_val = PA::Utils::join(replaced_objects, join_separator);
+                replaced     = true;
+            }
+        }
+    } else if (serverObjectListEntry) {
+        std::vector<PlaceholderContext> object_list;
+        if (std::holds_alternative<ServerObjectListReplacer>(serverObjectListEntry->fn)) {
+            object_list = std::get<ServerObjectListReplacer>(serverObjectListEntry->fn)();
+        } else {
+            object_list = std::get<ServerObjectListReplacerWithParams>(serverObjectListEntry->fn)(params);
+        }
+
+        if (!object_list.empty() || allowEmpty) {
+            std::string join_separator = std::string(params.get("join").value_or(""));
+            std::string template_str   = std::string(params.get("template").value_or(""));
+
+            std::vector<std::string> replaced_objects;
+            replaced_objects.reserve(object_list.size());
+
+            if (!template_str.empty()) {
+                auto compiled_template = compileTemplate(template_str);
+                for (const auto& obj_ctx : object_list) {
+                    replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1));
+                }
+            } else {
+                // 如果没有提供模板，则尝试将每个对象的 typeKey 转换为字符串
+                for (const auto& obj_ctx : object_list) {
+                    std::string typeName;
+                    auto        aliasIt = mIdToAlias.find(obj_ctx.typeId);
+                    if (aliasIt != mIdToAlias.end()) {
+                        typeName = aliasIt->second;
+                    } else {
+                        auto keyIt = mIdToTypeKey.find(obj_ctx.typeId);
+                        if (keyIt != mIdToTypeKey.end()) {
+                            typeName = keyIt->second;
+                        } else {
+                            typeName = "UnknownTypeId(" + std::to_string(obj_ctx.typeId) + ")";
+                        }
+                    }
+                    replaced_objects.push_back(typeName);
+                }
+            }
+            replaced_val = PA::Utils::join(replaced_objects, join_separator);
+            replaced     = true;
+        }
     }
 
     // --- 4. Finalize & Cache ---
@@ -1381,10 +1603,12 @@ std::string PlaceholderManager::executePlaceholder(
                 .count();
         const char* typeStr = "Unknown";
         if (type == PlaceholderType::Relational) typeStr = "Relational";
-        if (type == PlaceholderType::Context) typeStr = "Context";
-        if (type == PlaceholderType::Server) typeStr = "Server";
-        if (type == PlaceholderType::ListContext) typeStr = "ListContext";
-        if (type == PlaceholderType::ListServer) typeStr = "ListServer";
+        else if (type == PlaceholderType::Context) typeStr = "Context";
+        else if (type == PlaceholderType::Server) typeStr = "Server";
+        else if (type == PlaceholderType::ListContext) typeStr = "ListContext";
+        else if (type == PlaceholderType::ListServer) typeStr = "ListServer";
+        else if (type == PlaceholderType::ObjectListContext) typeStr = "ObjectListContext";
+        else if (type == PlaceholderType::ObjectListServer) typeStr = "ObjectListServer";
 
         if (!replaced) {
             logger.warn(
@@ -1437,7 +1661,19 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     std::optional<CacheDuration> cache_duration_override
 ) {
     const auto startTime = std::chrono::high_resolution_clock::now();
-    enum class PlaceholderType { None, Server, Context, AsyncServer, AsyncContext, SyncFallback };
+    enum class PlaceholderType {
+        None,
+        Server,
+        Context,
+        Relational,
+        ListServer,
+        ListContext,
+        ObjectListServer,
+        ObjectListContext,
+        AsyncServer,
+        AsyncContext,
+        SyncFallback
+    };
     PlaceholderType type = PlaceholderType::None;
 
     // --- 1. Find Async Candidate ---
@@ -1465,20 +1701,21 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         for (auto& entry : potentialAsyncReplacers) {
             std::vector<Caster> chain;
             if (entry.targetTypeId == ctx.typeId) {
-                asyncCandidates.push_back({0, AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
+                asyncCandidates.push_back({
+                    0,
+                    AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
+                });
             } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                asyncCandidates.push_back(
-                    {(int)chain.size(),
-                     AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
-                );
+                asyncCandidates.push_back({
+                    (int)chain.size(),
+                    AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
+                });
             }
         }
         if (!asyncCandidates.empty()) {
-            std::sort(
-                asyncCandidates.begin(),
-                asyncCandidates.end(),
-                [](auto& a, auto& b) { return a.first < b.first; }
-            );
+            std::sort(asyncCandidates.begin(), asyncCandidates.end(), [](auto& a, auto& b) {
+                return a.first < b.first;
+            });
             bestAsyncCandidate = std::move(asyncCandidates.front().second);
             type               = PlaceholderType::AsyncContext;
         }
@@ -1504,9 +1741,9 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
 
     if (hasAsyncCandidate) {
         CacheKeyStrategy strategy = bestAsyncCandidate ? bestAsyncCandidate->strategy
-                                    : asyncServerEntry ? asyncServerEntry->strategy
+                                  : asyncServerEntry   ? asyncServerEntry->strategy
                                                        : CacheKeyStrategy::Default;
-        cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
+        cacheKey                  = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
 
         if (!cacheDuration) {
             cacheDuration = bestAsyncCandidate ? bestAsyncCandidate->cacheDuration : asyncServerEntry->cacheDuration;
@@ -1517,7 +1754,8 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
                 if (ConfigManager::getInstance().get().debugMode) {
                     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                        std::chrono::high_resolution_clock::now() - startTime)
+                                        std::chrono::high_resolution_clock::now() - startTime
+                    )
                                         .count();
                     logger.info(
                         "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
@@ -1575,16 +1813,16 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     bool                    allowEmpty = params.getBool("allowempty").value_or(false);
 
     return mCombinerThreadPool->enqueue([this,
-                                 startTime,
-                                 type,
-                                 fut             = std::move(future),
-                                 pluginName      = std::string(pluginName),
-                                 placeholderName = std::string(placeholderName),
-                                 paramString,
-                                 defaultText,
-                                 allowEmpty,
-                                 cacheKey,
-                                 cacheDuration]() mutable {
+                                         startTime,
+                                         type,
+                                         fut             = std::move(future),
+                                         pluginName      = std::string(pluginName),
+                                         placeholderName = std::string(placeholderName),
+                                         paramString,
+                                         defaultText,
+                                         allowEmpty,
+                                         cacheKey,
+                                         cacheDuration]() mutable {
         std::string replaced_val = fut.get();
         bool        replaced     = !replaced_val.empty() || allowEmpty;
 
@@ -1603,11 +1841,20 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
 
         if (ConfigManager::getInstance().get().debugMode) {
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::high_resolution_clock::now() - startTime)
+                                std::chrono::high_resolution_clock::now() - startTime
+            )
                                 .count();
             const char* typeStr = "Unknown";
-            if (type == PlaceholderType::AsyncContext) typeStr = "AsyncContext";
-            if (type == PlaceholderType::AsyncServer) typeStr = "AsyncServer";
+            if (type == PlaceholderType::Relational) typeStr = "Relational";
+            else if (type == PlaceholderType::Context) typeStr = "Context";
+            else if (type == PlaceholderType::Server) typeStr = "Server";
+            else if (type == PlaceholderType::ListContext) typeStr = "ListContext";
+            else if (type == PlaceholderType::ListServer) typeStr = "ListServer";
+            else if (type == PlaceholderType::ObjectListContext) typeStr = "ObjectListContext";
+            else if (type == PlaceholderType::ObjectListServer) typeStr = "ObjectListServer";
+            else if (type == PlaceholderType::AsyncContext) typeStr = "AsyncContext";
+            else if (type == PlaceholderType::AsyncServer) typeStr = "AsyncServer";
+            else if (type == PlaceholderType::SyncFallback) typeStr = "SyncFallback";
 
             logger.info(
                 "Placeholder '{}:{}' | Cache Hit: No | Type: {} | Time: {}us",
