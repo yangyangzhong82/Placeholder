@@ -609,16 +609,8 @@ void applyNumberFormatting(
 
         // 数学函数
         if (auto exprOpt = params.get("math")) {
-            // 尝试将当前值作为参数传入数学表达式
-            std::string expr = std::string(*exprOpt);
-            // 替换表达式中的特殊变量 `_` 为当前值
-            std::string formatted_v = formatNumber(v, -1, false, false); // 使用原始值，不进行格式化
-            size_t      pos         = expr.find("_");
-            while (pos != std::string::npos) {
-                expr.replace(pos, 1, formatted_v);
-                pos = expr.find("_", pos + formatted_v.length());
-            }
-            auto result = evalMathExpression(expr, params);
+            std::string expr   = std::string(*exprOpt);
+            auto        result = evalMathExpression(expr, params, v);
             if (result) {
                 v = *result;
             } else {
@@ -854,11 +846,19 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
     }
 }
 
-std::optional<double> evalMathExpression(const std::string& expression_str, const ParsedParams& params) {
+std::optional<double> evalMathExpression(
+    const std::string& expression_str, const ParsedParams& params, std::optional<double> current
+) {
     using namespace exprtk;
 
     symbol_table<double>                    symbol_table;
     std::unordered_map<std::string, double> variables; // 持久化存储变量
+    double                                  current_val = 0; // 必须在 symbol_table 作用域内
+
+    if (current) {
+        current_val = *current;
+        symbol_table.add_variable("_", current_val);
+    }
 
     // 注册变量
     for (const auto& [key, value_str] : params.getRawParams()) {

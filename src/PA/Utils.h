@@ -148,7 +148,9 @@ inline double math_min(double a, double b);
 inline double math_max(double a, double b);
 
 // 数学表达式求值
-std::optional<double> evalMathExpression(const std::string& expression, const ParsedParams& params);
+std::optional<double> evalMathExpression(
+    const std::string& expression, const ParsedParams& params, std::optional<double> current = std::nullopt
+);
 
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
