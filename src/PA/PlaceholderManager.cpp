@@ -349,17 +349,38 @@ void PlaceholderManager::registerAsyncPlaceholderForTypeKeyWithParams(
 void PlaceholderManager::clearCache() { mGlobalCache.clear(); }
 
 void PlaceholderManager::clearCache(const std::string& pluginName) {
-    std::string prefix = "#" + pluginName + ":";
-    mGlobalCache.remove_if([&prefix](const std::string& key) {
-        // 键格式: ctxptr#typeId#plugin:ph|params
-        // 或: #plugin:ph|params (ServerOnly)
-        auto pos = key.find(prefix);
-        // 确保找到的前缀是在 #...# 之后，或者是 key 的开头
-        if (pos == std::string::npos) {
-            return false;
+    mGlobalCache.remove_if([&pluginName](const std::string& key) {
+        // Key formats:
+        // - ServerOnly: #plugin:ph|params
+        // - No context: plugin:ph|params
+        // - Context:    ctx#type#plugin:ph|params
+        // - Relational: ctx#type#relctx#reltype#plugin:ph|params
+        // The plugin name is always located between the last '#' (or start) and the first ':' before '|'.
+
+        auto pipePos = key.find('|');
+        if (pipePos == std::string::npos) {
+            return false; // Not a valid placeholder cache key.
         }
-        auto secondHashPos = key.find('#', key.find('#') + 1);
-        return pos == secondHashPos + 1 || (key.rfind('#', pos) == std::string::npos);
+
+        std::string_view keyView = std::string_view(key).substr(0, pipePos);
+
+        auto colonPos = keyView.rfind(':');
+        if (colonPos == std::string::npos) {
+            return false; // Invalid key format, no placeholder name.
+        }
+
+        auto lastHashPos = keyView.rfind('#');
+
+        std::string_view keyPluginName;
+        if (lastHashPos == std::string::npos) {
+            // Case: "plugin:ph" (no context)
+            keyPluginName = keyView.substr(0, colonPos);
+        } else {
+            // Case: "...#plugin:ph" (server, context, relational)
+            keyPluginName = keyView.substr(lastHashPos + 1, colonPos - (lastHashPos + 1));
+        }
+
+        return keyPluginName == pluginName;
     });
 }
 
