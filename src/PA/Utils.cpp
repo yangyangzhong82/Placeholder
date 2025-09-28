@@ -408,16 +408,17 @@ inline std::string addThousandSeparators(std::string s, char groupSep, char deci
 
 // SI 缩放
 inline std::string siScale(
-    double      v,
-    int         base,
-    int         decimals,
-    bool        doRound,
-    bool        space,
-    std::string unitCase
+    double             v,
+    int                base,
+    int                decimals,
+    bool               doRound,
+    bool               space,
+    std::string        unitCase,
+    const std::string& unit
 ) {
-    static const char* units1000[]    = {"", "K", "M", "G", "T", "P", "E"};
+    static const char* units1000[]     = {"", "K", "M", "G", "T", "P", "E"};
     static const char* units1000_low[] = {"", "k", "m", "g", "t", "p", "e"};
-    static const char* units1024[]    = {"", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei"};
+    static const char* units1024[]     = {"", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei"};
     static const char* units1024_low[] = {"", "ki", "mi", "gi", "ti", "pi", "ei"};
 
     const char** units;
@@ -439,14 +440,22 @@ inline std::string siScale(
 
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(std::max(0, decimals)) << y;
+
+    std::string suffix_part;
     if (idx > 0) {
-        if (space) oss << " ";
-        oss << units[idx];
+        suffix_part += units[idx];
     }
+    suffix_part += unit;
+
+    if (!suffix_part.empty() && space) {
+        oss << " ";
+    }
+    oss << suffix_part;
+
     return oss.str();
 }
 
-inline std::string formatNumber(double x, int decimals, bool doRound) {
+inline std::string formatNumber(double x, int decimals, bool doRound, bool trimzeros = false) {
     if (decimals < 0) {
         // 默认尽可能精简地输出
         std::ostringstream oss;
@@ -457,6 +466,17 @@ inline std::string formatNumber(double x, int decimals, bool doRound) {
     double             y      = doRound ? std::round(x * factor) / factor : std::trunc(x * factor) / factor;
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(decimals) << y;
+    if (trimzeros) {
+        std::string s = oss.str();
+        auto        dot_pos = s.find('.');
+        if (dot_pos != std::string::npos) {
+            s.erase(s.find_last_not_of('0') + 1, std::string::npos);
+            if (s.back() == '.') {
+                s.pop_back();
+            }
+        }
+        return s;
+    }
     return oss.str();
 }
 
@@ -647,29 +667,46 @@ void applyNumberFormatting(
             // 尝试将当前值作为参数传入数学表达式
             std::string expr = std::string(*exprOpt);
             // 替换表达式中的特殊变量 `_` 为当前值
-            std::string formatted_v = formatNumber(v, -1, false); // 使用原始值，不进行格式化
+            std::string formatted_v = formatNumber(v, -1, false, false); // 使用原始值，不进行格式化
             size_t      pos         = expr.find("_");
             while (pos != std::string::npos) {
                 expr.replace(pos, 1, formatted_v);
                 pos = expr.find("_", pos + formatted_v.length());
             }
-            if (auto result = evalMathExpression(expr, params)) {
+            auto result = evalMathExpression(expr, params);
+            if (result) {
                 v = *result;
+            } else {
+                // 表达式求值失败
+                if (auto onerror = params.get("onerror")) {
+                    auto action = trim(std::string(*onerror));
+                    if (iequals(action, "empty")) {
+                        out.clear();
+                        return; // 跳过所有数字格式化
+                    }
+                    if (action.size() > 5 && iequals(action.substr(0, 5), "text:")) {
+                        out = trim(action.substr(5));
+                        return; // 跳过所有数字格式化
+                    }
+                    // "keep" is default, do nothing, fall through to format original `v`
+                }
             }
         }
 
-        int  decimals = params.getInt("decimals").value_or(-1);
-        bool doRound  = params.getBool("round").value_or(true);
+        int  decimals  = params.getInt("decimals").value_or(-1);
+        bool doRound   = params.getBool("round").value_or(true);
+        bool trimzeros = params.getBool("trimzeros").value_or(false);
 
         // SI 缩放
         if (params.getBool("si").value_or(false)) {
             int         base     = params.getInt("base").value_or(1000) == 1024 ? 1024 : 1000;
             bool        space    = params.getBool("space").value_or(true);
             std::string unitCase = toLower(trim(std::string(params.get("unitcase").value_or("upper"))));
-            out = siScale(v, base, decimals < 0 ? 2 : decimals, doRound, space, unitCase);
+            std::string unit     = std::string(params.get("unit").value_or(""));
+            out = siScale(v, base, decimals < 0 ? 2 : decimals, doRound, space, unitCase, unit);
         } else {
             // 默认数字格式
-            out = formatNumber(v, decimals, doRound);
+            out = formatNumber(v, decimals, doRound, trimzeros);
         }
 
         // 千分位
