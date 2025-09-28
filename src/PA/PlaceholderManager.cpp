@@ -666,7 +666,8 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             // 非法格式，视为文本
             if (ConfigManager::getInstance().get().debugMode) {
                 logger.warn(
-                    "Placeholder format error: '{}' is not a valid placeholder format. Expected 'plugin:placeholder'.",
+                    "Placeholder format error: '{}' is not a valid placeholder format. It seems to be missing a "
+                    "colon ':'. The correct format is {{plugin:placeholder}}.",
                     std::string(inside)
                 );
             }
@@ -752,51 +753,25 @@ std::string PlaceholderManager::executePlaceholder(
     ReplaceState&                st,
     std::optional<CacheDuration> cache_duration_override
 ) {
-    // 构造缓存 key
-    std::string cacheKey;
-    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 40);
+    const auto startTime = std::chrono::high_resolution_clock::now();
+    enum class PlaceholderType { None, Server, Context };
+    PlaceholderType type = PlaceholderType::None;
 
-    // 稍后根据策略决定 key 的内容，这里先留空
-    // ...
-
-    // 1. 检查单次替换缓存
-    auto itCache = st.cache.find(cacheKey);
-    if (itCache != st.cache.end()) {
-        std::string out = itCache->second;
-        if (out.empty() && !defaultText.empty()) out = defaultText;
-        return out;
-    }
-
-    // 2. 检查全局缓存
-    std::optional<CacheDuration> cacheDuration;
-    if (cache_duration_override) {
-        cacheDuration = cache_duration_override;
-    }
-    if (cacheDuration) {
-        auto cached = mGlobalCache.get(cacheKey);
-        if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
-            std::string out = cached->result;
-            st.cache.emplace(std::move(cacheKey), out); // 写入单次缓存
-            if (out.empty() && !defaultText.empty()) out = defaultText;
-            return out;
-        }
-    }
-
-
-    // 查询候选
+    // --- 1. Find Candidate ---
     struct Candidate {
         std::vector<Caster>                                    chain;
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;
         std::optional<CacheDuration>                           cacheDuration;
         CacheKeyStrategy                                       strategy;
     };
+    std::optional<Candidate>               bestCandidate;
     std::vector<std::pair<int, Candidate>> candidates;
 
-    std::vector<TypedReplacer> potentialReplacers;
-    {
-        std::shared_lock lk(mMutex);
-        if (ctx.ptr != nullptr && ctx.typeId != 0) {
-            auto plugin_it = mContextPlaceholders.find(std::string(pluginName));
+    if (ctx.ptr != nullptr && ctx.typeId != 0) {
+        std::vector<TypedReplacer> potentialReplacers;
+        {
+            std::shared_lock lk(mMutex);
+            auto             plugin_it = mContextPlaceholders.find(std::string(pluginName));
             if (plugin_it != mContextPlaceholders.end()) {
                 auto ph_it = plugin_it->second.find(std::string(placeholderName));
                 if (ph_it != plugin_it->second.end()) {
@@ -804,133 +779,183 @@ std::string PlaceholderManager::executePlaceholder(
                 }
             }
         }
-    }
-
-    for (auto& entry : potentialReplacers) {
-        std::vector<Caster> chain;
-        if (entry.targetTypeId == ctx.typeId) {
-            candidates.push_back({
-                0,
-                Candidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-            });
-        } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-            candidates.push_back({
-                (int)chain.size(),
-                Candidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-            });
+        for (auto& entry : potentialReplacers) {
+            std::vector<Caster> chain;
+            if (entry.targetTypeId == ctx.typeId) {
+                candidates.push_back({0, Candidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
+            } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
+                candidates.push_back(
+                    {(int)chain.size(), Candidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
+                );
+            }
+        }
+        if (!candidates.empty()) {
+            std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
+            bestCandidate = std::move(candidates.front().second);
+            type          = PlaceholderType::Context;
         }
     }
 
-    if (!candidates.empty()) {
-        std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
+    std::optional<ServerReplacerEntry> serverEntry;
+    if (!bestCandidate) {
+        std::shared_lock lk(mMutex);
+        auto             plugin_it = mServerPlaceholders.find(std::string(pluginName));
+        if (plugin_it != mServerPlaceholders.end()) {
+            auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
+            if (placeholder_it != plugin_it->second.end()) {
+                serverEntry = placeholder_it->second;
+                type        = PlaceholderType::Server;
+            }
+        }
     }
 
+    // --- 2. Build Cache Key & Check Cache ---
+    std::string                  cacheKey;
+    std::optional<CacheDuration> cacheDuration = cache_duration_override;
+    bool                         hasCandidate  = bestCandidate.has_value() || serverEntry.has_value();
+
+    if (hasCandidate) {
+        CacheKeyStrategy strategy = bestCandidate ? bestCandidate->strategy
+                                    : serverEntry ? serverEntry->strategy
+                                                  : CacheKeyStrategy::Default;
+        cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
+
+        if (!cacheDuration) {
+            cacheDuration = bestCandidate ? bestCandidate->cacheDuration : serverEntry->cacheDuration;
+        }
+
+        auto itCache = st.cache.find(cacheKey);
+        if (itCache != st.cache.end()) {
+            if (ConfigManager::getInstance().get().debugMode) {
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::high_resolution_clock::now() - startTime)
+                                    .count();
+                logger.info(
+                    "Placeholder '{}:{}' | Cache Hit: Yes (local) | Type: {} | Time: {}us",
+                    std::string(pluginName),
+                    std::string(placeholderName),
+                    type == PlaceholderType::Context ? "Context" : "Server",
+                    duration
+                );
+            }
+            std::string out = itCache->second;
+            if (out.empty() && !defaultText.empty()) out = defaultText;
+            return out;
+        }
+
+        if (cacheDuration) {
+            auto cached = mGlobalCache.get(cacheKey);
+            if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
+                if (ConfigManager::getInstance().get().debugMode) {
+                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::high_resolution_clock::now() - startTime)
+                                        .count();
+                    logger.info(
+                        "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
+                        std::string(pluginName),
+                        std::string(placeholderName),
+                        type == PlaceholderType::Context ? "Context" : "Server",
+                        duration
+                    );
+                }
+                st.cache.emplace(cacheKey, cached->result);
+                std::string out = cached->result;
+                if (out.empty() && !defaultText.empty()) out = defaultText;
+                return out;
+            }
+        }
+    }
+
+    // --- 3. Execute Placeholder ---
     PA::Utils::ParsedParams params(paramString);
     bool                    allowEmpty = params.getBool("allowempty").value_or(false);
+    std::string             replaced_val;
+    bool                    replaced = false;
 
-    std::string replaced_val;
-    bool        replaced = false;
-
-    for (auto& [dist, cand] : candidates) {
+    if (bestCandidate) {
         void* p = ctx.ptr;
-        for (auto& cfun : cand.chain) {
+        for (auto& cfun : bestCandidate->chain) {
             p = cfun(p);
-            if (!p) break;
         }
-        if (!p) continue;
-
-        if (std::holds_alternative<AnyPtrReplacer>(cand.fn)) {
-            replaced_val = std::get<AnyPtrReplacer>(cand.fn)(p);
-        } else {
-            replaced_val = std::get<AnyPtrReplacerWithParams>(cand.fn)(p, params);
-        }
-        if (!replaced_val.empty() || allowEmpty) {
-            replaced      = true;
-            cacheDuration = cand.cacheDuration; // 找到后更新缓存时间
-            cacheKey      = buildCacheKey(ctx, pluginName, placeholderName, paramString, cand.strategy);
-            break;
-        }
-    }
-
-    // `executePlaceholder` 现在只处理同步占位符。
-    // 异步占位符的同步调用由 `executePlaceholderAsync` 的回退逻辑处理，
-    // 然后由 `replacePlaceholders` -> `replacePlaceholdersAsync` -> `future.get()` 阻塞。
-
-    if (!replaced) {
-        ServerReplacerEntry serverEntry;
-        bool                hasServer = false;
-        {
-            std::shared_lock lk(mMutex);
-            auto             plugin_it = mServerPlaceholders.find(std::string(pluginName));
-            if (plugin_it != mServerPlaceholders.end()) {
-                auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
-                if (placeholder_it != plugin_it->second.end()) {
-                    serverEntry = placeholder_it->second;
-                    hasServer   = true;
-                }
-            }
-        }
-        if (hasServer) {
-            if (std::holds_alternative<ServerReplacer>(serverEntry.fn)) {
-                replaced_val = std::get<ServerReplacer>(serverEntry.fn)();
+        if (p) {
+            if (std::holds_alternative<AnyPtrReplacer>(bestCandidate->fn)) {
+                replaced_val = std::get<AnyPtrReplacer>(bestCandidate->fn)(p);
             } else {
-                replaced_val = std::get<ServerReplacerWithParams>(serverEntry.fn)(params);
+                replaced_val = std::get<AnyPtrReplacerWithParams>(bestCandidate->fn)(p, params);
             }
             if (!replaced_val.empty() || allowEmpty) {
-                replaced      = true;
-                cacheDuration = serverEntry.cacheDuration;
-                cacheKey      = buildCacheKey(ctx, pluginName, placeholderName, paramString, serverEntry.strategy);
+                replaced = true;
             }
+        }
+    } else if (serverEntry) {
+        if (std::holds_alternative<ServerReplacer>(serverEntry->fn)) {
+            replaced_val = std::get<ServerReplacer>(serverEntry->fn)();
+        } else {
+            replaced_val = std::get<ServerReplacerWithParams>(serverEntry->fn)(params);
+        }
+        if (!replaced_val.empty() || allowEmpty) {
+            replaced = true;
         }
     }
 
+    // --- 4. Finalize & Cache ---
     std::string formatted_val;
     if (replaced) {
         formatted_val = PA::Utils::applyFormatting(replaced_val, params);
     }
 
     std::string finalOut;
-    // 统一收敛逻辑
-    // 条件：占位符被成功替换，并且格式化后的结果不是空的，或者允许为空
     if (replaced && (!formatted_val.empty() || allowEmpty)) {
         finalOut = formatted_val;
     } else {
-        // 否则，使用默认值
-        if (!defaultText.empty()) {
-            finalOut = defaultText;
+        finalOut = defaultText;
+    }
+
+    if (ConfigManager::getInstance().get().debugMode) {
+        auto duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime)
+                .count();
+        const char* typeStr = "Unknown";
+        if (type == PlaceholderType::Context) typeStr = "Context";
+        if (type == PlaceholderType::Server) typeStr = "Server";
+
+        if (!replaced) {
+            logger.warn(
+                "Placeholder '{}:{}' not found or returned empty, and no default value provided. Using default: '{}'. "
+                "Context ptr: {}, typeId: {}. Params: '{}'. Time: {}us",
+                std::string(pluginName),
+                std::string(placeholderName),
+                defaultText,
+                reinterpret_cast<uintptr_t>(ctx.ptr),
+                ctx.typeId,
+                paramString,
+                duration
+            );
         } else {
-            // 没有默认值，根据配置决定如何处理
-            if (ConfigManager::getInstance().get().debugMode) {
-                if (!replaced) { // 仅在未找到占位符时警告
-                    logger.warn(
-                        "Placeholder '{}:{}' not found or returned empty, and no default value provided. Context ptr: "
-                        "{}, typeId: {}. Params: '{}'.",
-                        std::string(pluginName),
-                        std::string(placeholderName),
-                        reinterpret_cast<uintptr_t>(ctx.ptr),
-                        ctx.typeId,
-                        paramString
-                    );
-                }
-                // 调试模式下保留原样（不含默认值部分）
-                finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
-                finalOut.append("{").append(pluginName).append(":").append(placeholderName);
-                if (!paramString.empty()) finalOut.append("|").append(paramString);
-                finalOut.append("}");
-            } else {
-                // 生产模式下返回空字符串
-                finalOut = "";
-            }
+            logger.info(
+                "Placeholder '{}:{}' | Cache Hit: No | Type: {} | Time: {}us",
+                std::string(pluginName),
+                std::string(placeholderName),
+                typeStr,
+                duration
+            );
         }
     }
 
-    // 3. 写入缓存
-    if (replaced) { // 只有成功替换才可能有缓存键
+    if (finalOut.empty() && defaultText.empty() && !replaced && ConfigManager::getInstance().get().debugMode) {
+        finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
+        finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+        if (!paramString.empty()) finalOut.append("|").append(paramString);
+        finalOut.append("}");
+    }
+
+    if (replaced) {
         st.cache.emplace(cacheKey, finalOut);
-        if (cacheDuration) { // 只有成功替换且需要缓存时才写入全局缓存
+        if (cacheDuration) {
             mGlobalCache.put(cacheKey, {finalOut, std::chrono::steady_clock::now() + *cacheDuration});
         }
     }
+
     return finalOut;
 }
 
@@ -944,38 +969,25 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     const PlaceholderContext&    ctx,
     std::optional<CacheDuration> cache_duration_override
 ) {
-    // 构造缓存 key (延迟构造)
-    std::string cacheKey;
-    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 40);
+    const auto startTime = std::chrono::high_resolution_clock::now();
+    enum class PlaceholderType { None, Server, Context, AsyncServer, AsyncContext, SyncFallback };
+    PlaceholderType type = PlaceholderType::None;
 
-    // 1. 检查全局缓存
-    std::optional<CacheDuration> cacheDuration;
-    if (cache_duration_override) {
-        cacheDuration = cache_duration_override;
-    }
-    if (cacheDuration) {
-        auto cached = mGlobalCache.get(cacheKey);
-        if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
-            std::promise<std::string> promise;
-            promise.set_value(cached->result);
-            return promise.get_future();
-        }
-    }
-
-    // 2. 检查异步上下文占位符
+    // --- 1. Find Async Candidate ---
     struct AsyncCandidate {
         std::vector<Caster>                                              chain;
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
         std::optional<CacheDuration>                                     cacheDuration;
         CacheKeyStrategy                                                 strategy;
     };
-    std::vector<std::pair<int, AsyncCandidate>> asyncCandidates;
+    std::optional<AsyncCandidate> bestAsyncCandidate;
 
-    std::vector<AsyncTypedReplacer> potentialAsyncReplacers;
-    {
-        std::shared_lock lk(mMutex);
-        if (ctx.ptr != nullptr && ctx.typeId != 0) {
-            auto plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
+    if (ctx.ptr != nullptr && ctx.typeId != 0) {
+        std::vector<std::pair<int, AsyncCandidate>> asyncCandidates;
+        std::vector<AsyncTypedReplacer>             potentialAsyncReplacers;
+        {
+            std::shared_lock lk(mMutex);
+            auto             plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
             if (plugin_it != mAsyncContextPlaceholders.end()) {
                 auto ph_it = plugin_it->second.find(std::string(placeholderName));
                 if (ph_it != plugin_it->second.end()) {
@@ -983,115 +995,124 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                 }
             }
         }
-    }
-
-    for (auto& entry : potentialAsyncReplacers) {
-        std::vector<Caster> chain;
-        if (entry.targetTypeId == ctx.typeId) {
-            asyncCandidates.push_back({
-                0,
-                AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-            });
-        } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-            asyncCandidates.push_back({
-                (int)chain.size(),
-                AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-            });
+        for (auto& entry : potentialAsyncReplacers) {
+            std::vector<Caster> chain;
+            if (entry.targetTypeId == ctx.typeId) {
+                asyncCandidates.push_back({0, AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
+            } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
+                asyncCandidates.push_back(
+                    {(int)chain.size(),
+                     AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
+                );
+            }
         }
-    }
-
-    if (!asyncCandidates.empty()) {
-        std::sort(asyncCandidates.begin(), asyncCandidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
-    }
-
-    PA::Utils::ParsedParams params(paramString);
-    bool                    allowEmpty = params.getBool("allowempty").value_or(false);
-
-    std::future<std::string> async_replaced_fut;
-    bool                     async_replaced = false;
-
-    for (auto& [dist, cand] : asyncCandidates) {
-        void* p = ctx.ptr;
-        for (auto& cfun : cand.chain) {
-            p = cfun(p);
-            if (!p) break;
-        }
-        if (!p) continue;
-
-        if (std::holds_alternative<AsyncAnyPtrReplacer>(cand.fn)) {
-            async_replaced_fut = std::get<AsyncAnyPtrReplacer>(cand.fn)(p);
-        } else {
-            async_replaced_fut = std::get<AsyncAnyPtrReplacerWithParams>(cand.fn)(p, params);
-        }
-
-        cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, cand.strategy);
-
-        // 异步占位符的缓存处理
-        if (cand.cacheDuration) {
-            auto cacheKeyCopy  = cacheKey; // 捕获副本
-            async_replaced_fut = mAsyncThreadPool->enqueue(
-                [this, fut = std::move(async_replaced_fut), cacheKeyCopy, duration = *cand.cacheDuration]() mutable {
-                    std::string result = fut.get();
-                    mGlobalCache.put(cacheKeyCopy, {result, std::chrono::steady_clock::now() + duration});
-                    return result;
-                }
+        if (!asyncCandidates.empty()) {
+            std::sort(
+                asyncCandidates.begin(),
+                asyncCandidates.end(),
+                [](auto& a, auto& b) { return a.first < b.first; }
             );
+            bestAsyncCandidate = std::move(asyncCandidates.front().second);
+            type               = PlaceholderType::AsyncContext;
         }
-        async_replaced = true;
-        break; // 找到第一个匹配的就停止
     }
 
-    if (async_replaced) {
-        return async_replaced_fut;
-    }
-
-    // 3. 检查异步服务器占位符
-    {
+    std::optional<AsyncServerReplacerEntry> asyncServerEntry;
+    if (!bestAsyncCandidate) {
         std::shared_lock lk(mMutex);
         auto             plugin_it = mAsyncServerPlaceholders.find(std::string(pluginName));
         if (plugin_it != mAsyncServerPlaceholders.end()) {
             auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
             if (placeholder_it != plugin_it->second.end()) {
-                PA::Utils::ParsedParams params(paramString);
-                const auto&             entry = placeholder_it->second;
-                async_replaced_fut            = std::holds_alternative<AsyncServerReplacer>(entry.fn)
-                                                  ? std::get<AsyncServerReplacer>(entry.fn)()
-                                                  : std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
-
-                cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, entry.strategy);
-
-                // 缓存结果
-                if (entry.cacheDuration) {
-                    auto cacheKeyCopy  = cacheKey; // 捕获副本
-                    async_replaced_fut = mAsyncThreadPool->enqueue([this,
-                                                               fut = std::move(async_replaced_fut),
-                                                               cacheKeyCopy,
-                                                               duration = *entry.cacheDuration]() mutable {
-                        std::string result = fut.get();
-                        mGlobalCache.put(cacheKeyCopy, {result, std::chrono::steady_clock::now() + duration});
-                        return result;
-                    });
-                }
-                async_replaced = true;
+                asyncServerEntry = placeholder_it->second;
+                type             = PlaceholderType::AsyncServer;
             }
         }
     }
 
-    // 4. 如果没有找到异步占位符，则回退到同步执行
-    if (!async_replaced) {
-        std::promise<std::string> promise;
-        ReplaceState              st; // 为同步回退创建本地状态
-        promise.set_value(
-            executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cacheDuration)
-        );
-        async_replaced_fut = promise.get_future();
+    // --- 2. Build Cache Key & Check Cache ---
+    std::string                  cacheKey;
+    std::optional<CacheDuration> cacheDuration     = cache_duration_override;
+    bool                         hasAsyncCandidate = bestAsyncCandidate.has_value() || asyncServerEntry.has_value();
+
+    if (hasAsyncCandidate) {
+        CacheKeyStrategy strategy = bestAsyncCandidate ? bestAsyncCandidate->strategy
+                                    : asyncServerEntry ? asyncServerEntry->strategy
+                                                       : CacheKeyStrategy::Default;
+        cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
+
+        if (!cacheDuration) {
+            cacheDuration = bestAsyncCandidate ? bestAsyncCandidate->cacheDuration : asyncServerEntry->cacheDuration;
+        }
+
+        if (cacheDuration) {
+            auto cached = mGlobalCache.get(cacheKey);
+            if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
+                if (ConfigManager::getInstance().get().debugMode) {
+                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::high_resolution_clock::now() - startTime)
+                                        .count();
+                    logger.info(
+                        "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
+                        std::string(pluginName),
+                        std::string(placeholderName),
+                        type == PlaceholderType::AsyncContext ? "AsyncContext" : "AsyncServer",
+                        duration
+                    );
+                }
+                std::promise<std::string> promise;
+                promise.set_value(cached->result);
+                return promise.get_future();
+            }
+        }
     }
 
-    // 统一处理异步结果的格式化和默认值
+    // --- 3. Execute Placeholder ---
+    std::future<std::string> future;
+    if (bestAsyncCandidate) {
+        PA::Utils::ParsedParams params(paramString);
+        void*                   p = ctx.ptr;
+        for (auto& cfun : bestAsyncCandidate->chain) {
+            p = cfun(p);
+        }
+        if (p) {
+            if (std::holds_alternative<AsyncAnyPtrReplacer>(bestAsyncCandidate->fn)) {
+                future = std::get<AsyncAnyPtrReplacer>(bestAsyncCandidate->fn)(p);
+            } else {
+                future = std::get<AsyncAnyPtrReplacerWithParams>(bestAsyncCandidate->fn)(p, params);
+            }
+        } else {
+            std::promise<std::string> p_promise;
+            p_promise.set_value("");
+            future = p_promise.get_future();
+        }
+    } else if (asyncServerEntry) {
+        PA::Utils::ParsedParams params(paramString);
+        if (std::holds_alternative<AsyncServerReplacer>(asyncServerEntry->fn)) {
+            future = std::get<AsyncServerReplacer>(asyncServerEntry->fn)();
+        } else {
+            future = std::get<AsyncServerReplacerWithParams>(asyncServerEntry->fn)(params);
+        }
+    } else {
+        type = PlaceholderType::SyncFallback;
+        std::promise<std::string> promise;
+        ReplaceState              st;
+        promise.set_value(
+            executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cache_duration_override)
+        );
+        return promise.get_future();
+    }
+
+    // --- 4. Finalize & Cache (for async paths) ---
+    PA::Utils::ParsedParams params(paramString);
+    bool                    allowEmpty = params.getBool("allowempty").value_or(false);
+
     return mCombinerThreadPool->enqueue([this,
-                                 fut = std::move(async_replaced_fut),
-                                 pluginName,
-                                 placeholderName,
+                                 startTime,
+                                 type,
+                                 fut             = std::move(future),
+                                 pluginName      = std::string(pluginName),
+                                 placeholderName = std::string(placeholderName),
                                  paramString,
                                  defaultText,
                                  allowEmpty,
@@ -1100,48 +1121,44 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         std::string replaced_val = fut.get();
         bool        replaced     = !replaced_val.empty() || allowEmpty;
 
-        PA::Utils::ParsedParams params(paramString); // 重新解析参数以应用格式化
+        PA::Utils::ParsedParams params(paramString);
         std::string             formatted_val;
         if (replaced) {
             formatted_val = PA::Utils::applyFormatting(replaced_val, params);
         }
 
         std::string finalOut;
-        // 统一收敛逻辑
         if (replaced && (!formatted_val.empty() || allowEmpty)) {
             finalOut = formatted_val;
         } else {
-            // 否则，使用默认值
-            if (!defaultText.empty()) {
-                finalOut = defaultText;
-            } else {
-                // 没有默认值，根据配置决定如何处理
-                if (ConfigManager::getInstance().get().debugMode) {
-                    logger.warn(
-                        "Placeholder '{}:{}' not found or returned empty, and no default value provided. Context ptr: "
-                        "{}. Params: '{}'.",
-                        std::string(pluginName),
-                        std::string(placeholderName),
-                        reinterpret_cast<uintptr_t>(nullptr), // ctx.ptr 无法在此处直接访问，使用 nullptr
-                        paramString
-                    );
-                    // 调试模式下保留原样（不含默认值部分）
-                    finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
-                    finalOut.append("{").append(pluginName).append(":").append(placeholderName);
-                    if (!paramString.empty()) finalOut.append("|").append(paramString);
-                    finalOut.append("}");
-                } else {
-                    // 生产模式下返回空字符串
-                    finalOut = "";
-                }
-            }
+            finalOut = defaultText;
         }
 
-        // 写入单次替换缓存 (这里是异步线程中的缓存，与同步的 ReplaceState::cache 不同)
-        // st.cache.emplace(cacheKey, finalOut); // ReplaceState::cache 是同步的，不能在这里修改
+        if (ConfigManager::getInstance().get().debugMode) {
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::high_resolution_clock::now() - startTime)
+                                .count();
+            const char* typeStr = "Unknown";
+            if (type == PlaceholderType::AsyncContext) typeStr = "AsyncContext";
+            if (type == PlaceholderType::AsyncServer) typeStr = "AsyncServer";
 
-        // 写入全局缓存 (如果之前没有被异步占位符的缓存逻辑处理过)
-        if (cacheDuration && replaced) {
+            logger.info(
+                "Placeholder '{}:{}' | Cache Hit: No | Type: {} | Time: {}us",
+                pluginName,
+                placeholderName,
+                typeStr,
+                duration
+            );
+        }
+
+        if (finalOut.empty() && defaultText.empty() && !replaced && ConfigManager::getInstance().get().debugMode) {
+            finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
+            finalOut.append("{").append(pluginName).append(":").append(placeholderName);
+            if (!paramString.empty()) finalOut.append("|").append(paramString);
+            finalOut.append("}");
+        }
+
+        if (replaced && cacheDuration) {
             mGlobalCache.put(cacheKey, {finalOut, std::chrono::steady_clock::now() + *cacheDuration});
         }
         return finalOut;
