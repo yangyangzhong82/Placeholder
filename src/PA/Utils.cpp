@@ -1028,4 +1028,18 @@ std::optional<size_t> findSepOutside(std::string_view s, std::string_view needle
     return std::nullopt;
 }
 
+std::string join(const std::vector<std::string>& elements, std::string_view separator) {
+    if (elements.empty()) {
+        return "";
+    }
+    std::string result;
+    result.reserve(elements.size() * 10); // Pre-allocate some memory
+    result += elements[0];
+    for (size_t i = 1; i < elements.size(); ++i) {
+        result += separator;
+        result += elements[i];
+    }
+    return result;
+}
+
 } // namespace PA::Utils

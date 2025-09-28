@@ -159,6 +159,14 @@ public:
     // 上下文占位符（带参数）：接受一个 void* 指针和解析后的参数，并返回字符串。
     using AnyPtrReplacerWithParams = std::function<std::string(void*, const Utils::ParsedParams& params)>;
 
+    // --- 新：列表/集合型占位符 ---
+    // 返回字符串向量的占位符
+    using ServerListReplacer           = std::function<std::vector<std::string>()>;
+    using ServerListReplacerWithParams = std::function<std::vector<std::string>(const Utils::ParsedParams& params)>;
+    using AnyPtrListReplacer           = std::function<std::vector<std::string>(void*)>;
+    using AnyPtrListReplacerWithParams =
+        std::function<std::vector<std::string>(void*, const Utils::ParsedParams& params)>;
+
     // 类型转换器：用于将派生类指针上行转换为基类指针
     using Caster = void* (*)(void*); // 函数指针，Derived* -> Base*
 
@@ -521,6 +529,86 @@ public:
         CacheKeyStrategy                     strategy       = CacheKeyStrategy::Default
     );
 
+    // ---------------- 注册列表/集合型占位符 ----------------
+
+    /**
+     * @brief [新] 注册一个返回列表的服务器级占位符
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，返回字符串向量
+     * @param cache_duration 可选的缓存持续时间
+     */
+    PA_API void registerServerListPlaceholder(
+        const std::string&             pluginName,
+        const std::string&             placeholder,
+        ServerListReplacer&&           replacer,
+        std::optional<CacheDuration>   cache_duration = std::nullopt,
+        CacheKeyStrategy               strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief [新] 注册一个返回列表的服务器级占位符（带参数）
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，返回字符串向量
+     * @param cache_duration 可选的缓存持续时间
+     */
+    PA_API void registerServerListPlaceholderWithParams(
+        const std::string&               pluginName,
+        const std::string&               placeholder,
+        ServerListReplacerWithParams&&   replacer,
+        std::optional<CacheDuration>     cache_duration = std::nullopt,
+        CacheKeyStrategy                 strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief [新] 注册一个返回列表的上下文占位符（模板版）
+     * @tparam T 目标类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T*，返回字符串向量
+     */
+    template <typename T>
+    void registerListPlaceholder(
+        const std::string&                                     pluginName,
+        const std::string&                                     placeholder,
+        std::function<std::vector<std::string>(T*)>&&          replacer,
+        std::optional<CacheDuration>                           cache_duration = std::nullopt,
+        CacheKeyStrategy                                       strategy       = CacheKeyStrategy::Default
+    ) {
+        auto               targetId = ensureTypeId(typeKey<T>());
+        AnyPtrListReplacer fn       = [r = std::move(replacer)](void* p) -> std::vector<std::string> {
+            if (!p) return {};
+            return r(reinterpret_cast<T*>(p));
+        };
+        registerListPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
+    }
+
+    /**
+     * @brief [新] 注册一个返回列表的上下文占位符（模板版，带参数）
+     * @tparam T 目标类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T* 和 ParsedParams，返回字符串向量
+     */
+    template <typename T>
+    void registerListPlaceholderWithParams(
+        const std::string&                                                       pluginName,
+        const std::string&                                                       placeholder,
+        std::function<std::vector<std::string>(T*, const Utils::ParsedParams&)>&& replacer,
+        std::optional<CacheDuration>                                             cache_duration = std::nullopt,
+        CacheKeyStrategy                                                         strategy       = CacheKeyStrategy::Default
+    ) {
+        auto                         targetId = ensureTypeId(typeKey<T>());
+        AnyPtrListReplacerWithParams fn       =
+            [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::vector<std::string> {
+            if (!p) return {};
+            return r(reinterpret_cast<T*>(p), params);
+        };
+        registerListPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
+    }
+
+
     /**
      * @brief [新] 注册异步上下文占位符（显式类型键版）
      * @param pluginName 插件名称
@@ -867,6 +955,30 @@ public:
     );
 
     /**
+     * @brief 注册列表型上下文占位符（目标类型ID版，无参数）
+     */
+    PA_API void registerListPlaceholderForTypeId(
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        std::size_t                  targetTypeId,
+        AnyPtrListReplacer&&         replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief 注册列表型上下文占位符（目标类型ID版，带参数）
+     */
+    PA_API void registerListPlaceholderForTypeId(
+        const std::string&             pluginName,
+        const std::string&             placeholder,
+        std::size_t                    targetTypeId,
+        AnyPtrListReplacerWithParams&& replacer,
+        std::optional<CacheDuration>   cache_duration = std::nullopt,
+        CacheKeyStrategy               strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
      * @brief 确保并获取给定类型键的唯一类型ID
      *
      * 如果类型键已注册，返回其ID；否则，分配一个新的ID并注册。
@@ -946,6 +1058,15 @@ private:
     };
 
     /**
+     * @brief 列表型服务器占位符的内部存储条目
+     */
+    struct ServerListReplacerEntry {
+        std::variant<ServerListReplacer, ServerListReplacerWithParams> fn;
+        std::optional<CacheDuration>                                   cacheDuration;
+        CacheKeyStrategy                                               strategy;
+    };
+
+    /**
      * @brief 异步服务器占位符的内部存储条目
      */
     struct AsyncServerReplacerEntry {
@@ -964,6 +1085,16 @@ private:
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;              // 替换函数变体
         std::optional<CacheDuration>                           cacheDuration;
         CacheKeyStrategy                                       strategy;
+    };
+
+    /**
+     * @brief 列表型上下文占位符的内部存储条目
+     */
+    struct TypedListReplacer {
+        std::size_t                                                  targetTypeId{0};
+        std::variant<AnyPtrListReplacer, AnyPtrListReplacerWithParams> fn;
+        std::optional<CacheDuration>                                 cacheDuration;
+        CacheKeyStrategy                                             strategy;
     };
 
     /**
@@ -1013,6 +1144,11 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<AsyncTypedReplacer>>>
         mAsyncContextPlaceholders;
+
+    // 列表型占位符映射
+    std::unordered_map<std::string, std::unordered_map<std::string, ServerListReplacerEntry>> mServerListPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedListReplacer>>>
+        mContextListPlaceholders;
 
     // 关系型上下文占位符映射
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<RelationalTypedReplacer>>>

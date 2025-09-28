@@ -153,6 +153,9 @@ std::string applyFormatting(const std::string& rawValue, const std::string& para
 std::string applyFormatting(const std::string& rawValue, const ParsedParams& params);
 
 
+// 新增：用于列表型占位符
+std::string join(const std::vector<std::string>& elements, std::string_view separator);
+
 // 寻找分隔符（忽略花括号中的内容以及引号内内容）
 std::optional<size_t> findSepOutside(std::string_view s, std::string_view needle);
 
