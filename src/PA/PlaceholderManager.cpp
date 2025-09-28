@@ -1823,6 +1823,20 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                                          allowEmpty,
                                          cacheKey,
                                          cacheDuration]() mutable {
+        auto timeout = std::chrono::milliseconds(ConfigManager::getInstance().get().asyncPlaceholderTimeoutMs);
+        if (fut.wait_for(timeout) == std::future_status::timeout) {
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.warn(
+                    "Async placeholder '{}:{}' timed out after {}ms. Using default value: '{}'.",
+                    pluginName,
+                    placeholderName,
+                    timeout.count(),
+                    defaultText
+                );
+            }
+            return defaultText;
+        }
+
         std::string replaced_val = fut.get();
         bool        replaced     = !replaced_val.empty() || allowEmpty;
 
