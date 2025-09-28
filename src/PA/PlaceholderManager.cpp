@@ -97,6 +97,16 @@ void PlaceholderManager::registerInheritanceByKeys(
     mUpcastCache.clear(); // 继承关系变更，清空缓存
 }
 
+void PlaceholderManager::registerInheritanceByKeysBatch(const std::vector<InheritancePair>& pairs) {
+    std::unique_lock lk(mMutex);
+    for (const auto& pair : pairs) {
+        auto d = ensureTypeId(pair.derivedKey);
+        auto b = ensureTypeId(pair.baseKey);
+        mUpcastEdges[d][b] = pair.caster;
+    }
+    mUpcastCache.clear(); // 继承关系变更，清空缓存
+}
+
 void PlaceholderManager::registerTypeAlias(const std::string& alias, const std::string& typeKeyStr) {
     auto id = ensureTypeId(typeKeyStr);
     std::unique_lock lk(mMutex);
@@ -401,6 +411,53 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
     return result;
 }
 
+bool PlaceholderManager::hasPlaceholder(
+    const std::string&             pluginName,
+    const std::string&             placeholderName,
+    const std::optional<std::string>& typeKey
+) const {
+    std::shared_lock lk(mMutex);
+
+    if (typeKey) {
+        // Check context placeholders
+        auto itPlugin = mContextPlaceholders.find(pluginName);
+        if (itPlugin != mContextPlaceholders.end()) {
+            auto itPh = itPlugin->second.find(placeholderName);
+            if (itPh != itPlugin->second.end()) {
+                // If a typeKey is provided, we need to check if any registered replacer
+                // is compatible with this type. This is a complex check involving inheritance.
+                // For simplicity here, we check if any replacer is registered for this placeholder.
+                // A more thorough check would involve findUpcastChain.
+                return !itPh->second.empty();
+            }
+        }
+        auto itAsyncPlugin = mAsyncContextPlaceholders.find(pluginName);
+        if (itAsyncPlugin != mAsyncContextPlaceholders.end()) {
+            auto itPh = itAsyncPlugin->second.find(placeholderName);
+            if (itPh != itAsyncPlugin->second.end()) {
+                return !itPh->second.empty();
+            }
+        }
+    } else {
+        // Check server placeholders
+        auto itPlugin = mServerPlaceholders.find(pluginName);
+        if (itPlugin != mServerPlaceholders.end()) {
+            if (itPlugin->second.count(placeholderName)) {
+                return true;
+            }
+        }
+        auto itAsyncPlugin = mAsyncServerPlaceholders.find(pluginName);
+        if (itAsyncPlugin != mAsyncServerPlaceholders.end()) {
+            if (itAsyncPlugin->second.count(placeholderName)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+
 // ==== Context 构造 ====
 
 PlaceholderContext PlaceholderManager::makeContextRaw(void* ptr, const std::string& typeKeyStr) {
@@ -515,6 +572,75 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
         }
         return result;
     });
+}
+
+std::vector<std::string> PlaceholderManager::replacePlaceholdersBatch(
+    const std::vector<std::reference_wrapper<const CompiledTemplate>>& tpls,
+    const PlaceholderContext&                                          ctx
+) {
+    std::vector<std::string> results;
+    results.reserve(tpls.size());
+
+    // Create a shared state for this batch operation
+    ReplaceState st;
+    st.depth = 0;
+
+    for (const auto& tpl_ref : tpls) {
+        const auto& tpl = tpl_ref.get();
+        if (st.depth > mMaxRecursionDepth) {
+            results.push_back(tpl.source);
+            continue;
+        }
+
+        std::string result;
+        result.reserve(tpl.source.size());
+
+        for (const auto& token : tpl.tokens) {
+            if (auto* literal = std::get_if<LiteralToken>(&token)) {
+                std::string_view text = literal->text;
+                for (size_t i = 0; i < text.size(); ++i) {
+                    if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
+                        if (text[i] == '{' && text[i + 1] == '{') {
+                            result.push_back('{');
+                            i++; // Skip the second brace
+                            continue;
+                        }
+                        if (text[i] == '}' && text[i + 1] == '}') {
+                            result.push_back('}');
+                            i++; // Skip the second brace
+                            continue;
+                        }
+                    }
+                    result.push_back(text[i]);
+                }
+            } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
+                std::string paramString;
+                if (placeholder->paramsTemplate) {
+                    // Note: Nested replacements in batch mode won't share the batch's cache.
+                    // This is a limitation to avoid complexity.
+                    paramString = replacePlaceholdersSync(*placeholder->paramsTemplate, ctx, st.depth + 1);
+                }
+
+                std::string defaultText;
+                if (placeholder->defaultTemplate) {
+                    defaultText = replacePlaceholdersSync(*placeholder->defaultTemplate, ctx, st.depth + 1);
+                }
+
+                // Use the shared state 'st'
+                result.append(executePlaceholder(
+                    placeholder->pluginName,
+                    placeholder->placeholderName,
+                    paramString,
+                    defaultText,
+                    ctx,
+                    st
+                ));
+            }
+        }
+        results.push_back(std::move(result));
+    }
+
+    return results;
 }
 
 // [新] 同步替换实现

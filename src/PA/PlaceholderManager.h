@@ -6,21 +6,22 @@
 #include "Utils.h"
 
 // 标准库头文件
-#include <any>          // 用于存储任意类型的数据
-#include <functional>   // 用于 std::function
-#include <future>       // 用于 std::future，实现异步操作
-#include <optional>     // 用于可选值
-#include <shared_mutex> // 用于读写锁，实现线程安全
-#include <string>       // 用于字符串
-#include <string_view>  // 用于字符串视图，避免拷贝
-#include <type_traits>  // 用于类型特性
-#include <unordered_map>// 用于哈希表
-#include <variant>      // 用于变体类型
-#include <vector>       // 用于动态数组
-#include <memory>       // 用于智能指针，例如 unique_ptr
-#include <chrono>       // 用于时间相关的操作，例如缓存过期
+#include <any>           // 用于存储任意类型的数据
+#include <chrono>        // 用于时间相关的操作，例如缓存过期
+#include <functional>    // 用于 std::function
+#include <future>        // 用于 std::future，实现异步操作
+#include <memory>        // 用于智能指针，例如 unique_ptr
+#include <optional>      // 用于可选值
+#include <shared_mutex>  // 用于读写锁，实现线程安全
+#include <string>        // 用于字符串
+#include <string_view>   // 用于字符串视图，避免拷贝
+#include <type_traits>   // 用于类型特性
+#include <unordered_map> // 用于哈希表
+#include <variant>       // 用于变体类型
+#include <vector>        // 用于动态数组
 
-#include "LRUCache.h"   // 引入 LRU 缓存
+
+#include "LRUCache.h" // 引入 LRU 缓存
 
 class Player; // 前向声明 Minecraft 玩家类，避免循环引用
 
@@ -90,10 +91,10 @@ struct LiteralToken {
  * 表示模板字符串中的一个占位符，包含插件名、占位符名、默认值模板和参数模板。
  */
 struct PlaceholderToken {
-    std::string_view                  pluginName;      // 插件名称
-    std::string_view                  placeholderName; // 占位符名称
+    std::string_view pluginName;                       // 插件名称
+    std::string_view placeholderName;                  // 占位符名称
     std::unique_ptr<CompiledTemplate> defaultTemplate; // 嵌套的默认值模板，用于占位符无值时提供默认内容
-    std::unique_ptr<CompiledTemplate> paramsTemplate;  // 嵌套的参数模板，用于解析占位符的参数
+    std::unique_ptr<CompiledTemplate> paramsTemplate; // 嵌套的参数模板，用于解析占位符的参数
 };
 
 // Token 类型可以是字面量或占位符
@@ -117,9 +118,9 @@ struct CompiledTemplate {
     std::vector<Token> tokens; // 解析后的 Token 序列
 
     // 为支持 unique_ptr 的移动语义，需要自定义移动构造函数和移动赋值运算符
-    CompiledTemplate();                                 // 默认构造函数
-    ~CompiledTemplate();                                // 默认析构函数
-    CompiledTemplate(CompiledTemplate&&) noexcept;      // 移动构造函数
+    CompiledTemplate();                                       // 默认构造函数
+    ~CompiledTemplate();                                      // 默认析构函数
+    CompiledTemplate(CompiledTemplate&&) noexcept;            // 移动构造函数
     CompiledTemplate& operator=(CompiledTemplate&&) noexcept; // 移动赋值运算符
 };
 
@@ -136,7 +137,7 @@ public:
 
     // --- 新：异步占位符 ---
     // 异步服务器占位符
-    using AsyncServerReplacer = std::function<std::future<std::string>()>;
+    using AsyncServerReplacer           = std::function<std::future<std::string>()>;
     using AsyncServerReplacerWithParams = std::function<std::future<std::string>(const Utils::ParsedParams& params)>;
 
     // 异步上下文占位符
@@ -168,11 +169,11 @@ public:
      * @param cache_duration 可选的缓存持续时间
      */
     PA_API void registerServerPlaceholder(
-        const std::string&                pluginName,
-        const std::string&                placeholder,
-        ServerReplacer                    replacer,
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        ServerReplacer               replacer,
         std::optional<CacheDuration> cache_duration = std::nullopt,
-        CacheKeyStrategy                  strategy      = CacheKeyStrategy::Default
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -213,11 +214,11 @@ public:
      * @param cache_duration 可选的缓存持续时间
      */
     PA_API void registerAsyncServerPlaceholderWithParams(
-        const std::string&            pluginName,
-        const std::string&            placeholder,
+        const std::string&              pluginName,
+        const std::string&              placeholder,
         AsyncServerReplacerWithParams&& replacer,
-        std::optional<CacheDuration>  cache_duration = std::nullopt,
-        CacheKeyStrategy              strategy       = CacheKeyStrategy::Default
+        std::optional<CacheDuration>    cache_duration = std::nullopt,
+        CacheKeyStrategy                strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -265,7 +266,7 @@ public:
     ) {
         auto           targetId = ensureTypeId(typeKey<T>()); // 获取目标类型的内部ID
         AnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::string {
-            if (!p) return std::string{}; // 空指针检查
+            if (!p) return std::string{};      // 空指针检查
             return r(reinterpret_cast<T*>(p)); // 转换为 T* 并调用替换函数
         };
         registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
@@ -280,11 +281,11 @@ public:
      */
     template <typename T>
     void registerAsyncPlaceholder(
-        const std::string&                          pluginName,
-        const std::string&                          placeholder,
+        const std::string&                            pluginName,
+        const std::string&                            placeholder,
         std::function<std::future<std::string>(T*)>&& replacer,
-        std::optional<CacheDuration>                cache_duration = std::nullopt,
-        CacheKeyStrategy                            strategy       = CacheKeyStrategy::Default
+        std::optional<CacheDuration>                  cache_duration = std::nullopt,
+        CacheKeyStrategy                              strategy       = CacheKeyStrategy::Default
     ) {
         auto                targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::future<std::string> {
@@ -307,13 +308,14 @@ public:
      * @warning 此函数为兼容性保留，但无法传递实际参数。推荐使用接受 ParsedParams 的重载。
      */
     template <typename T>
-    [[deprecated]]  void registerPlaceholderWithParams(
+    [[deprecated]] void registerPlaceholderWithParams(
         const std::string&                                 pluginName,
         const std::string&                                 placeholder,
         std::function<std::string(T*, std::string_view)>&& replacer
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>()); // 获取目标类型的内部ID
-        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
+        AnyPtrReplacerWithParams fn =
+            [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{}; // 空指针检查
             // 参见 registerServerPlaceholderWithParams 中的注释。传递空 string_view。
             return r(reinterpret_cast<T*>(p), {}); // 转换为 T* 并调用替换函数
@@ -331,14 +333,15 @@ public:
      */
     template <typename T>
     void registerPlaceholderWithParams(
-        const std::string&                                          pluginName,
-        const std::string&                                          placeholder,
+        const std::string&                                           pluginName,
+        const std::string&                                           placeholder,
         std::function<std::string(T*, const Utils::ParsedParams&)>&& replacer,
-        std::optional<CacheDuration>                                cache_duration = std::nullopt,
-        CacheKeyStrategy                                            strategy       = CacheKeyStrategy::Default
+        std::optional<CacheDuration>                                 cache_duration = std::nullopt,
+        CacheKeyStrategy                                             strategy       = CacheKeyStrategy::Default
     ) {
         auto                     targetId = ensureTypeId(typeKey<T>());
-        AnyPtrReplacerWithParams fn       = [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
+        AnyPtrReplacerWithParams fn =
+            [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
             return r(reinterpret_cast<T*>(p), params);
         };
@@ -354,13 +357,13 @@ public:
      */
     template <typename T>
     void registerAsyncPlaceholderWithParams(
-        const std::string&                                                pluginName,
-        const std::string&                                                placeholder,
+        const std::string&                                                        pluginName,
+        const std::string&                                                        placeholder,
         std::function<std::future<std::string>(T*, const Utils::ParsedParams&)>&& replacer,
-        std::optional<CacheDuration>                                      cache_duration = std::nullopt,
-        CacheKeyStrategy                                                  strategy       = CacheKeyStrategy::Default
+        std::optional<CacheDuration>                                              cache_duration = std::nullopt,
+        CacheKeyStrategy                                                          strategy = CacheKeyStrategy::Default
     ) {
-        auto                     targetId = ensureTypeId(typeKey<T>());
+        auto                          targetId = ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::future<std::string> {
             if (!p) {
@@ -425,9 +428,9 @@ public:
      * @param replacer 替换函数，接受 void* 和 ParsedParams，返回 std::future<std::string>
      */
     PA_API void registerAsyncPlaceholderForTypeKeyWithParams(
-        const std::string&           pluginName,
-        const std::string&           placeholder,
-        const std::string&           typeKeyStr,
+        const std::string&              pluginName,
+        const std::string&              placeholder,
+        const std::string&              typeKeyStr,
         AsyncAnyPtrReplacerWithParams&& replacer
     );
 
@@ -457,6 +460,23 @@ public:
      * @param caster 上行转换函数指针
      */
     PA_API void registerInheritanceByKeys(const std::string& derivedKey, const std::string& baseKey, Caster caster);
+
+    /**
+     * @brief [新] 用于批量注册继承关系的数据结构
+     */
+    struct InheritancePair {
+        std::string derivedKey;
+        std::string baseKey;
+        Caster      caster;
+    };
+
+    /**
+     * @brief [新] 批量注册类型继承关系
+     *
+     * 一次性注册多个继承关系，以减少锁竞争。
+     * @param pairs 继承关系对的向量
+     */
+    PA_API void registerInheritanceByKeysBatch(const std::vector<InheritancePair>& pairs);
 
     /**
      * @brief [新] 为一个类型注册一个稳定的、跨编译器的“类型别名”
@@ -506,6 +526,20 @@ public:
         std::unordered_map<std::string, std::vector<ContextPlaceholderInfo>> contextPlaceholders;
     };
     PA_API AllPlaceholders getAllPlaceholders() const;
+
+    /**
+     * @brief [新] 检查占位符是否存在
+     *
+     * @param pluginName 插件名称
+     * @param placeholderName 占位符名称
+     * @param typeKey 可选的类型键。如果提供，则检查可用于该类型的上下文占位符；否则，检查服务器占位符。
+     * @return 如果占位符存在，则返回 true
+     */
+    PA_API bool hasPlaceholder(
+        const std::string&             pluginName,
+        const std::string&             placeholderName,
+        const std::optional<std::string>& typeKey = std::nullopt
+    ) const;
 
     /**
      * @brief 替换文本中的占位符（无上下文）
@@ -568,8 +602,7 @@ public:
      * @param ctx 占位符上下文
      * @return 一个 future，其值为最终替换后的字符串
      */
-    PA_API std::future<std::string>
-    replacePlaceholdersAsync(const std::string& text, const PlaceholderContext& ctx);
+    PA_API std::future<std::string> replacePlaceholdersAsync(const std::string& text, const PlaceholderContext& ctx);
 
     /**
      * @brief [新] 使用已编译的模板进行异步替换
@@ -579,6 +612,20 @@ public:
      */
     PA_API std::future<std::string>
     replacePlaceholdersAsync(const CompiledTemplate& tpl, const PlaceholderContext& ctx);
+
+    /**
+     * @brief [新] 批量替换多个已编译的模板
+     *
+     * 对多个模板使用相同的上下文进行替换，并共享一个临时的内部缓存，
+     * 以减少在多个模板中重复计算相同占位符的开销。
+     * @param tpls 已编译模板的向量
+     * @param ctx 占位符上下文
+     * @return 替换后字符串的向量
+     */
+    PA_API std::vector<std::string> replacePlaceholdersBatch(
+        const std::vector<std::reference_wrapper<const CompiledTemplate>>& tpls,
+        const PlaceholderContext&                                          ctx
+    );
 
 
     /**
@@ -668,12 +715,12 @@ public:
      * @brief 注册异步上下文占位符（目标类型ID版，带参数）
      */
     PA_API void registerAsyncPlaceholderForTypeId(
-        const std::string&            pluginName,
-        const std::string&            placeholder,
-        std::size_t                   targetTypeId,
+        const std::string&              pluginName,
+        const std::string&              placeholder,
+        std::size_t                     targetTypeId,
         AsyncAnyPtrReplacerWithParams&& replacer,
-        std::optional<CacheDuration>  cache_duration = std::nullopt,
-        CacheKeyStrategy              strategy       = CacheKeyStrategy::Default
+        std::optional<CacheDuration>    cache_duration = std::nullopt,
+        CacheKeyStrategy                strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -720,7 +767,7 @@ public:
      * @brief 获取当前占位符替换的最大递归深度
      * @return 最大递归深度
      */
-    PA_API int  getMaxRecursionDepth() const;
+    PA_API int getMaxRecursionDepth() const;
     /**
      * @brief 设置是否启用双大括号转义功能
      *
@@ -771,7 +818,7 @@ private:
      */
     struct TypedReplacer {
         std::size_t                                            targetTypeId{0}; // 目标类型ID
-        std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;            // 替换函数变体
+        std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams> fn;              // 替换函数变体
         std::optional<CacheDuration>                           cacheDuration;
         CacheKeyStrategy                                       strategy;
     };
@@ -780,7 +827,7 @@ private:
      * @brief 异步上下文占位符的内部存储条目
      */
     struct AsyncTypedReplacer {
-        std::size_t                                                  targetTypeId{0};
+        std::size_t                                                      targetTypeId{0};
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
         std::optional<CacheDuration>                                     cacheDuration;
         CacheKeyStrategy                                                 strategy;
@@ -800,14 +847,13 @@ private:
      * @brief 全局缓存条目
      */
     struct CacheEntry {
-        std::string                               result;    // 缓存的结果
+        std::string                           result;    // 缓存的结果
         std::chrono::steady_clock::time_point expiresAt; // 过期时间点
     };
 
     // 服务器占位符映射：插件名 -> (占位符名 -> 替换函数条目)
-    std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>> mServerPlaceholders;
-    std::unordered_map<std::string, std::unordered_map<std::string, AsyncServerReplacerEntry>>
-        mAsyncServerPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>>      mServerPlaceholders;
+    std::unordered_map<std::string, std::unordered_map<std::string, AsyncServerReplacerEntry>> mAsyncServerPlaceholders;
 
     // 上下文占位符（多态）映射：插件名 -> (占位符名 -> [候选替换函数列表])
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
@@ -819,7 +865,7 @@ private:
     std::unordered_map<std::size_t, std::string> mIdToTypeKey; // ID到类型键的映射
     // [新] 类型ID到稳定别名的映射
     std::unordered_map<std::size_t, std::string> mIdToAlias;
-    std::size_t                                  mNextTypeId{1}; // 下一个可用的类型ID，0 保留为“无类型”
+    std::size_t mNextTypeId{1}; // 下一个可用的类型ID，0 保留为“无类型”
 
     // 继承图：派生类ID -> (基类ID -> 上行转换函数)
     std::unordered_map<std::size_t, std::unordered_map<std::size_t, Caster>> mUpcastEdges;
@@ -839,7 +885,7 @@ private:
     std::unique_ptr<ThreadPool> mAsyncThreadPool;    // 用于执行异步占位符
 
     // 解析配置
-    int  mMaxRecursionDepth{12};     // 最大递归深度，默认 12
+    int  mMaxRecursionDepth{12};         // 最大递归深度，默认 12
     bool mEnableDoubleBraceEscape{true}; // 是否启用双大括号转义，默认启用
 
 private:
@@ -886,7 +932,7 @@ private:
         std::string_view             placeholderName,
         const std::string&           paramString,
         const std::string&           defaultText,
-        const PlaceholderContext&      ctx,
+        const PlaceholderContext&    ctx,
         ReplaceState&                st,
         std::optional<CacheDuration> cache_duration_override = std::nullopt
     );
@@ -899,7 +945,7 @@ private:
         std::string_view             placeholderName,
         const std::string&           paramString,
         const std::string&           defaultText,
-        const PlaceholderContext&      ctx,
+        const PlaceholderContext&    ctx,
         std::optional<CacheDuration> cache_duration_override = std::nullopt
     );
 };
