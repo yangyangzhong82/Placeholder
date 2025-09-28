@@ -364,6 +364,7 @@ void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
     std::unique_lock lk(mMutex);
     mServerPlaceholders.erase(pluginName);
     mContextPlaceholders.erase(pluginName);
+    mRelationalPlaceholders.erase(pluginName);
     mUpcastCache.clear(); // 插件注销可能影响类型，为安全起见清空
 }
 
@@ -460,10 +461,15 @@ bool PlaceholderManager::hasPlaceholder(
 
 // ==== Context 构造 ====
 
-PlaceholderContext PlaceholderManager::makeContextRaw(void* ptr, const std::string& typeKeyStr) {
+PlaceholderContext PlaceholderManager::makeContextRaw(
+    void*                     ptr,
+    const std::string&        typeKeyStr,
+    const PlaceholderContext* rel_ctx
+) {
     PlaceholderContext ctx;
-    ctx.ptr    = ptr;
-    ctx.typeId = getInstance().ensureTypeId(typeKeyStr);
+    ctx.ptr               = ptr;
+    ctx.typeId            = getInstance().ensureTypeId(typeKeyStr);
+    ctx.relationalContext = rel_ctx;
     return ctx;
 }
 
@@ -506,6 +512,91 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, con
 
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
     return replacePlaceholders(text, makeContext(player));
+}
+
+
+// --- 新：关系型占位符注册 ---
+
+void PlaceholderManager::registerRelationalPlaceholderForTypeId(
+    const std::string&                 pluginName,
+    const std::string&                 placeholder,
+    std::size_t                        targetTypeId,
+    std::size_t                        relationalTypeId,
+    AnyPtrRelationalReplacer&&         replacer,
+    std::optional<CacheDuration>       cache_duration,
+    CacheKeyStrategy                   strategy
+) {
+    std::unique_lock lk(mMutex);
+    mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
+        targetTypeId,
+        relationalTypeId,
+        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams>(std::move(replacer)),
+        cache_duration,
+        strategy,
+    });
+}
+
+void PlaceholderManager::registerRelationalPlaceholderForTypeId(
+    const std::string&                  pluginName,
+    const std::string&                  placeholder,
+    std::size_t                         targetTypeId,
+    std::size_t                         relationalTypeId,
+    AnyPtrRelationalReplacerWithParams&& replacer,
+    std::optional<CacheDuration>        cache_duration,
+    CacheKeyStrategy                    strategy
+) {
+    std::unique_lock lk(mMutex);
+    mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
+        targetTypeId,
+        relationalTypeId,
+        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams>(std::move(replacer)),
+        cache_duration,
+        strategy,
+    });
+}
+
+void PlaceholderManager::registerRelationalPlaceholderForTypeKey(
+    const std::string&           pluginName,
+    const std::string&           placeholder,
+    const std::string&           typeKeyStr,
+    const std::string&           relationalTypeKeyStr,
+    AnyPtrRelationalReplacer&&   replacer,
+    std::optional<CacheDuration> cache_duration,
+    CacheKeyStrategy             strategy
+) {
+    auto targetId     = ensureTypeId(typeKeyStr);
+    auto relationalId = ensureTypeId(relationalTypeKeyStr);
+    registerRelationalPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        targetId,
+        relationalId,
+        std::move(replacer),
+        cache_duration,
+        strategy
+    );
+}
+
+void PlaceholderManager::registerRelationalPlaceholderForTypeKeyWithParams(
+    const std::string&                   pluginName,
+    const std::string&                   placeholder,
+    const std::string&                   typeKeyStr,
+    const std::string&                   relationalTypeKeyStr,
+    AnyPtrRelationalReplacerWithParams&& replacer,
+    std::optional<CacheDuration>         cache_duration,
+    CacheKeyStrategy                     strategy
+) {
+    auto targetId     = ensureTypeId(typeKeyStr);
+    auto relationalId = ensureTypeId(relationalTypeKeyStr);
+    registerRelationalPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        targetId,
+        relationalId,
+        std::move(replacer),
+        cache_duration,
+        strategy
+    );
 }
 
 // --- 新：异步替换 ---
@@ -845,7 +936,7 @@ std::string PlaceholderManager::buildCacheKey(
     CacheKeyStrategy          strategy
 ) {
     std::string cacheKey;
-    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 40);
+    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 80);
     if (strategy == CacheKeyStrategy::ServerOnly) {
         cacheKey.push_back('#');
         cacheKey.append(pluginName);
@@ -858,6 +949,13 @@ std::string PlaceholderManager::buildCacheKey(
             cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.ptr)));
             cacheKey.push_back('#');
             cacheKey.append(std::to_string(ctx.typeId));
+            cacheKey.push_back('#');
+        }
+        // Add relational context to cache key
+        if (ctx.relationalContext && ctx.relationalContext->ptr) {
+            cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.relationalContext->ptr)));
+            cacheKey.push_back('#');
+            cacheKey.append(std::to_string(ctx.relationalContext->typeId));
             cacheKey.push_back('#');
         }
         cacheKey.append(pluginName);
@@ -880,7 +978,7 @@ std::string PlaceholderManager::executePlaceholder(
     std::optional<CacheDuration> cache_duration_override
 ) {
     const auto startTime = std::chrono::high_resolution_clock::now();
-    enum class PlaceholderType { None, Server, Context };
+    enum class PlaceholderType { None, Server, Context, Relational };
     PlaceholderType type = PlaceholderType::None;
 
     // --- 1. Find Candidate ---
@@ -890,10 +988,59 @@ std::string PlaceholderManager::executePlaceholder(
         std::optional<CacheDuration>                           cacheDuration;
         CacheKeyStrategy                                       strategy;
     };
-    std::optional<Candidate>               bestCandidate;
-    std::vector<std::pair<int, Candidate>> candidates;
+    struct RelationalCandidate {
+        std::vector<Caster>                                                        chain;
+        std::vector<Caster>                                                        rel_chain;
+        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams> fn;
+        std::optional<CacheDuration>                                               cacheDuration;
+        CacheKeyStrategy                                                           strategy;
+    };
 
-    if (ctx.ptr != nullptr && ctx.typeId != 0) {
+    std::optional<RelationalCandidate> bestRelationalCandidate;
+    if (ctx.ptr != nullptr && ctx.typeId != 0 && ctx.relationalContext != nullptr
+        && ctx.relationalContext->ptr != nullptr && ctx.relationalContext->typeId != 0) {
+        std::vector<RelationalTypedReplacer> potentialReplacers;
+        {
+            std::shared_lock lk(mMutex);
+            auto             plugin_it = mRelationalPlaceholders.find(std::string(pluginName));
+            if (plugin_it != mRelationalPlaceholders.end()) {
+                auto ph_it = plugin_it->second.find(std::string(placeholderName));
+                if (ph_it != plugin_it->second.end()) {
+                    potentialReplacers = ph_it->second;
+                }
+            }
+        }
+
+        std::vector<std::pair<int, RelationalCandidate>> candidates;
+        for (auto& entry : potentialReplacers) {
+            std::vector<Caster> chain;
+            std::vector<Caster> rel_chain;
+            bool main_ok = (entry.targetTypeId == ctx.typeId) || findUpcastChain(ctx.typeId, entry.targetTypeId, chain);
+            bool rel_ok  = (entry.relationalTypeId == ctx.relationalContext->typeId)
+                        || findUpcastChain(ctx.relationalContext->typeId, entry.relationalTypeId, rel_chain);
+
+            if (main_ok && rel_ok) {
+                candidates.push_back({
+                    (int)(chain.size() + rel_chain.size()),
+                    RelationalCandidate{
+                        std::move(chain),
+                        std::move(rel_chain),
+                        entry.fn,
+                        entry.cacheDuration,
+                        entry.strategy}
+                });
+            }
+        }
+        if (!candidates.empty()) {
+            std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
+            bestRelationalCandidate = std::move(candidates.front().second);
+            type                    = PlaceholderType::Relational;
+        }
+    }
+
+
+    std::optional<Candidate> bestCandidate;
+    if (!bestRelationalCandidate && ctx.ptr != nullptr && ctx.typeId != 0) {
         std::vector<TypedReplacer> potentialReplacers;
         {
             std::shared_lock lk(mMutex);
@@ -905,6 +1052,7 @@ std::string PlaceholderManager::executePlaceholder(
                 }
             }
         }
+        std::vector<std::pair<int, Candidate>> candidates;
         for (auto& entry : potentialReplacers) {
             std::vector<Caster> chain;
             if (entry.targetTypeId == ctx.typeId) {
@@ -923,7 +1071,7 @@ std::string PlaceholderManager::executePlaceholder(
     }
 
     std::optional<ServerReplacerEntry> serverEntry;
-    if (!bestCandidate) {
+    if (!bestRelationalCandidate && !bestCandidate) {
         std::shared_lock lk(mMutex);
         auto             plugin_it = mServerPlaceholders.find(std::string(pluginName));
         if (plugin_it != mServerPlaceholders.end()) {
@@ -938,16 +1086,27 @@ std::string PlaceholderManager::executePlaceholder(
     // --- 2. Build Cache Key & Check Cache ---
     std::string                  cacheKey;
     std::optional<CacheDuration> cacheDuration = cache_duration_override;
-    bool                         hasCandidate  = bestCandidate.has_value() || serverEntry.has_value();
+    bool hasCandidate = bestRelationalCandidate.has_value() || bestCandidate.has_value() || serverEntry.has_value();
 
     if (hasCandidate) {
-        CacheKeyStrategy strategy = bestCandidate ? bestCandidate->strategy
-                                    : serverEntry ? serverEntry->strategy
-                                                  : CacheKeyStrategy::Default;
+        CacheKeyStrategy strategy = CacheKeyStrategy::Default;
+        if (bestRelationalCandidate) {
+            strategy = bestRelationalCandidate->strategy;
+        } else if (bestCandidate) {
+            strategy = bestCandidate->strategy;
+        } else if (serverEntry) {
+            strategy = serverEntry->strategy;
+        }
         cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
 
         if (!cacheDuration) {
-            cacheDuration = bestCandidate ? bestCandidate->cacheDuration : serverEntry->cacheDuration;
+            if (bestRelationalCandidate) {
+                cacheDuration = bestRelationalCandidate->cacheDuration;
+            } else if (bestCandidate) {
+                cacheDuration = bestCandidate->cacheDuration;
+            } else if (serverEntry) {
+                cacheDuration = serverEntry->cacheDuration;
+            }
         }
 
         auto itCache = st.cache.find(cacheKey);
@@ -998,7 +1157,26 @@ std::string PlaceholderManager::executePlaceholder(
     std::string             replaced_val;
     bool                    replaced = false;
 
-    if (bestCandidate) {
+    if (bestRelationalCandidate) {
+        void* p = ctx.ptr;
+        for (auto& cfun : bestRelationalCandidate->chain) {
+            p = cfun(p);
+        }
+        void* p_rel = ctx.relationalContext->ptr;
+        for (auto& cfun : bestRelationalCandidate->rel_chain) {
+            p_rel = cfun(p_rel);
+        }
+        if (p && p_rel) {
+            if (std::holds_alternative<AnyPtrRelationalReplacer>(bestRelationalCandidate->fn)) {
+                replaced_val = std::get<AnyPtrRelationalReplacer>(bestRelationalCandidate->fn)(p, p_rel);
+            } else {
+                replaced_val = std::get<AnyPtrRelationalReplacerWithParams>(bestRelationalCandidate->fn)(p, p_rel, params);
+            }
+            if (!replaced_val.empty() || allowEmpty) {
+                replaced = true;
+            }
+        }
+    } else if (bestCandidate) {
         void* p = ctx.ptr;
         for (auto& cfun : bestCandidate->chain) {
             p = cfun(p);
@@ -1042,6 +1220,7 @@ std::string PlaceholderManager::executePlaceholder(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime)
                 .count();
         const char* typeStr = "Unknown";
+        if (type == PlaceholderType::Relational) typeStr = "Relational";
         if (type == PlaceholderType::Context) typeStr = "Context";
         if (type == PlaceholderType::Server) typeStr = "Server";
 

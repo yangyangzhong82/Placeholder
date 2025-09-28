@@ -60,6 +60,9 @@ inline std::string typeKey() {
 struct PlaceholderContext {
     void*       ptr{nullptr}; // 指向上下文对象的通用指针
     std::size_t typeId{0};    // 上下文对象的内部类型ID，0 表示无类型
+
+    // 新增：关系型上下文
+    const PlaceholderContext* relationalContext{nullptr};
 };
 
 /**
@@ -145,6 +148,11 @@ public:
     using AsyncAnyPtrReplacerWithParams =
         std::function<std::future<std::string>(void*, const Utils::ParsedParams& params)>;
 
+    // 关系型上下文占位符
+    using AnyPtrRelationalReplacer = std::function<std::string(void*, void*)>;
+    using AnyPtrRelationalReplacerWithParams =
+        std::function<std::string(void*, void*, const Utils::ParsedParams& params)>;
+
 
     // 上下文占位符：接受一个 void* 指针，并返回字符串。内部会进行类型转换。
     using AnyPtrReplacer = std::function<std::string(void*)>;
@@ -220,6 +228,77 @@ public:
         std::optional<CacheDuration>    cache_duration = std::nullopt,
         CacheKeyStrategy                strategy       = CacheKeyStrategy::Default
     );
+
+    /**
+     * @brief [新] 注册关系型上下文占位符（模板版）
+     *
+     * 当传入的动态类型分别是 T 或其派生类，以及 T_Rel 或其派生类时，
+     * 将通过类型系统上行转换为 T* 和 T_Rel* 再调用 replacer。
+     * @tparam T 主体类型
+     * @tparam T_Rel 关系类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T* 和 T_Rel* 指针，返回替换后的字符串
+     */
+    template <typename T, typename T_Rel>
+    void registerRelationalPlaceholder(
+        const std::string&                       pluginName,
+        const std::string&                       placeholder,
+        std::function<std::string(T*, T_Rel*)>&& replacer,
+        std::optional<CacheDuration>             cache_duration = std::nullopt,
+        CacheKeyStrategy                         strategy       = CacheKeyStrategy::Default
+    ) {
+        auto                     targetId     = ensureTypeId(typeKey<T>());
+        auto                     relationalId = ensureTypeId(typeKey<T_Rel>());
+        AnyPtrRelationalReplacer fn = [r = std::move(replacer)](void* p, void* p_rel) -> std::string {
+            if (!p || !p_rel) return std::string{};
+            return r(reinterpret_cast<T*>(p), reinterpret_cast<T_Rel*>(p_rel));
+        };
+        registerRelationalPlaceholderForTypeId(
+            pluginName,
+            placeholder,
+            targetId,
+            relationalId,
+            std::move(fn),
+            cache_duration,
+            strategy
+        );
+    }
+
+    /**
+     * @brief [新] 注册带参数的关系型上下文占位符（模板版）
+     *
+     * @tparam T 主体类型
+     * @tparam T_Rel 关系类型
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param replacer 替换函数，接受 T*, T_Rel* 指针和 const Utils::ParsedParams& 参数，返回替换后的字符串
+     */
+    template <typename T, typename T_Rel>
+    void registerRelationalPlaceholderWithParams(
+        const std::string&                                                   pluginName,
+        const std::string&                                                   placeholder,
+        std::function<std::string(T*, T_Rel*, const Utils::ParsedParams&)>&& replacer,
+        std::optional<CacheDuration>                                         cache_duration = std::nullopt,
+        CacheKeyStrategy                                                     strategy       = CacheKeyStrategy::Default
+    ) {
+        auto                               targetId     = ensureTypeId(typeKey<T>());
+        auto                               relationalId = ensureTypeId(typeKey<T_Rel>());
+        AnyPtrRelationalReplacerWithParams fn =
+            [r = std::move(replacer)](void* p, void* p_rel, const Utils::ParsedParams& params) -> std::string {
+            if (!p || !p_rel) return std::string{};
+            return r(reinterpret_cast<T*>(p), reinterpret_cast<T_Rel*>(p_rel), params);
+        };
+        registerRelationalPlaceholderForTypeId(
+            pluginName,
+            placeholder,
+            targetId,
+            relationalId,
+            std::move(fn),
+            cache_duration,
+            strategy
+        );
+    }
 
     /**
      * @brief [便捷] 兼容旧的 string_view 签名，注册带参数的服务器级占位符
@@ -404,6 +483,42 @@ public:
         const std::string&         placeholder,
         const std::string&         typeKeyStr,
         AnyPtrReplacerWithParams&& replacer
+    );
+
+    /**
+     * @brief [新] 注册关系型上下文占位符（显式类型键版）
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param typeKeyStr 主体类型的字符串键
+     * @param relationalTypeKeyStr 关系类型的字符串键
+     * @param replacer 替换函数，接受两个 void* 指针，返回替换后的字符串
+     */
+    PA_API void registerRelationalPlaceholderForTypeKey(
+        const std::string&           pluginName,
+        const std::string&           placeholder,
+        const std::string&           typeKeyStr,
+        const std::string&           relationalTypeKeyStr,
+        AnyPtrRelationalReplacer&&   replacer,
+        std::optional<CacheDuration> cache_duration = std::nullopt,
+        CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief [新] 注册带参数的关系型上下文占位符（显式类型键版）
+     * @param pluginName 插件名称
+     * @param placeholder 占位符名称
+     * @param typeKeyStr 主体类型的字符串键
+     * @param relationalTypeKeyStr 关系类型的字符串键
+     * @param replacer 替换函数，接受两个 void* 指针和 ParsedParams 参数，返回替换后的字符串
+     */
+    PA_API void registerRelationalPlaceholderForTypeKeyWithParams(
+        const std::string&                   pluginName,
+        const std::string&                   placeholder,
+        const std::string&                   typeKeyStr,
+        const std::string&                   relationalTypeKeyStr,
+        AnyPtrRelationalReplacerWithParams&& replacer,
+        std::optional<CacheDuration>         cache_duration = std::nullopt,
+        CacheKeyStrategy                     strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -646,11 +761,12 @@ public:
      * 从任意类型指针构造 PlaceholderContext。
      * @tparam T 上下文对象的类型
      * @param ptr 上下文对象指针
+     * @param rel_ctx 可选的关系型上下文
      * @return 构造的 PlaceholderContext
      */
     template <typename T>
-    static PlaceholderContext makeContext(T* ptr) {
-        return makeContextRaw(static_cast<void*>(ptr), typeKey<T>());
+    static PlaceholderContext makeContext(T* ptr, const PlaceholderContext* rel_ctx = nullptr) {
+        return makeContextRaw(static_cast<void*>(ptr), typeKey<T>(), rel_ctx);
     }
 
     /**
@@ -659,9 +775,10 @@ public:
      * 允许直接传入 void* 指针和类型键字符串来构造 PlaceholderContext。
      * @param ptr 上下文对象指针
      * @param typeKeyStr 类型键字符串
+     * @param rel_ctx 可选的关系型上下文
      * @return 构造的 PlaceholderContext
      */
-    PA_API static PlaceholderContext makeContextRaw(void* ptr, const std::string& typeKeyStr);
+    PA_API static PlaceholderContext makeContextRaw(void* ptr, const std::string& typeKeyStr, const PlaceholderContext* rel_ctx = nullptr);
 
     /**
      * @brief 注册上下文占位符（目标类型ID版）
@@ -721,6 +838,32 @@ public:
         AsyncAnyPtrReplacerWithParams&& replacer,
         std::optional<CacheDuration>    cache_duration = std::nullopt,
         CacheKeyStrategy                strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief 注册关系型上下文占位符（目标类型ID版）
+     */
+    PA_API void registerRelationalPlaceholderForTypeId(
+        const std::string&                 pluginName,
+        const std::string&                 placeholder,
+        std::size_t                        targetTypeId,
+        std::size_t                        relationalTypeId,
+        AnyPtrRelationalReplacer&&         replacer,
+        std::optional<CacheDuration>       cache_duration = std::nullopt,
+        CacheKeyStrategy                   strategy       = CacheKeyStrategy::Default
+    );
+
+    /**
+     * @brief 注册带参数的关系型上下文占位符（目标类型ID版）
+     */
+    PA_API void registerRelationalPlaceholderForTypeId(
+        const std::string&                  pluginName,
+        const std::string&                  placeholder,
+        std::size_t                         targetTypeId,
+        std::size_t                         relationalTypeId,
+        AnyPtrRelationalReplacerWithParams&& replacer,
+        std::optional<CacheDuration>        cache_duration = std::nullopt,
+        CacheKeyStrategy                    strategy       = CacheKeyStrategy::Default
     );
 
     /**
@@ -834,6 +977,17 @@ private:
     };
 
     /**
+     * @brief 关系型上下文占位符的内部存储条目
+     */
+    struct RelationalTypedReplacer {
+        std::size_t                                                        targetTypeId{0};
+        std::size_t                                                        relationalTypeId{0};
+        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams> fn;
+        std::optional<CacheDuration>                                       cacheDuration;
+        CacheKeyStrategy                                                   strategy;
+    };
+
+    /**
      * @brief 上行转换链 BFS 结果缓存条目
      *
      * 存储 BFS 查找上行转换路径的结果，包括是否成功和转换函数链。
@@ -859,6 +1013,10 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<AsyncTypedReplacer>>>
         mAsyncContextPlaceholders;
+
+    // 关系型上下文占位符映射
+    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<RelationalTypedReplacer>>>
+        mRelationalPlaceholders;
 
     // 类型系统映射：类型键字符串 <-> 类型ID
     std::unordered_map<std::string, std::size_t> mTypeKeyToId; // 类型键到ID的映射
