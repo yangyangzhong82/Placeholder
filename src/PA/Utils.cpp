@@ -1,8 +1,10 @@
 #include "Utils.h"
 
+#include <unicode/brkiter.h>
+#include <unicode/locid.h>
 #include <unicode/uchar.h>
-#include <unicode/utf8.h>
 #include <unicode/unistr.h>
+#include <unicode/utf8.h>
 #include <utf8.h>
 
 #include "exprtk.hpp"
@@ -12,9 +14,11 @@
 #include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <stack>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include "PA/Config/ConfigManager.h" // 引入 ConfigManager
@@ -387,8 +391,12 @@ inline std::string stripColorCodes(std::string_view s) {
     return out;
 }
 
-inline std::string addThousandSeparators(std::string s, char groupSep, char decimalSep) {
-    // 仅处理纯数字段（可带 +/- 和小数点），不处理科学计数法
+inline std::string addThousandSeparators(
+    std::string             s,
+    char                    groupSep,
+    char                    decimalSep,
+    const std::vector<int>& grouping
+) {
     std::string sign;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) {
         sign = s.substr(0, 1);
@@ -402,14 +410,44 @@ inline std::string addThousandSeparators(std::string s, char groupSep, char deci
         fracPart[0] = decimalSep;
     }
 
+    if (grouping.empty() || intPart.length() <= grouping[0]) {
+        // 默认分组或长度不足
+        std::string out;
+        out.reserve(s.size() + s.size() / 3);
+        int count = 0;
+        for (int i = (int)intPart.size() - 1; i >= 0; --i) {
+            out.push_back(intPart[(size_t)i]);
+            if (++count == 3 && i > 0) {
+                out.push_back(groupSep);
+                count = 0;
+            }
+        }
+        std::reverse(out.begin(), out.end());
+        return sign + out + fracPart;
+    }
+
+    // 自定义分组
     std::string out;
     out.reserve(s.size() + s.size() / 3);
-    int count = 0;
+    int  groupingIdx = 0;
+    int  count       = 0;
+    int  groupSize   = grouping[0];
+    bool isLastGroup = grouping.size() == 1;
+
     for (int i = (int)intPart.size() - 1; i >= 0; --i) {
         out.push_back(intPart[(size_t)i]);
-        if (++count == 3 && i > 0) {
+        count++;
+        if (count == groupSize && i > 0) {
             out.push_back(groupSep);
             count = 0;
+            if (!isLastGroup) {
+                groupingIdx++;
+                if (groupingIdx < grouping.size()) {
+                    groupSize = grouping[groupingIdx];
+                } else {
+                    isLastGroup = true; // 使用最后一个分组大小
+                }
+            }
         }
     }
     std::reverse(out.begin(), out.end());
@@ -465,9 +503,8 @@ inline std::string siScale(
     return oss.str();
 }
 
-inline std::string formatNumber(double x, int decimals, bool doRound, bool trimzeros = false) {
+inline std::string formatNumber(double x, int decimals, bool doRound, std::string_view trimzeros) {
     if (decimals < 0) {
-        // 默认尽可能精简地输出
         std::ostringstream oss;
         oss << x;
         return oss.str();
@@ -476,30 +513,85 @@ inline std::string formatNumber(double x, int decimals, bool doRound, bool trimz
     double             y      = doRound ? std::round(x * factor) / factor : std::trunc(x * factor) / factor;
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(decimals) << y;
-    if (trimzeros) {
-        std::string s = oss.str();
-        auto        dot_pos = s.find('.');
+    std::string s = oss.str();
+
+    if (trimzeros != "false") {
+        auto dot_pos = s.find('.');
         if (dot_pos != std::string::npos) {
-            s.erase(s.find_last_not_of('0') + 1, std::string::npos);
-            if (s.back() == '.') {
-                s.pop_back();
+            bool should_trim = false;
+            if (trimzeros == "true") {
+                should_trim = true;
+            } else if (trimzeros == "smart") {
+                // 检查小数部分是否全为0
+                bool all_zeros = true;
+                for (size_t i = dot_pos + 1; i < s.length(); ++i) {
+                    if (s[i] != '0') {
+                        all_zeros = false;
+                        break;
+                    }
+                }
+                if (all_zeros) {
+                    s = s.substr(0, dot_pos); // 只保留整数部分
+                    return s;
+                }
+            }
+
+            if (should_trim) {
+                s.erase(s.find_last_not_of('0') + 1, std::string::npos);
+                if (s.back() == '.') {
+                    s.pop_back();
+                }
             }
         }
-        return s;
     }
-    return oss.str();
+    return s;
 }
 
 inline bool matchCond(double v, const std::string& condRaw) {
     auto cond = trim(condRaw);
     if (cond.empty()) return false;
 
+    // 检查区间语法
+    if ((cond.front() == '(' || cond.front() == '[') && (cond.back() == ')' || cond.back() == ']')) {
+        auto comma_pos = cond.find(',');
+        if (comma_pos != std::string::npos) {
+            std::string lower_str = trim(cond.substr(1, comma_pos - 1));
+            std::string upper_str = trim(cond.substr(comma_pos + 1, cond.length() - comma_pos - 2));
+
+            double lower_bound = -std::numeric_limits<double>::infinity();
+            double upper_bound = std::numeric_limits<double>::infinity();
+
+            if (lower_str != "-inf") {
+                if (auto val = parseDouble(lower_str)) {
+                    lower_bound = *val;
+                } else
+                    return false;
+            }
+            if (upper_str != "+inf" && upper_str != "inf") {
+                if (auto val = parseDouble(upper_str)) {
+                    upper_bound = *val;
+                } else
+                    return false;
+            }
+
+            bool lower_ok = (cond.front() == '(') ? (v > lower_bound) : (v >= lower_bound);
+            bool upper_ok = (cond.back() == ')') ? (v < upper_bound) : (v <= upper_bound);
+
+            return lower_ok && upper_ok;
+        }
+    }
+
+
     auto dash = cond.find('-');
-    if (dash != std::string::npos) {
+    // 避免将 "1-2" 这样的负数范围错误解析
+    if (dash != std::string::npos && dash > 0 && !std::isspace(cond[dash - 1]) && !std::isspace(cond[dash + 1])) {
+        // no-op, fall through to other checks
+    } else if (dash != std::string::npos) {
         auto a = parseDouble(cond.substr(0, dash));
         auto b = parseDouble(cond.substr(dash + 1));
         if (a && b) return v >= *a && v <= *b;
     }
+
 
     auto startsWith = [&](const char* p) {
         size_t n = std::strlen(p);
@@ -602,6 +694,41 @@ inline std::optional<std::string> evalMapCI(const std::string& raw, const std::s
     return evalMap(raw, spec); // 已经小写比对
 }
 
+inline std::optional<std::string> evalMapRe(const std::string& raw, const std::string& spec) {
+    std::string       defaultVal;
+    std::stringstream ss(spec);
+    std::string       item;
+
+    while (std::getline(ss, item, ',')) {
+        auto part = trim(item);
+        if (part.empty()) continue;
+        auto col = part.find(':');
+        if (col == std::string::npos) continue;
+
+        auto key_str = trim(part.substr(0, col));
+        auto val_str = trim(part.substr(col + 1));
+
+        if (key_str == "default" || key_str == "*") {
+            defaultVal = val_str;
+            continue;
+        }
+
+        try {
+            std::regex re(key_str);
+            if (std::regex_search(raw, re)) {
+                return std::regex_replace(raw, re, val_str);
+            }
+        } catch (const std::regex_error& e) {
+            // 无效的正则表达式，忽略
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.warn("Invalid regex in mapre: '{}'. Error: {}", key_str, e.what());
+            }
+        }
+    }
+    if (!defaultVal.empty()) return defaultVal;
+    return std::nullopt;
+}
+
 // 数学函数实现
 inline double math_sqrt(double v) { return std::sqrt(v); }
 inline double math_round(double v) { return std::round(v); }
@@ -610,6 +737,52 @@ inline double math_ceil(double v) { return std::ceil(v); }
 inline double math_abs(double v) { return std::fabs(v); }
 inline double math_min(double a, double b) { return std::min(a, b); }
 inline double math_max(double a, double b) { return std::max(a, b); }
+
+std::optional<double> evalMathExpression(
+    const std::string& expression_str, const ParsedParams& params, std::optional<double> current
+) {
+    using namespace exprtk;
+
+    symbol_table<double>                    symbol_table;
+    std::unordered_map<std::string, double> variables; // 持久化存储变量
+    double                                  current_val = 0; // 必须在 symbol_table 作用域内
+
+    if (current) {
+        current_val = *current;
+        symbol_table.add_variable("_", current_val);
+    }
+
+    // 注册变量
+    for (const auto& [key, value_str] : params.getRawParams()) {
+        if (auto num = parseDouble(value_str)) {
+            variables[key] = *num; // 存储实际值
+            symbol_table.add_variable(key, variables[key]); // 传入持久化存储的引用
+        }
+    }
+
+    // 注册数学函数
+    symbol_table.add_function("sqrt", math_sqrt);
+    symbol_table.add_function("round", math_round);
+    symbol_table.add_function("floor", math_floor);
+    symbol_table.add_function("ceil", math_ceil);
+    symbol_table.add_function("abs", math_abs);
+    symbol_table.add_function("min", math_min);
+    symbol_table.add_function("max", math_max);
+
+    expression<double> expression;
+    expression.register_symbol_table(symbol_table);
+
+    parser<double> parser;
+    if (!parser.compile(expression_str, expression)) {
+        // 编译失败，返回空
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn("Math expression '{}' failed to parse. Error: {}", expression_str, parser.error().c_str());
+        }
+        return std::nullopt;
+    }
+
+    return expression.value();
+}
 
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
@@ -659,6 +832,10 @@ void applyBooleanFormatting(
             auto mapped = evalMapCI(b ? "true" : "false", std::string(*itMapci));
             if (!mapped) mapped = evalMapCI(b ? "1" : "0", std::string(*itMapci));
             if (mapped) out = *mapped;
+        } else if (auto itMapre = params.get("mapre")) {
+            auto mapped = evalMapRe(b ? "true" : "false", std::string(*itMapre));
+            if (!mapped) mapped = evalMapRe(b ? "1" : "0", std::string(*itMapre));
+            if (mapped) out = *mapped;
         }
     }
 }
@@ -695,13 +872,28 @@ void applyNumberFormatting(
             }
         }
 
-        int  decimals  = params.getInt("decimals").value_or(-1);
-        bool doRound   = params.getBool("round").value_or(true);
-        bool trimzeros = params.getBool("trimzeros").value_or(false);
+        int              decimals  = params.getInt("decimals").value_or(-1);
+        bool             doRound   = params.getBool("round").value_or(true);
+        std::string_view trimzeros = params.get("trimzeros").value_or("false");
+
+        bool is_negative = v < 0;
+        if (auto neg_format = params.get("negative")) {
+            if (is_negative && *neg_format == "()") {
+                v = -v; // 暂时转为正数处理
+            }
+        }
 
         // SI 缩放
         if (params.getBool("si").value_or(false)) {
-            int         base     = params.getInt("base").value_or(1000) == 1024 ? 1024 : 1000;
+            int base = params.getInt("base").value_or(0);
+            if (base == 0) { // auto
+                std::string unit_lower = toLower(std::string(params.get("unit").value_or("")));
+                if (unit_lower == "b" || unit_lower == "bytes") {
+                    base = 1024;
+                } else {
+                    base = 1000;
+                }
+            }
             bool        space    = params.getBool("space").value_or(true);
             std::string unitCase = toLower(trim(std::string(params.get("unitcase").value_or("upper"))));
             std::string unit     = std::string(params.get("unit").value_or(""));
@@ -713,18 +905,18 @@ void applyNumberFormatting(
 
         // 千分位
         if (params.getBool("commas").value_or(false)) {
-            char groupSep   = ',';
-            char decimalSep = '.';
+            char                    groupSep   = ',';
+            char                    decimalSep = '.';
+            std::vector<int>        grouping;
+            std::optional<std::string_view> locale_sv;
 
             if (auto locale = params.get("locale")) {
-                auto loc_sv = toLower(trim(std::string(*locale)));
-                if (loc_sv == "zh_cn") {
-                    // default is fine
-                } else if (loc_sv == "en_us") {
-                    // default is fine
-                } else if (loc_sv == "de_de") {
+                locale_sv = toLower(trim(std::string(*locale)));
+                if (*locale_sv == "de_de") {
                     groupSep   = '.';
                     decimalSep = ',';
+                } else if (*locale_sv == "en_in") {
+                    grouping = {3, 2}; // 印度数字系统
                 }
             }
 
@@ -734,8 +926,32 @@ void applyNumberFormatting(
             if (auto d = params.get("decimal")) {
                 if (!d->empty()) decimalSep = (*d)[0];
             }
+            if (auto grp = params.get("grouping")) {
+                grouping.clear();
+                std::string_view grp_sv(*grp);
+                size_t           start = 0;
+                size_t           end;
+                do {
+                    end = grp_sv.find('-', start);
+                    std::string_view item_sv = grp_sv.substr(start, end - start);
+                    if (!item_sv.empty()) {
+                        if (auto i = parseInt(std::string(item_sv))) {
+                            grouping.push_back(*i);
+                        }
+                    }
+                    start = end + 1;
+                } while (end != std::string_view::npos);
+            }
 
-            out = addThousandSeparators(out, groupSep, decimalSep);
+            out = addThousandSeparators(out, groupSep, decimalSep, grouping);
+        }
+
+        if (auto neg_format = params.get("negative")) {
+            if (is_negative && *neg_format == "()") {
+                out = "(" + out + ")";
+            } else if (is_negative) {
+                out = "-" + out;
+            }
         }
 
         // 阈值 -> 样式/文本
@@ -772,6 +988,8 @@ void applyStringMapping(
             if (auto mapped = evalMap(out, std::string(*it))) out = *mapped;
         } else if (auto it = params.get("mapci")) {
             if (auto mapped = evalMapCI(out, std::string(*it))) out = *mapped;
+        } else if (auto it = params.get("mapre")) {
+            if (auto mapped = evalMapRe(out, std::string(*it))) out = *mapped;
         }
     }
 }
@@ -807,13 +1025,38 @@ void applyCaseConversion(std::string& out, const ParsedParams& params) {
         } else if (v == "upper") {
             std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return (char)std::toupper(c); });
         } else if (v == "title") {
-            bool newWord = true;
-            for (auto& ch : out) {
-                if (std::isalpha((unsigned char)ch)) {
-                    ch      = newWord ? (char)std::toupper((unsigned char)ch) : (char)std::tolower((unsigned char)ch);
-                    newWord = false;
-                } else {
-                    newWord = isSpace((unsigned char)ch);
+            UErrorCode status = U_ZERO_ERROR;
+            // 使用默认区域设置的单词边界迭代器
+            std::unique_ptr<icu::BreakIterator> wordIterator(
+                icu::BreakIterator::createWordInstance(icu::Locale::getDefault(), status)
+            );
+            if (U_SUCCESS(status)) {
+                icu::UnicodeString ustr = icu::UnicodeString::fromUTF8(out);
+                wordIterator->setText(ustr);
+                int32_t start = wordIterator->first();
+                for (int32_t end = wordIterator->next(); end != icu::BreakIterator::DONE;
+                     start = end, end = wordIterator->next()) {
+                    // 检查分段是否为单词
+                    if (wordIterator->getRuleStatus() != UBRK_WORD_NONE) {
+                        ustr.replace(start, 1, ustr.tempSubString(start, 1).toTitle(nullptr));
+                        if (end - start > 1) {
+                            ustr.replace(start + 1, end - (start + 1), ustr.tempSubString(start + 1).toLower());
+                        }
+                    }
+                }
+                out.clear();
+                ustr.toUTF8String(out);
+            } else {
+                // ICU 初始化失败，回退到简单实现
+                bool newWord = true;
+                for (auto& ch : out) {
+                    if (std::isalpha((unsigned char)ch)) {
+                        ch      = newWord ? (char)std::toupper((unsigned char)ch)
+                                          : (char)std::tolower((unsigned char)ch);
+                        newWord = false;
+                    } else {
+                        newWord = isSpace((unsigned char)ch);
+                    }
                 }
             }
         }
@@ -944,52 +1187,6 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
     if (out.empty()) {
         if (auto it = params.get("emptytext")) out = *it;
     }
-}
-
-std::optional<double> evalMathExpression(
-    const std::string& expression_str, const ParsedParams& params, std::optional<double> current
-) {
-    using namespace exprtk;
-
-    symbol_table<double>                    symbol_table;
-    std::unordered_map<std::string, double> variables; // 持久化存储变量
-    double                                  current_val = 0; // 必须在 symbol_table 作用域内
-
-    if (current) {
-        current_val = *current;
-        symbol_table.add_variable("_", current_val);
-    }
-
-    // 注册变量
-    for (const auto& [key, value_str] : params.getRawParams()) {
-        if (auto num = parseDouble(value_str)) {
-            variables[key] = *num; // 存储实际值
-            symbol_table.add_variable(key, variables[key]); // 传入持久化存储的引用
-        }
-    }
-
-    // 注册数学函数
-    symbol_table.add_function("sqrt", math_sqrt);
-    symbol_table.add_function("round", math_round);
-    symbol_table.add_function("floor", math_floor);
-    symbol_table.add_function("ceil", math_ceil);
-    symbol_table.add_function("abs", math_abs);
-    symbol_table.add_function("min", math_min);
-    symbol_table.add_function("max", math_max);
-
-    expression<double> expression;
-    expression.register_symbol_table(symbol_table);
-
-    parser<double> parser;
-    if (!parser.compile(expression_str, expression)) {
-        // 编译失败，返回空
-        if (ConfigManager::getInstance().get().debugMode) {
-            logger.warn("Math expression '{}' failed to parse. Error: {}", expression_str, parser.error().c_str());
-        }
-        return std::nullopt;
-    }
-
-    return expression.value();
 }
 
 // 新接口

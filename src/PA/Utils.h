@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <regex>
 
 #include "fast_float/fast_float.h"
 #include <unicode/uchar.h>
@@ -126,9 +127,22 @@ std::string        truncateVisible(
            std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
        );
 inline std::string stripColorCodes(std::string_view s);
-inline std::string addThousandSeparators(std::string s, char groupSep = ',', char decimalSep = '.');
-inline std::string siScale(double v, int base, int decimals, bool doRound);
-inline std::string formatNumber(double x, int decimals, bool doRound);
+inline std::string addThousandSeparators(
+    std::string             s,
+    char                    groupSep   = ',',
+    char                    decimalSep = '.',
+    const std::vector<int>& grouping   = {}
+);
+inline std::string siScale(
+    double             v,
+    int                base,
+    int                decimals,
+    bool               doRound,
+    bool               space,
+    std::string        unitCase,
+    const std::string& unit
+);
+inline std::string formatNumber(double x, int decimals, bool doRound, std::string_view trimzeros = "false");
 inline bool        matchCond(double v, const std::string& condRaw);
 // 增强版 evalThresholds
 struct ThresholdResult {
@@ -138,6 +152,7 @@ struct ThresholdResult {
 inline std::optional<ThresholdResult> evalThresholds(double v, const std::string& spec);
 inline std::optional<std::string> evalMap(const std::string& raw, const std::string& spec);
 inline std::optional<std::string> evalMapCI(const std::string& raw, const std::string& spec);
+inline std::optional<std::string> evalMapRe(const std::string& raw, const std::string& spec);
 
 // 数学函数
 inline double math_sqrt(double v);
