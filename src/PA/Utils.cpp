@@ -76,23 +76,20 @@ parseParamsInternal(std::string_view s, std::string_view kvsep, std::string_view
             }
             return val;
         } else {
-            size_t start = i;
+            std::string val;
             while (i < n) {
                 char c = s[i];
-                if (c == '\\') {
-                    if (i + 1 < n) {
-                        char next_c = s[i + 1];
-                        if (is_pairsep(next_c) || is_kvsep(next_c) || next_c == '|') {
-                            i += 2;
-                            continue;
-                        }
-                    }
+                if (c == '\\' && i + 1 < n) {
+                    val.push_back(s[i + 1]);
+                    i += 2;
                 } else if (is_pairsep(c)) {
                     break;
+                } else {
+                    val.push_back(c);
+                    i++;
                 }
-                ++i;
             }
-            return std::string(trim_sv(s.substr(start, i - start)));
+            return trim(val);
         }
     };
 
