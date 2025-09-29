@@ -790,15 +790,26 @@ public:
      *
      * 返回一个结构体，包含所有服务器级和上下文相关的占位符列表。
      */
-    struct ContextPlaceholderInfo {
-        std::string name;          // 占位符名称
-        std::string targetTypeKey; // 目标类型的可读名称（优先使用别名）
+    // --- 新：观测与文档 ---
+    enum class PlaceholderCategory {
+        Server,
+        Context,
+        Relational,
+        List,
+        ObjectList,
     };
+    struct PlaceholderInfo {
+        std::string           name;             // 占位符名称
+        PlaceholderCategory   category;         // 占位符类别
+        bool                  isAsync{false};   // 是否为异步
+        std::string           targetType;       // 目标类型 (上下文/列表)
+        std::string           relationalType;   // 关系类型 (关系型)
+        std::vector<std::string> overloads; // 同名占位符的其他类型重载
+    };
+
     struct AllPlaceholders {
-        // 插件名 -> 占位符名称列表
-        std::unordered_map<std::string, std::vector<std::string>> serverPlaceholders;
-        // 插件名 -> 上下文占位符信息列表
-        std::unordered_map<std::string, std::vector<ContextPlaceholderInfo>> contextPlaceholders;
+        // 插件名 -> 占位符信息列表
+        std::unordered_map<std::string, std::vector<PlaceholderInfo>> placeholders;
     };
     PA_API AllPlaceholders getAllPlaceholders() const;
 

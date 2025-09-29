@@ -410,33 +410,109 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
     AllPlaceholders  result;
     std::shared_lock lk(mMutex);
 
-    for (const auto& [pluginName, placeholders] : mServerPlaceholders) {
-        for (const auto& [placeholderName, entry] : placeholders) {
-            result.serverPlaceholders[pluginName].push_back(placeholderName);
+    auto getTypeName = [&](std::size_t typeId) -> std::string {
+        if (typeId == 0) return "N/A";
+        auto aliasIt = mIdToAlias.find(typeId);
+        if (aliasIt != mIdToAlias.end()) {
+            return aliasIt->second;
+        }
+        auto keyIt = mIdToTypeKey.find(typeId);
+        if (keyIt != mIdToTypeKey.end()) {
+            return keyIt->second;
+        }
+        return "UnknownTypeId(" + std::to_string(typeId) + ")";
+    };
+
+    // Helper to add or update placeholder info
+    auto addPlaceholder =
+        [&](const std::string& plugin, const std::string& name, PlaceholderCategory category, bool isAsync,
+            const std::string& targetType = "", const std::string& relationalType = "") {
+            auto&       pluginPlaceholders = result.placeholders[plugin];
+            std::string unique_name        = name + "_" + std::to_string((int)category) + (isAsync ? "_async" : "");
+
+            auto it = std::find_if(
+                pluginPlaceholders.begin(),
+                pluginPlaceholders.end(),
+                [&](const PlaceholderInfo& p) { return p.name == name; }
+            );
+
+            if (it != pluginPlaceholders.end()) {
+                // Found an existing entry with the same name, add overload info
+                if (!targetType.empty()) it->overloads.push_back(targetType);
+            } else {
+                // Add new entry
+                pluginPlaceholders.push_back({name, category, isAsync, targetType, relationalType, {}});
+            }
+        };
+
+    // 1. Server Placeholders
+    for (const auto& [plugin, phs] : mServerPlaceholders) {
+        for (const auto& [name, entry] : phs) {
+            addPlaceholder(plugin, name, PlaceholderCategory::Server, false);
+        }
+    }
+    for (const auto& [plugin, phs] : mAsyncServerPlaceholders) {
+        for (const auto& [name, entry] : phs) {
+            addPlaceholder(plugin, name, PlaceholderCategory::Server, true);
         }
     }
 
-    for (const auto& [pluginName, placeholders] : mContextPlaceholders) {
-        for (const auto& [placeholderName, entries] : placeholders) {
-            if (!entries.empty()) {
-                // 假设同一个占位符的所有重载都指向相同的逻辑类型，因此我们只取第一个。
-                auto        targetId = entries.begin()->second.targetTypeId;
-                std::string typeName;
+    // 2. Context Placeholders
+    for (const auto& [plugin, phs] : mContextPlaceholders) {
+        for (const auto& [name, overloads] : phs) {
+            for (const auto& [typeId, entry] : overloads) {
+                addPlaceholder(plugin, name, PlaceholderCategory::Context, false, getTypeName(entry.targetTypeId));
+            }
+        }
+    }
+    for (const auto& [plugin, phs] : mAsyncContextPlaceholders) {
+        for (const auto& [name, overloads] : phs) {
+            for (const auto& [typeId, entry] : overloads) {
+                addPlaceholder(plugin, name, PlaceholderCategory::Context, true, getTypeName(entry.targetTypeId));
+            }
+        }
+    }
 
-                // 优先使用别名
-                auto aliasIt = mIdToAlias.find(targetId);
-                if (aliasIt != mIdToAlias.end()) {
-                    typeName = aliasIt->second;
-                } else {
-                    // 否则回退到内部类型键
-                    auto keyIt = mIdToTypeKey.find(targetId);
-                    if (keyIt != mIdToTypeKey.end()) {
-                        typeName = keyIt->second;
-                    } else {
-                        typeName = "UnknownTypeId(" + std::to_string(targetId) + ")";
-                    }
-                }
-                result.contextPlaceholders[pluginName].push_back({placeholderName, typeName});
+    // 3. Relational Placeholders
+    for (const auto& [plugin, phs] : mRelationalPlaceholders) {
+        for (const auto& [name, entries] : phs) {
+            for (const auto& entry : entries) {
+                addPlaceholder(
+                    plugin,
+                    name,
+                    PlaceholderCategory::Relational,
+                    false,
+                    getTypeName(entry.targetTypeId),
+                    getTypeName(entry.relationalTypeId)
+                );
+            }
+        }
+    }
+
+    // 4. List Placeholders
+    for (const auto& [plugin, phs] : mServerListPlaceholders) {
+        for (const auto& [name, entry] : phs) {
+            addPlaceholder(plugin, name, PlaceholderCategory::List, false);
+        }
+    }
+    for (const auto& [plugin, phs] : mContextListPlaceholders) {
+        for (const auto& [name, overloads] : phs) {
+            for (const auto& [typeId, entry] : overloads) {
+                addPlaceholder(plugin, name, PlaceholderCategory::List, false, getTypeName(entry.targetTypeId));
+            }
+        }
+    }
+
+    // 5. Object List Placeholders
+    for (const auto& [plugin, phs] : mServerObjectListPlaceholders) {
+        for (const auto& [name, entry] : phs) {
+            addPlaceholder(plugin, name, PlaceholderCategory::ObjectList, false);
+        }
+    }
+    for (const auto& [plugin, phs] : mContextObjectListPlaceholders) {
+        for (const auto& [name, overloads] : phs) {
+            for (const auto& [typeId, entry] : overloads) {
+                addPlaceholder(plugin, name, PlaceholderCategory::ObjectList, false, getTypeName(entry.targetTypeId));
             }
         }
     }
