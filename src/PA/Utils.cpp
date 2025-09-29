@@ -764,32 +764,67 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 
     // JSON 转义
     if (params.getBool("json").value_or(false)) {
-        std::string esc;
-        esc.reserve(out.size() * 1.2);
-        for (char c : out) {
-            switch (c) {
-            case '\\':
-                esc += "\\\\";
-                break;
-            case '"':
-                esc += "\\\"";
-                break;
-            case '\n':
-                esc += "\\n";
-                break;
-            case '\r':
-                esc += "\\r";
-                break;
-            case '\t':
-                esc += "\\t";
-                break;
-            default:
-                esc.push_back(c);
-                break;
+        bool json_ascii = params.getBool("json_ascii").value_or(false);
+        std::ostringstream ss;
+
+        auto it  = out.cbegin();
+        auto end = out.cend();
+
+        while (it != end) {
+            try {
+                uint32_t code_point = utf8::peek_next(it, end);
+
+                switch (code_point) {
+                case '"':
+                    ss << "\\\"";
+                    break;
+                case '\\':
+                    ss << "\\\\";
+                    break;
+                case '\b':
+                    ss << "\\b";
+                    break;
+                case '\f':
+                    ss << "\\f";
+                    break;
+                case '\n':
+                    ss << "\\n";
+                    break;
+                case '\r':
+                    ss << "\\r";
+                    break;
+                case '\t':
+                    ss << "\\t";
+                    break;
+                default:
+                    if (code_point < 0x20 || code_point == 0x2028 || code_point == 0x2029) {
+                        ss << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+                           << static_cast<uint16_t>(code_point);
+                    } else if (json_ascii && code_point >= 0x80) {
+                        if (code_point <= 0xFFFF) {
+                            ss << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+                               << static_cast<uint16_t>(code_point);
+                        } else {
+                            uint32_t cp   = code_point - 0x10000;
+                            uint16_t high = static_cast<uint16_t>((cp >> 10) + 0xD800);
+                            uint16_t low  = static_cast<uint16_t>((cp & 0x3FF) + 0xDC00);
+                            ss << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << high
+                               << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << low;
+                        }
+                    } else {
+                        std::string temp;
+                        utf8::append(code_point, std::back_inserter(temp));
+                        ss << temp;
+                    }
+                    break;
+                }
+                utf8::next(it, end);
+            } catch (const utf8::exception&) {
+                // Invalid UTF-8 sequence, append the byte as is.
+                ss << *it++;
             }
-            // TODO: 更多控制字符转义
         }
-        out.swap(esc);
+        out = ss.str();
     }
 
     // 颜色/样式
