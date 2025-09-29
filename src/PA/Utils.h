@@ -90,7 +90,7 @@ inline std::optional<bool> parseBoolish(const std::string& s) {
  */
 class ParsedParams {
 public:
-    ParsedParams(std::string_view paramStr);
+    ParsedParams(std::string_view paramStr, std::string_view kvsep = "=", std::string_view pairsep = ";");
 
     // 获取原始字符串值
     std::optional<std::string_view> get(const std::string& key) const;

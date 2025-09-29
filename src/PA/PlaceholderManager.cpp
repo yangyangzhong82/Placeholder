@@ -919,6 +919,8 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             while (literalEnd < n) {
                 if (s[literalEnd] == '{' && literalEnd + 1 < n && s[literalEnd + 1] == '{') {
                     literalEnd += 2;
+                } else if (s[literalEnd] == '%' && literalEnd + 1 < n && s[literalEnd + 1] == '%') {
+                    literalEnd += 2;
                 } else {
                     break;
                 }
@@ -931,6 +933,26 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             size_t literalEnd = i + 2;
             while (literalEnd < n) {
                 if (s[literalEnd] == '}' && literalEnd + 1 < n && s[literalEnd + 1] == '}') {
+                    literalEnd += 2;
+                } else if (s[literalEnd] == '%' && literalEnd + 1 < n && s[literalEnd + 1] == '%') {
+                    literalEnd += 2;
+                } else {
+                    break;
+                }
+            }
+            tpl.tokens.emplace_back(LiteralToken{s.substr(i, literalEnd - i)});
+            i = literalEnd;
+            continue;
+        }
+        // 新增：百分号转义
+        if (c == '%' && i + 1 < n && s[i + 1] == '%') {
+            size_t literalEnd = i + 2;
+            while (literalEnd < n) {
+                if (s[literalEnd] == '%' && literalEnd + 1 < n && s[literalEnd + 1] == '%') {
+                    literalEnd += 2;
+                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '{' && literalEnd + 1 < n && s[literalEnd + 1] == '{') {
+                    literalEnd += 2;
+                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '}' && literalEnd + 1 < n && s[literalEnd + 1] == '}') {
                     literalEnd += 2;
                 } else {
                     break;

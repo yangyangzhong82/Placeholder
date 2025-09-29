@@ -23,17 +23,20 @@
 namespace PA::Utils {
 
 // 内部使用的参数解析实现
-static std::unordered_map<std::string, std::string> parseParamsInternal(std::string_view s) {
-    // 支持引号、转义：key=value;key2="a;b\"c";key3='x\';y'
+static std::unordered_map<std::string, std::string>
+parseParamsInternal(std::string_view s, std::string_view kvsep, std::string_view pairsep) {
     std::unordered_map<std::string, std::string> params;
     size_t                                       i = 0, n = s.size();
+
+    auto is_kvsep = [&](char c) { return kvsep.find(c) != std::string_view::npos; };
+    auto is_pairsep = [&](char c) { return pairsep.find(c) != std::string_view::npos; };
 
     auto skipSpaces = [&]() {
         while (i < n && isSpace((unsigned char)s[i])) ++i;
     };
     auto readKey = [&]() -> std::string_view {
         size_t start = i;
-        while (i < n && s[i] != '=' && s[i] != ';') ++i;
+        while (i < n && !is_kvsep(s[i]) && !is_pairsep(s[i])) ++i;
         return trim_sv(s.substr(start, i - start));
     };
     auto readValue = [&]() -> std::string {
@@ -70,7 +73,21 @@ static std::unordered_map<std::string, std::string> parseParamsInternal(std::str
             return val;
         } else {
             size_t start = i;
-            while (i < n && s[i] != ';') ++i;
+            while (i < n) {
+                char c = s[i];
+                if (c == '\\') {
+                    if (i + 1 < n) {
+                        char next_c = s[i + 1];
+                        if (is_pairsep(next_c) || is_kvsep(next_c) || next_c == '|') {
+                            i += 2;
+                            continue;
+                        }
+                    }
+                } else if (is_pairsep(c)) {
+                    break;
+                }
+                ++i;
+            }
             return std::string(trim_sv(s.substr(start, i - start)));
         }
     };
@@ -80,21 +97,32 @@ static std::unordered_map<std::string, std::string> parseParamsInternal(std::str
         if (i >= n) break;
         std::string_view key_sv = readKey();
         std::string      key    = toLower(std::string(key_sv));
-        if (i < n && s[i] == '=') {
+        if (i < n && is_kvsep(s[i])) {
             ++i;
             std::string val = readValue();
             params[key]     = val;
         } else {
-            if (!key.empty()) params[key] = "";
+            if (!key.empty()) params[key] = "true"; // 如果没有等号，则将键视为布尔参数，值为 true
         }
-        if (i < n && s[i] == ';') ++i;
+        if (i < n && is_pairsep(s[i])) ++i;
     }
     return params;
 }
 
 
 // ParsedParams 实现
-ParsedParams::ParsedParams(std::string_view paramStr) { mParams = parseParamsInternal(paramStr); }
+ParsedParams::ParsedParams(std::string_view paramStr, std::string_view kvsep, std::string_view pairsep) {
+    // First pass to find custom separators
+    auto temp_params = parseParamsInternal(paramStr, "=", ";");
+    if (auto it = temp_params.find("kvsep"); it != temp_params.end()) {
+        kvsep = it->second;
+    }
+    if (auto it = temp_params.find("pairsep"); it != temp_params.end()) {
+        pairsep = it->second;
+    }
+
+    mParams = parseParamsInternal(paramStr, kvsep, pairsep);
+}
 
 std::optional<std::string_view> ParsedParams::get(const std::string& key) const {
     auto it = mParams.find(key);
