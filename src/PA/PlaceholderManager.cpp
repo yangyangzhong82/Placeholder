@@ -53,7 +53,8 @@ PlaceholderManager& PlaceholderManager::getInstance() {
 
 PlaceholderManager::PlaceholderManager() :
     mGlobalCache(ConfigManager::getInstance().get().globalCacheSize),
-    mCompileCache(ConfigManager::getInstance().get().globalCacheSize) {
+    mCompileCache(ConfigManager::getInstance().get().globalCacheSize),
+    mParamsCache(ConfigManager::getInstance().get().globalCacheSize) {
     unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
     if (hardwareConcurrency == 0) {
         hardwareConcurrency = 2; // 硬件并发未知时的默认值
@@ -72,6 +73,7 @@ PlaceholderManager::PlaceholderManager() :
     ConfigManager::getInstance().onReload([this](const Config& newConfig) {
         mGlobalCache.setCapacity(newConfig.globalCacheSize);
         mCompileCache.setCapacity(newConfig.globalCacheSize);
+        mParamsCache.setCapacity(newConfig.globalCacheSize);
         // 注意：线程池大小在运行时不便更改，因此这里不处理 asyncThreadPoolSize 的热重载
     });
 }
@@ -1447,7 +1449,14 @@ std::string PlaceholderManager::executePlaceholder(
     }
 
     // --- 3. Execute Placeholder ---
-    PA::Utils::ParsedParams params(paramString);
+    std::shared_ptr<Utils::ParsedParams> paramsPtr;
+    if (auto cachedParams = mParamsCache.get(paramString)) {
+        paramsPtr = *cachedParams;
+    } else {
+        paramsPtr = std::make_shared<Utils::ParsedParams>(paramString);
+        mParamsCache.put(paramString, paramsPtr);
+    }
+    const auto&             params     = *paramsPtr;
     bool                    allowEmpty = params.getBool("allowempty").value_or(false);
     std::string             replaced_val;
     bool                    replaced = false;
@@ -1733,15 +1742,11 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         for (auto& entry : potentialAsyncReplacers) {
             std::vector<Caster> chain;
             if (entry.targetTypeId == ctx.typeId) {
-                asyncCandidates.push_back({
-                    0,
-                    AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-                });
+                asyncCandidates.push_back({0, AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
             } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                asyncCandidates.push_back({
-                    (int)chain.size(),
-                    AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-                });
+                asyncCandidates.push_back(
+                    {(int)chain.size(), AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
+                );
             }
         }
         if (!asyncCandidates.empty()) {
@@ -1785,10 +1790,11 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             auto cached = mGlobalCache.get(cacheKey);
             if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
                 if (ConfigManager::getInstance().get().debugMode) {
-                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                        std::chrono::high_resolution_clock::now() - startTime
-                    )
-                                        .count();
+                    auto duration =
+                        std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::high_resolution_clock::now() - startTime
+                        )
+                            .count();
                     logger.info(
                         "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
                         std::string(pluginName),
@@ -1805,10 +1811,18 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     }
 
     // --- 3. Execute Placeholder ---
+    std::shared_ptr<Utils::ParsedParams> paramsPtr;
+    if (auto cachedParams = mParamsCache.get(paramString)) {
+        paramsPtr = *cachedParams;
+    } else {
+        paramsPtr = std::make_shared<Utils::ParsedParams>(paramString);
+        mParamsCache.put(paramString, paramsPtr);
+    }
+
     std::future<std::string> future;
     if (bestAsyncCandidate) {
-        PA::Utils::ParsedParams params(paramString);
-        void*                   p = ctx.ptr;
+        const auto& params = *paramsPtr;
+        void*       p      = ctx.ptr;
         for (auto& cfun : bestAsyncCandidate->chain) {
             p = cfun(p);
         }
@@ -1824,7 +1838,7 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
             future = p_promise.get_future();
         }
     } else if (asyncServerEntry) {
-        PA::Utils::ParsedParams params(paramString);
+        const auto& params = *paramsPtr;
         if (std::holds_alternative<AsyncServerReplacer>(asyncServerEntry->fn)) {
             future = std::get<AsyncServerReplacer>(asyncServerEntry->fn)();
         } else {
@@ -1841,8 +1855,8 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     }
 
     // --- 4. Finalize & Cache (for async paths) ---
-    PA::Utils::ParsedParams params(paramString);
-    bool                    allowEmpty = params.getBool("allowempty").value_or(false);
+    const auto& params     = *paramsPtr;
+    bool        allowEmpty = params.getBool("allowempty").value_or(false);
 
     return mCombinerThreadPool->enqueue([this,
                                          startTime,
@@ -1854,7 +1868,8 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
                                          defaultText,
                                          allowEmpty,
                                          cacheKey,
-                                         cacheDuration]() mutable {
+                                         cacheDuration,
+                                         paramsPtr]() mutable {
         auto timeout = std::chrono::milliseconds(ConfigManager::getInstance().get().asyncPlaceholderTimeoutMs);
         if (fut.wait_for(timeout) == std::future_status::timeout) {
             if (ConfigManager::getInstance().get().debugMode) {
@@ -1872,8 +1887,8 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         std::string replaced_val = fut.get();
         bool        replaced     = !replaced_val.empty() || allowEmpty;
 
-        PA::Utils::ParsedParams params(paramString);
-        std::string             formatted_val;
+        const auto& params = *paramsPtr;
+        std::string formatted_val;
         if (replaced) {
             formatted_val = PA::Utils::applyFormatting(replaced_val, params);
         }
@@ -1886,10 +1901,9 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
         }
 
         if (ConfigManager::getInstance().get().debugMode) {
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::high_resolution_clock::now() - startTime
-            )
-                                .count();
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime)
+                    .count();
             const char* typeStr = "Unknown";
             if (type == PlaceholderType::Relational) typeStr = "Relational";
             else if (type == PlaceholderType::Context) typeStr = "Context";
