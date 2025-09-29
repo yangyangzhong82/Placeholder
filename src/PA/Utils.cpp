@@ -1204,6 +1204,12 @@ std::string applyFormatting(const std::string& rawValue, const ParsedParams& par
     applyCaseConversion(out, params);
     applyTextEffects(out, params);
 
+    // 新增：格式化层硬上限
+    const auto& cfg = ConfigManager::getInstance().get();
+    if (cfg.formatHardLimit > 0 && displayWidth(out) > (size_t)cfg.formatHardLimit) {
+        out = truncateVisible(out, (size_t)cfg.formatHardLimit, "...", true);
+    }
+
     return out;
 }
 

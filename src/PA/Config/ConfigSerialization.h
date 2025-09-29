@@ -12,5 +12,6 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
     globalCacheSize,
     asyncThreadPoolSize,
     asyncThreadPoolQueueSize,
-    asyncPlaceholderTimeoutMs
+    asyncPlaceholderTimeoutMs,
+    formatHardLimit
 )

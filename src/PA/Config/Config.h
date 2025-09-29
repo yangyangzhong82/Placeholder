@@ -7,4 +7,5 @@ struct Config {
     int  asyncThreadPoolSize = -1;    // 异步占位符线程池的大小，-1 表示默认（硬件线程数）
     int  asyncThreadPoolQueueSize = 0; // 异步线程池的队列上限，0 表示无限制
     int  asyncPlaceholderTimeoutMs = 2000; // 异步占位符的超时时间（毫秒）
+    int  formatHardLimit{0}; // 格式化输出硬上限，0表示无限制
 };
