@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <utility>
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -132,6 +133,14 @@ inline std::string addThousandSeparators(
     char                    groupSep   = ',',
     char                    decimalSep = '.',
     const std::vector<int>& grouping   = {}
+);
+inline std::pair<std::string, std::string> siScaleParts(
+    double             v,
+    int                base,
+    int                decimals,
+    bool               doRound,
+    std::string        unitCase,
+    const std::string& unit
 );
 inline std::string siScale(
     double             v,

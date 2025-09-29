@@ -309,21 +309,54 @@ std::string truncateVisible(
         return std::string(s);
     }
 
-    size_t                                 vis_count = 0;
-    std::string_view::const_iterator       it        = s.begin();
-    const std::string_view::const_iterator end       = s.end();
-    std::string_view::const_iterator       truncate_it = it;
+    size_t                                 current_width = 0;
+    std::string_view::const_iterator       it            = s.begin();
+    const std::string_view::const_iterator end           = s.end();
+    std::string_view::const_iterator       truncate_it   = it;
 
     std::vector<char>   active_formats;
     std::optional<char> last_color;
 
     while (it != end) {
-        if (vis_count >= maxlen) {
+        auto    old_it     = it;
+        int     char_width = 0;
+        UChar32 c          = 0;
+
+        // 预计算下一个字符/序列的宽度
+        if (*it == '\xA7' && std::distance(it, end) > 1) {
+            char_width = 0;
+        } else {
+            try {
+                auto temp_it = it;
+                c            = utf8::peek_next(temp_it, end);
+
+                int8_t type = u_charType(c);
+                if (type == U_NON_SPACING_MARK || type == U_ENCLOSING_MARK || type == U_FORMAT_CHAR
+                    || c == 0x200B) {
+                    char_width = 0;
+                } else {
+                    auto eaw = u_getIntPropertyValue(c, UCHAR_EAST_ASIAN_WIDTH);
+                    switch (eaw) {
+                    case U_EA_FULLWIDTH:
+                    case U_EA_WIDE:
+                        char_width = 2;
+                        break;
+                    default:
+                        char_width = 1;
+                        break;
+                    }
+                }
+            } catch (const std::exception&) {
+                char_width = 1;
+            }
+        }
+
+        if (current_width + char_width > maxlen) {
+            truncate_it = it;
             break;
         }
 
-        truncate_it = it; // 记录当前安全截断点
-
+        // 字符适合，现在实际处理它并更新状态
         if (*it == '\xA7' && std::distance(it, end) > 1) {
             auto next_it = it;
             next_it++;
@@ -347,15 +380,13 @@ std::string truncateVisible(
         } else {
             try {
                 utf8::next(it, end);
-                vis_count++;
+                current_width += char_width;
             } catch (const std::exception&) {
                 it++; // 将无效字节视为单个字符
-                vis_count++;
+                current_width += char_width;
             }
         }
-    }
-    if (vis_count < maxlen) {
-        truncate_it = end;
+        truncate_it = it;
     }
 
     size_t      byte_pos = std::distance(s.begin(), truncate_it);
@@ -454,13 +485,12 @@ inline std::string addThousandSeparators(
     return sign + out + fracPart;
 }
 
-// SI 缩放
-inline std::string siScale(
+// SI 缩放辅助函数，返回数值和后缀
+inline std::pair<std::string, std::string> siScaleParts(
     double             v,
     int                base,
     int                decimals,
     bool               doRound,
-    bool               space,
     std::string        unitCase,
     const std::string& unit
 ) {
@@ -483,11 +513,13 @@ inline std::string siScale(
         v /= base;
         ++idx;
     }
+
+    // 手动格式化数字，不依赖 formatNumber 以免循环或意外行为
     double factor = std::pow(10.0, (double)std::max(0, decimals));
     double y      = doRound ? std::round(v * factor) / factor : std::trunc(v * factor) / factor;
-
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(std::max(0, decimals)) << y;
+    std::string number_str = oss.str();
 
     std::string suffix_part;
     if (idx > 0) {
@@ -495,12 +527,24 @@ inline std::string siScale(
     }
     suffix_part += unit;
 
-    if (!suffix_part.empty() && space) {
-        oss << " ";
-    }
-    oss << suffix_part;
+    return {number_str, suffix_part};
+}
 
-    return oss.str();
+// SI 缩放
+inline std::string siScale(
+    double             v,
+    int                base,
+    int                decimals,
+    bool               doRound,
+    bool               space,
+    std::string        unitCase,
+    const std::string& unit
+) {
+    auto [number_str, suffix_part] = siScaleParts(v, base, decimals, doRound, unitCase, unit);
+    if (!suffix_part.empty() && space) {
+        return number_str + " " + suffix_part;
+    }
+    return number_str + suffix_part;
 }
 
 inline std::string formatNumber(double x, int decimals, bool doRound, std::string_view trimzeros) {
@@ -844,7 +888,7 @@ void applyBooleanFormatting(
 void applyNumberFormatting(
     std::string&                 out,
     const std::optional<double>& maybeNum,
-    const ParsedParams&          params
+    const PA::Utils::ParsedParams&          params
 ) {
     if (maybeNum.has_value()) {
         double v = *maybeNum;
@@ -883,7 +927,10 @@ void applyNumberFormatting(
             }
         }
 
-        // SI 缩放
+        std::string number_part;
+        std::string suffix_part;
+
+        // SI 缩放或常规格式化
         if (params.getBool("si").value_or(false)) {
             int base = params.getInt("base").value_or(0);
             if (base == 0) { // auto
@@ -894,13 +941,14 @@ void applyNumberFormatting(
                     base = 1000;
                 }
             }
-            bool        space    = params.getBool("space").value_or(true);
             std::string unitCase = toLower(trim(std::string(params.get("unitcase").value_or("upper"))));
             std::string unit     = std::string(params.get("unit").value_or(""));
-            out = siScale(v, base, decimals < 0 ? 2 : decimals, doRound, space, unitCase, unit);
+            auto        parts = siScaleParts(v, base, decimals < 0 ? 2 : decimals, doRound, unitCase, unit);
+            number_part      = parts.first;
+            suffix_part      = parts.second;
         } else {
             // 默认数字格式
-            out = formatNumber(v, decimals, doRound, trimzeros);
+            number_part = formatNumber(v, decimals, doRound, trimzeros);
         }
 
         // 千分位
@@ -943,14 +991,21 @@ void applyNumberFormatting(
                 } while (end != std::string_view::npos);
             }
 
-            out = addThousandSeparators(out, groupSep, decimalSep, grouping);
+            number_part = addThousandSeparators(number_part, groupSep, decimalSep, grouping);
+        }
+
+        // 拼接结果
+        out = number_part;
+        if (!suffix_part.empty()) {
+            if (params.getBool("space").value_or(true)) {
+                out += " ";
+            }
+            out += suffix_part;
         }
 
         if (auto neg_format = params.get("negative")) {
             if (is_negative && *neg_format == "()") {
                 out = "(" + out + ")";
-            } else if (is_negative) {
-                out = "-" + out;
             }
         }
 
@@ -981,7 +1036,7 @@ void applyStringMapping(
     std::string&               out,
     const std::optional<bool>& maybeBool,
     const std::optional<double>&                       maybeNum,
-    const ParsedParams&        params
+    const PA::Utils::ParsedParams&        params
 ) {
     if (!maybeBool.has_value() && !maybeNum.has_value()) {
         if (auto it = params.get("map")) {
@@ -995,7 +1050,7 @@ void applyStringMapping(
 }
 
 // 辅助函数：处理字符串替换
-void applyStringReplacement(std::string& out, const ParsedParams& params) {
+void applyStringReplacement(std::string& out, const PA::Utils::ParsedParams& params) {
     if (auto it = params.get("repl")) {
         std::string       replStr(*it);
         std::stringstream ss(replStr);
@@ -1017,9 +1072,9 @@ void applyStringReplacement(std::string& out, const ParsedParams& params) {
 }
 
 // 辅助函数：处理大小写转换
-void applyCaseConversion(std::string& out, const ParsedParams& params) {
+void applyCaseConversion(std::string& out, const PA::Utils::ParsedParams& params) {
     if (auto it = params.get("case")) {
-        auto v = toLower(std::string(*it));
+        auto v = PA::Utils::toLower(std::string(*it));
         if (v == "lower") {
             std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return (char)std::tolower(c); });
         } else if (v == "upper") {
@@ -1055,7 +1110,7 @@ void applyCaseConversion(std::string& out, const ParsedParams& params) {
                                           : (char)std::tolower((unsigned char)ch);
                         newWord = false;
                     } else {
-                        newWord = isSpace((unsigned char)ch);
+                        newWord = PA::Utils::isSpace((unsigned char)ch);
                     }
                 }
             }
@@ -1064,10 +1119,10 @@ void applyCaseConversion(std::string& out, const ParsedParams& params) {
 }
 
 // 辅助函数：处理文本效果（去色码、JSON转义、千分位、颜色/样式、前缀/后缀、截断、对齐/填充、颜色复位、空值处理）
-void applyTextEffects(std::string& out, const ParsedParams& params) {
+void applyTextEffects(std::string& out, const PA::Utils::ParsedParams& params) {
     // 去色码
     if (params.getBool("stripcodes").value_or(false)) {
-        out = stripColorCodes(out);
+        out = PA::Utils::stripColorCodes(out);
     }
 
     // JSON 转义
@@ -1137,7 +1192,7 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 
     // 颜色/样式
     if (auto it = params.get("color")) {
-        std::string codes = styleSpecToCodes(std::string(*it));
+        std::string codes = PA::Utils::styleSpecToCodes(std::string(*it));
         if (!codes.empty()) out = codes + out;
     }
 
@@ -1148,11 +1203,11 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
     // 截断
     if (auto maxlenOpt = params.getInt("maxlen")) {
         size_t maxlen_val = std::max(0, *maxlenOpt);
-        if (displayWidth(out) > maxlen_val) {
+        if (PA::Utils::displayWidth(out) > maxlen_val) {
             std::string ellipsis_val = "...";
             if (auto e = params.get("ellipsis")) ellipsis_val = *e;
             bool preserve_styles_val = params.getBool("preserve_styles").value_or(true);
-            out                      = truncateVisible(out, maxlen_val, ellipsis_val, preserve_styles_val);
+            out                      = PA::Utils::truncateVisible(out, maxlen_val, ellipsis_val, preserve_styles_val);
         }
     }
 
@@ -1161,8 +1216,8 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
         int width = *widthOpt;
         if (width > 0) {
             char        fill  = params.get("fill").value_or(" ").front();
-            std::string align = toLower(trim(std::string(params.get("align").value_or("left"))));
-            int         vis   = (int)displayWidth(out);
+            std::string align = PA::Utils::toLower(PA::Utils::trim(std::string(params.get("align").value_or("left"))));
+            int         vis   = (int)PA::Utils::displayWidth(out);
             if (vis < width) {
                 int         pad = width - vis;
                 std::string pads((size_t)pad, fill);
@@ -1190,9 +1245,9 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
 }
 
 // 新接口
-std::string applyFormatting(const std::string& rawValue, const ParsedParams& params) {
-    auto maybeBool = parseBoolish(rawValue);
-    auto maybeNum  = parseDouble(rawValue);
+std::string applyFormatting(const std::string& rawValue, const PA::Utils::ParsedParams& params) {
+    auto maybeBool = PA::Utils::parseBoolish(rawValue);
+    auto maybeNum  = PA::Utils::parseDouble(rawValue);
 
     std::string out = rawValue;
 
@@ -1205,9 +1260,9 @@ std::string applyFormatting(const std::string& rawValue, const ParsedParams& par
     applyTextEffects(out, params);
 
     // 新增：格式化层硬上限
-    const auto& cfg = ConfigManager::getInstance().get();
-    if (cfg.formatHardLimit > 0 && displayWidth(out) > (size_t)cfg.formatHardLimit) {
-        out = truncateVisible(out, (size_t)cfg.formatHardLimit, "...", true);
+    const auto& cfg = PA::ConfigManager::getInstance().get();
+    if (cfg.formatHardLimit > 0 && PA::Utils::displayWidth(out) > (size_t)cfg.formatHardLimit) {
+        out = PA::Utils::truncateVisible(out, (size_t)cfg.formatHardLimit, "...", true);
     }
 
     return out;
@@ -1216,7 +1271,7 @@ std::string applyFormatting(const std::string& rawValue, const ParsedParams& par
 // 旧接口，内部转换为新接口
 std::string applyFormatting(const std::string& rawValue, const std::string& paramStr) {
     if (paramStr.empty()) return rawValue;
-    return applyFormatting(rawValue, ParsedParams(paramStr));
+    return applyFormatting(rawValue, PA::Utils::ParsedParams(paramStr));
 }
 
 
