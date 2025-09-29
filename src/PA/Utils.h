@@ -10,6 +10,8 @@
 #include <cctype>
 #include <charconv>
 
+#include "fast_float/fast_float.h"
+
 namespace PA::Utils {
 
 // 前向声明
@@ -66,14 +68,8 @@ inline std::optional<double> parseDouble(const std::string& s) {
     double v     = 0.0;
     auto   first = t.data();
     auto   last  = t.data() + t.size();
-    auto   res   = std::from_chars(first, last, v);
+    auto   res   = fast_float::from_chars(first, last, v);
     if (res.ec == std::errc() && res.ptr == last) return v;
-    // 作为兜底（locale 安全）再试一试 stod
-    try {
-        size_t idx = 0;
-        double x   = std::stod(t, &idx);
-        if (idx == t.size()) return x;
-    } catch (...) {}
     return std::nullopt;
 }
 
