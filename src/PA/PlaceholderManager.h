@@ -1255,20 +1255,29 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>>      mServerPlaceholders;
     std::unordered_map<std::string, std::unordered_map<std::string, AsyncServerReplacerEntry>> mAsyncServerPlaceholders;
 
-    // 上下文占位符（多态）映射：插件名 -> (占位符名 -> [候选替换函数列表])
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedReplacer>>> mContextPlaceholders;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<AsyncTypedReplacer>>>
+    // 上下文占位符（多态）映射：插件名 -> (占位符名 -> (目标类型ID -> [候选替换函数列表]))
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, std::unordered_multimap<std::size_t, TypedReplacer>>>
+        mContextPlaceholders;
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, std::unordered_multimap<std::size_t, AsyncTypedReplacer>>>
         mAsyncContextPlaceholders;
 
     // 列表型占位符映射
     std::unordered_map<std::string, std::unordered_map<std::string, ServerListReplacerEntry>> mServerListPlaceholders;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedListReplacer>>>
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, std::unordered_multimap<std::size_t, TypedListReplacer>>>
         mContextListPlaceholders;
 
     // 对象列表型占位符映射
     std::unordered_map<std::string, std::unordered_map<std::string, ServerObjectListReplacerEntry>>
         mServerObjectListPlaceholders;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<TypedObjectListReplacer>>>
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, std::unordered_multimap<std::size_t, TypedObjectListReplacer>>>
         mContextObjectListPlaceholders;
 
     // 关系型上下文占位符映射

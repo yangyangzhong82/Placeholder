@@ -220,7 +220,7 @@ void PlaceholderManager::registerPlaceholderForTypeId(
     CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextPlaceholders[pluginName][placeholder].push_back(TypedReplacer{
+    mContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedReplacer{
         targetTypeId,
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -237,7 +237,7 @@ void PlaceholderManager::registerPlaceholderForTypeId(
     CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextPlaceholders[pluginName][placeholder].push_back(TypedReplacer{
+    mContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedReplacer{
         targetTypeId,
         std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -301,7 +301,7 @@ void PlaceholderManager::registerAsyncPlaceholderForTypeId(
     CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].push_back(AsyncTypedReplacer{
+    mAsyncContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, AsyncTypedReplacer{
         targetTypeId,
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -318,7 +318,7 @@ void PlaceholderManager::registerAsyncPlaceholderForTypeId(
     CacheKeyStrategy                strategy
 ) {
     std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].push_back(AsyncTypedReplacer{
+    mAsyncContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, AsyncTypedReplacer{
         targetTypeId,
         std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -418,7 +418,7 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
         for (const auto& [placeholderName, entries] : placeholders) {
             if (!entries.empty()) {
                 // 假设同一个占位符的所有重载都指向相同的逻辑类型，因此我们只取第一个。
-                auto        targetId = entries.front().targetTypeId;
+                auto        targetId = entries.begin()->second.targetTypeId;
                 std::string typeName;
 
                 // 优先使用别名
@@ -1038,7 +1038,7 @@ void PlaceholderManager::registerListPlaceholderForTypeId(
     CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextListPlaceholders[pluginName][placeholder].push_back(TypedListReplacer{
+    mContextListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedListReplacer{
         targetTypeId,
         std::variant<AnyPtrListReplacer, AnyPtrListReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -1055,7 +1055,7 @@ void PlaceholderManager::registerListPlaceholderForTypeId(
     CacheKeyStrategy               strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextListPlaceholders[pluginName][placeholder].push_back(TypedListReplacer{
+    mContextListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedListReplacer{
         targetTypeId,
         std::variant<AnyPtrListReplacer, AnyPtrListReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -1098,7 +1098,7 @@ void PlaceholderManager::registerObjectListPlaceholderForTypeId(
     CacheKeyStrategy             strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextObjectListPlaceholders[pluginName][placeholder].push_back(TypedObjectListReplacer{
+    mContextObjectListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedObjectListReplacer{
         targetTypeId,
         std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -1115,7 +1115,7 @@ void PlaceholderManager::registerObjectListPlaceholderForTypeId(
     CacheKeyStrategy                     strategy
 ) {
     std::unique_lock lk(mMutex);
-    mContextObjectListPlaceholders[pluginName][placeholder].push_back(TypedObjectListReplacer{
+    mContextObjectListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedObjectListReplacer{
         targetTypeId,
         std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
         cache_duration,
@@ -1222,111 +1222,107 @@ std::string PlaceholderManager::executePlaceholder(
     std::optional<ObjectListCandidate> bestObjectListCandidate;
 
     if (!bestRelationalCandidate && ctx.ptr != nullptr && ctx.typeId != 0) {
-        // 优先查找普通上下文占位符
-        std::vector<TypedReplacer> potentialReplacers;
+        std::vector<std::pair<int, Candidate>>           candidates;
+        std::vector<std::pair<int, ListCandidate>>       listCandidates;
+        std::vector<std::pair<int, ObjectListCandidate>> objectListCandidates;
+
         {
             std::shared_lock lk(mMutex);
-            auto             plugin_it = mContextPlaceholders.find(std::string(pluginName));
-            if (plugin_it != mContextPlaceholders.end()) {
-                auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != plugin_it->second.end()) {
-                    potentialReplacers = ph_it->second;
+            // Gather all potential replacers by iterating up the inheritance chain
+            std::queue<std::size_t>         q;
+            q.push(ctx.typeId);
+            std::unordered_set<std::size_t> visited;
+            visited.insert(ctx.typeId);
+
+            while (!q.empty()) {
+                std::size_t currentTypeId = q.front();
+                q.pop();
+
+                // Find chain from original type to current type
+                std::vector<Caster> chain;
+                // findUpcastChain is cached, so this is efficient.
+                bool chain_found = findUpcastChain(ctx.typeId, currentTypeId, chain);
+                if (!chain_found && ctx.typeId != currentTypeId) continue;
+
+                // 1. Check for normal context placeholders
+                auto plugin_it = mContextPlaceholders.find(std::string(pluginName));
+                if (plugin_it != mContextPlaceholders.end()) {
+                    auto ph_it = plugin_it->second.find(std::string(placeholderName));
+                    if (ph_it != plugin_it->second.end()) {
+                        auto range = ph_it->second.equal_range(currentTypeId);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            candidates.push_back({
+                                (int)chain.size(),
+                                Candidate{chain, it->second.fn, it->second.cacheDuration, it->second.strategy}
+                            });
+                        }
+                    }
+                }
+
+                // 2. Check for list context placeholders
+                auto list_plugin_it = mContextListPlaceholders.find(std::string(pluginName));
+                if (list_plugin_it != mContextListPlaceholders.end()) {
+                    auto ph_it = list_plugin_it->second.find(std::string(placeholderName));
+                    if (ph_it != list_plugin_it->second.end()) {
+                        auto range = ph_it->second.equal_range(currentTypeId);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            listCandidates.push_back({
+                                (int)chain.size(),
+                                ListCandidate{chain, it->second.fn, it->second.cacheDuration, it->second.strategy}
+                            });
+                        }
+                    }
+                }
+
+                // 3. Check for object list context placeholders
+                auto obj_list_plugin_it = mContextObjectListPlaceholders.find(std::string(pluginName));
+                if (obj_list_plugin_it != mContextObjectListPlaceholders.end()) {
+                    auto ph_it = obj_list_plugin_it->second.find(std::string(placeholderName));
+                    if (ph_it != obj_list_plugin_it->second.end()) {
+                        auto range = ph_it->second.equal_range(currentTypeId);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            objectListCandidates.push_back({
+                                (int)chain.size(),
+                                ObjectListCandidate{
+                                    chain,
+                                    it->second.fn,
+                                    it->second.cacheDuration,
+                                    it->second.strategy
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Enqueue parents
+                auto edge_it = mUpcastEdges.find(currentTypeId);
+                if (edge_it != mUpcastEdges.end()) {
+                    for (const auto& [parentTypeId, caster] : edge_it->second) {
+                        if (visited.find(parentTypeId) == visited.end()) {
+                            visited.insert(parentTypeId);
+                            q.push(parentTypeId);
+                        }
+                    }
                 }
             }
         }
-        std::vector<std::pair<int, Candidate>> candidates;
-        for (auto& entry : potentialReplacers) {
-            std::vector<Caster> chain;
-            if (entry.targetTypeId == ctx.typeId) {
-                candidates.push_back({
-                    0,
-                    Candidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-                });
-            } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                candidates.push_back({
-                    (int)chain.size(),
-                    Candidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-                });
-            }
-        }
+
         if (!candidates.empty()) {
             std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
             bestCandidate = std::move(candidates.front().second);
             type          = PlaceholderType::Context;
-        }
-
-        // 如果没找到，再查找列表型上下文占位符
-        if (!bestCandidate) {
-            std::vector<TypedListReplacer> potentialListReplacers;
-            {
-                std::shared_lock lk(mMutex);
-                auto             plugin_it = mContextListPlaceholders.find(std::string(pluginName));
-                if (plugin_it != mContextListPlaceholders.end()) {
-                    auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                    if (ph_it != plugin_it->second.end()) {
-                        potentialListReplacers = ph_it->second;
-                    }
-                }
-            }
-            std::vector<std::pair<int, ListCandidate>> listCandidates;
-            for (auto& entry : potentialListReplacers) {
-                std::vector<Caster> chain;
-                if (entry.targetTypeId == ctx.typeId) {
-                    listCandidates.push_back({
-                        0,
-                        ListCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-                    });
-                } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                    listCandidates.push_back({
-                        (int)chain.size(),
-                        ListCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-                    });
-                }
-            }
-            if (!listCandidates.empty()) {
-                std::sort(listCandidates.begin(), listCandidates.end(), [](auto& a, auto& b) {
-                    return a.first < b.first;
-                });
-                bestListCandidate = std::move(listCandidates.front().second);
-                type              = PlaceholderType::ListContext;
-            }
-        }
-
-        // 如果都没找到，再查找对象列表型上下文占位符
-        if (!bestCandidate && !bestListCandidate) {
-            std::vector<TypedObjectListReplacer> potentialObjectListReplacers;
-            {
-                std::shared_lock lk(mMutex);
-                auto             plugin_it = mContextObjectListPlaceholders.find(std::string(pluginName));
-                if (plugin_it != mContextObjectListPlaceholders.end()) {
-                    auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                    if (ph_it != plugin_it->second.end()) {
-                        potentialObjectListReplacers = ph_it->second;
-                    }
-                }
-            }
-            std::vector<std::pair<int, ObjectListCandidate>> objectListCandidates;
-            for (auto& entry : potentialObjectListReplacers) {
-                std::vector<Caster> chain;
-                if (entry.targetTypeId == ctx.typeId) {
-                    objectListCandidates.push_back({
-                        0,
-                        ObjectListCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}
-                    });
-                } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                    objectListCandidates.push_back({
-                        (int)chain.size(),
-                        ObjectListCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}
-                    });
-                }
-            }
-            if (!objectListCandidates.empty()) {
-                std::sort(objectListCandidates.begin(), objectListCandidates.end(), [](auto& a, auto& b) {
-                    return a.first < b.first;
-                });
-                bestObjectListCandidate = std::move(objectListCandidates.front().second);
-                type                    = PlaceholderType::ObjectListContext;
-            }
+        } else if (!listCandidates.empty()) {
+            std::sort(listCandidates.begin(), listCandidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
+            bestListCandidate = std::move(listCandidates.front().second);
+            type              = PlaceholderType::ListContext;
+        } else if (!objectListCandidates.empty()) {
+            std::sort(
+                objectListCandidates.begin(),
+                objectListCandidates.end(),
+                [](auto& a, auto& b) { return a.first < b.first; }
+            );
+            bestObjectListCandidate = std::move(objectListCandidates.front().second);
+            type                    = PlaceholderType::ObjectListContext;
         }
     }
 
@@ -1728,27 +1724,47 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
 
     if (ctx.ptr != nullptr && ctx.typeId != 0) {
         std::vector<std::pair<int, AsyncCandidate>> asyncCandidates;
-        std::vector<AsyncTypedReplacer>             potentialAsyncReplacers;
         {
             std::shared_lock lk(mMutex);
-            auto             plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
-            if (plugin_it != mAsyncContextPlaceholders.end()) {
-                auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != plugin_it->second.end()) {
-                    potentialAsyncReplacers = ph_it->second;
+            std::queue<std::size_t>         q;
+            q.push(ctx.typeId);
+            std::unordered_set<std::size_t> visited;
+            visited.insert(ctx.typeId);
+
+            while (!q.empty()) {
+                std::size_t currentTypeId = q.front();
+                q.pop();
+
+                std::vector<Caster> chain;
+                if (findUpcastChain(ctx.typeId, currentTypeId, chain) || ctx.typeId == currentTypeId) {
+                    auto plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
+                    if (plugin_it != mAsyncContextPlaceholders.end()) {
+                        auto ph_it = plugin_it->second.find(std::string(placeholderName));
+                        if (ph_it != plugin_it->second.end()) {
+                            auto range = ph_it->second.equal_range(currentTypeId);
+                            for (auto it = range.first; it != range.second; ++it) {
+                                asyncCandidates.push_back({(int)chain.size(),
+                                                           AsyncCandidate{chain,
+                                                                          it->second.fn,
+                                                                          it->second.cacheDuration,
+                                                                          it->second.strategy}});
+                            }
+                        }
+                    }
+                }
+
+                auto edge_it = mUpcastEdges.find(currentTypeId);
+                if (edge_it != mUpcastEdges.end()) {
+                    for (const auto& [parentTypeId, caster] : edge_it->second) {
+                        if (visited.find(parentTypeId) == visited.end()) {
+                            visited.insert(parentTypeId);
+                            q.push(parentTypeId);
+                        }
+                    }
                 }
             }
         }
-        for (auto& entry : potentialAsyncReplacers) {
-            std::vector<Caster> chain;
-            if (entry.targetTypeId == ctx.typeId) {
-                asyncCandidates.push_back({0, AsyncCandidate{{}, entry.fn, entry.cacheDuration, entry.strategy}});
-            } else if (findUpcastChain(ctx.typeId, entry.targetTypeId, chain)) {
-                asyncCandidates.push_back(
-                    {(int)chain.size(), AsyncCandidate{std::move(chain), entry.fn, entry.cacheDuration, entry.strategy}}
-                );
-            }
-        }
+
         if (!asyncCandidates.empty()) {
             std::sort(asyncCandidates.begin(), asyncCandidates.end(), [](auto& a, auto& b) {
                 return a.first < b.first;
