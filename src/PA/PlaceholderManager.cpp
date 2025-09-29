@@ -62,11 +62,13 @@ PlaceholderManager::PlaceholderManager() :
 
     mCombinerThreadPool = std::make_unique<ThreadPool>(1); // 合并线程池只需要一个线程
 
-    int asyncPoolSize = ConfigManager::getInstance().get().asyncThreadPoolSize;
+    const auto&  config        = ConfigManager::getInstance().get();
+    int          asyncPoolSize = config.asyncThreadPoolSize;
     if (asyncPoolSize <= 0) {
         asyncPoolSize = hardwareConcurrency;
     }
-    mAsyncThreadPool = std::make_unique<ThreadPool>(asyncPoolSize);
+    mAsyncThreadPool =
+        std::make_unique<ThreadPool>(asyncPoolSize, static_cast<size_t>(config.asyncThreadPoolQueueSize));
 
 
     // 注册一个回调，当配置重新加载时，更新缓存大小

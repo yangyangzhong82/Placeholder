@@ -26,10 +26,11 @@ public:
         size_t    queue_depth;
         size_t    active_tasks;
         long long total_tasks_executed;
+        long long tasks_rejected;
         double    average_execution_time_ms;
     };
 
-    ThreadPool(size_t threads) : stop(false) {
+    ThreadPool(size_t threads, size_t queueCapacity = 0) : mQueueCapacity(queueCapacity), stop(false) {
         for (size_t i = 0; i < threads; ++i)
             workers.emplace_back([this] {
                 for (;;) {
@@ -69,13 +70,42 @@ public:
     auto enqueue(F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>> {
         using return_type = std::invoke_result_t<F, Args...>;
 
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            if (mQueueCapacity > 0 && tasks.size() >= mQueueCapacity) {
+                mTasksRejected++;
+                logger.warn(
+                    "ThreadPool queue is full (capacity: {}), rejecting task. Total rejected: {}.",
+                    mQueueCapacity,
+                    mTasksRejected.load()
+                );
+                // 立即返回一个包含默认值的 future
+                std::promise<return_type> promise;
+                if constexpr (!std::is_void_v<return_type>) {
+                    promise.set_value(return_type{});
+                } else {
+                    promise.set_value();
+                }
+                return promise.get_future();
+            }
+        }
+
         auto task =
             std::make_shared<std::packaged_task<return_type()>>(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
         std::future<return_type> res = task->get_future();
         {
             std::unique_lock<std::mutex> lock(queue_mutex);
-            if (stop) throw std::runtime_error("enqueue on stopped ThreadPool");
+            if (stop) {
+                // 如果线程池已停止，也返回一个默认值的 future
+                std::promise<return_type> promise;
+                if constexpr (!std::is_void_v<return_type>) {
+                    promise.set_value(return_type{});
+                } else {
+                    promise.set_value();
+                }
+                return promise.get_future();
+            }
             tasks.emplace([task]() { (*task)(); });
             active_tasks++;
             if (tasks.size() > THREAD_POOL_QUEUE_DEPTH_WARNING_THRESHOLD) {
@@ -114,6 +144,7 @@ public:
             getQueueDepth(),
             active_tasks.load(),
             executed,
+            mTasksRejected.load(),
             executed > 0 ? static_cast<double>(total_execution_time_ms.load()) / executed : 0.0,
         };
     }
@@ -128,10 +159,12 @@ private:
     std::mutex                        queue_mutex;
     std::condition_variable           condition;
     std::condition_variable           idle_condition;
+    size_t                            mQueueCapacity;
     bool                              stop;
     std::atomic<size_t>               active_tasks{0};
     std::atomic<long long>            total_execution_time_ms{0};
     std::atomic<long long>            total_tasks_executed{0};
+    std::atomic<long long>            mTasksRejected{0};
 };
 
 } // namespace PA
