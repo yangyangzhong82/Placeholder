@@ -423,24 +423,32 @@ PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() con
         return "UnknownTypeId(" + std::to_string(typeId) + ")";
     };
 
-    // Helper to add or update placeholder info
+    // 辅助函数，用于添加或更新占位符信息
     auto addPlaceholder =
         [&](const std::string& plugin, const std::string& name, PlaceholderCategory category, bool isAsync,
             const std::string& targetType = "", const std::string& relationalType = "") {
-            auto&       pluginPlaceholders = result.placeholders[plugin];
-            std::string unique_name        = name + "_" + std::to_string((int)category) + (isAsync ? "_async" : "");
+            auto& pluginPlaceholders = result.placeholders[plugin];
 
             auto it = std::find_if(
                 pluginPlaceholders.begin(),
                 pluginPlaceholders.end(),
-                [&](const PlaceholderInfo& p) { return p.name == name; }
+                [&](const PlaceholderInfo& p) {
+                    return p.name == name && p.category == category && p.isAsync == isAsync;
+                }
             );
 
             if (it != pluginPlaceholders.end()) {
-                // Found an existing entry with the same name, add overload info
-                if (!targetType.empty()) it->overloads.push_back(targetType);
+                // 找到了一个具有相同名称、类别和异步状态的现有条目。
+                // 这是一个具有不同目标类型的重载。
+                if (!targetType.empty() && it->targetType != targetType) {
+                    // 如果这是找到的第一个重载，则将初始 targetType 添加到 overloads 中。
+                    if (it->overloads.empty() && !it->targetType.empty()) {
+                        it->overloads.push_back(it->targetType);
+                    }
+                    it->overloads.push_back(targetType);
+                }
             } else {
-                // Add new entry
+                // 添加新条目
                 pluginPlaceholders.push_back({name, category, isAsync, targetType, relationalType, {}});
             }
         };
