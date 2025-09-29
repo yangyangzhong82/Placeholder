@@ -11,6 +11,9 @@
 #include <charconv>
 
 #include "fast_float/fast_float.h"
+#include <unicode/uchar.h>
+#include <unicode/unistr.h>
+
 
 namespace PA::Utils {
 
@@ -116,7 +119,9 @@ private:
 // 格式化
 inline const std::unordered_map<std::string, std::string>& colorMap();
 inline std::string styleSpecToCodes(const std::string& spec);
-inline size_t      visibleLength(std::string_view s);
+enum class WidthMode { Codepoint, Wcwidth };
+size_t             visibleLength(std::string_view s);
+size_t             displayWidth(std::string_view s, WidthMode width_mode = WidthMode::Wcwidth);
 std::string        truncateVisible(
            std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
        );
@@ -174,7 +179,7 @@ void applyNumberFormatting(
 void applyStringMapping(
     std::string&               out,
     const std::optional<bool>& maybeBool,
-    const std::optional<double>&                       maybeNum,
+    const std::optional<double>& maybeNum,
     const ParsedParams&        params
 );
 

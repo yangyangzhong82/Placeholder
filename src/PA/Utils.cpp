@@ -1,5 +1,8 @@
 #include "Utils.h"
 
+#include <unicode/uchar.h>
+#include <unicode/utf8.h>
+#include <unicode/unistr.h>
 #include <utf8.h>
 
 #include "exprtk.hpp"
@@ -204,39 +207,73 @@ inline std::string styleSpecToCodes(const std::string& spec) {
 }
 
 // 计算可见长度（忽略 §x 风格码），支持 UTF-8
-inline size_t visibleLength(std::string_view s) {
-    size_t                                vis = 0;
-    std::string_view::const_iterator      it  = s.begin();
-    const std::string_view::const_iterator end = s.end();
-
-    while (it != end) {
-        if (*it == '\xA7') {
-            // 跳过颜色代码
-            it++;
-            if (it != end) {
-                it++;
-            }
-        } else {
-            try {
-                // 向前移动一个 UTF-8 码位
-                utf8::next(it, end);
-                vis++;
-            } catch (const std::exception&) {
-                // 处理无效的 UTF-8 序列或不完整的字符
-                // 将其视为单个字节并继续
-                it++;
-                vis++;
-            }
+size_t visibleLength(std::string_view s) {
+    size_t   len = 0;
+    UChar32  c;
+    int32_t  i = 0, s_len = s.length();
+    while (i < s_len) {
+        if (s[i] == '\xA7' && i + 1 < s_len) {
+            i += 2;
+            continue;
+        }
+        U8_NEXT(s.data(), i, s_len, c);
+        if (c > 0) {
+            len++;
         }
     }
-    return vis;
+    return len;
+}
+
+size_t displayWidth(std::string_view s, WidthMode width_mode) {
+    if (width_mode == WidthMode::Codepoint) {
+        return visibleLength(s);
+    }
+
+    size_t   width = 0;
+    UChar32  c;
+    int32_t  i = 0, s_len = s.length();
+    while (i < s_len) {
+        if (s[i] == '\xA7' && i + 1 < s_len) {
+            i += 2;
+            continue;
+        }
+        U8_NEXT(s.data(), i, s_len, c);
+        if (c < 0) continue; // Invalid UTF-8 sequence
+
+        int8_t type = u_charType(c);
+        if (type == U_NON_SPACING_MARK || type == U_ENCLOSING_MARK || type == U_FORMAT_CHAR) {
+            continue;
+        }
+        if (c == 0x200B) { // Zero-width space
+            continue;
+        }
+
+        auto eaw = u_getIntPropertyValue(c, UCHAR_EAST_ASIAN_WIDTH);
+        switch (eaw) {
+        case U_EA_FULLWIDTH:
+        case U_EA_WIDE:
+            width += 2;
+            break;
+        case U_EA_AMBIGUOUS:
+        case U_EA_HALFWIDTH:
+        case U_EA_NARROW:
+            width += 1;
+            break;
+        case U_EA_NEUTRAL:
+        default:
+            // emoji ZWJ sequences are not handled here, but it's a good start
+            width += 1;
+            break;
+        }
+    }
+    return width;
 }
 
 // 可见安全截断，支持 UTF-8
 std::string truncateVisible(
     std::string_view s, size_t maxlen, std::string_view ellipsis, bool preserve_styles
 ) {
-    if (s.empty() || visibleLength(s) <= maxlen) {
+    if (s.empty() || displayWidth(s) <= maxlen) {
         return std::string(s);
     }
 
@@ -840,7 +877,7 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
     // 截断
     if (auto maxlenOpt = params.getInt("maxlen")) {
         size_t maxlen_val = std::max(0, *maxlenOpt);
-        if (visibleLength(out) > maxlen_val) {
+        if (displayWidth(out) > maxlen_val) {
             std::string ellipsis_val = "...";
             if (auto e = params.get("ellipsis")) ellipsis_val = *e;
             bool preserve_styles_val = params.getBool("preserve_styles").value_or(true);
@@ -854,7 +891,7 @@ void applyTextEffects(std::string& out, const ParsedParams& params) {
         if (width > 0) {
             char        fill  = params.get("fill").value_or(" ").front();
             std::string align = toLower(trim(std::string(params.get("align").value_or("left"))));
-            int         vis   = (int)visibleLength(out);
+            int         vis   = (int)displayWidth(out);
             if (vis < width) {
                 int         pad = width - vis;
                 std::string pads((size_t)pad, fill);
