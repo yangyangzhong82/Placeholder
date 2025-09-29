@@ -1262,6 +1262,43 @@ private:
         std::chrono::steady_clock::time_point expiresAt; // 过期时间点
     };
 
+    // --- 新增辅助结构体和函数声明 ---
+
+    enum class PlaceholderType {
+        None,
+        Server,
+        Context,
+        Relational,
+        ListServer,
+        ListContext,
+        ObjectListServer,
+        ObjectListContext,
+        AsyncServer,
+        AsyncContext,
+        SyncFallback // 用于异步占位符执行失败时回退到同步
+    };
+
+    struct ReplacerMatch {
+        PlaceholderType              type{PlaceholderType::None};
+        std::optional<CacheDuration> cacheDuration;
+        CacheKeyStrategy             strategy{CacheKeyStrategy::Default};
+
+        // 存储实际的替换器条目，使用 std::monostate 作为空状态
+        std::variant<
+            std::monostate,
+            ServerReplacerEntry,
+            TypedReplacer,
+            RelationalTypedReplacer,
+            ServerListReplacerEntry,
+            TypedListReplacer,
+            ServerObjectListReplacerEntry,
+            TypedObjectListReplacer>
+            entry;
+
+        std::vector<Caster> chain;           // 主体对象的上行转换链
+        std::vector<Caster> relationalChain; // 关系型对象的上行转换链
+    };
+
     // 服务器占位符映射：插件名 -> (占位符名 -> 替换函数条目)
     std::unordered_map<std::string, std::unordered_map<std::string, ServerReplacerEntry>>      mServerPlaceholders;
     std::unordered_map<std::string, std::unordered_map<std::string, AsyncServerReplacerEntry>> mAsyncServerPlaceholders;
@@ -1357,7 +1394,81 @@ private:
     std::string replacePlaceholdersSync(const CompiledTemplate& tpl, const PlaceholderContext& ctx, int depth);
 
     /**
-     * @brief [新] 私有辅助函数：执行单个占位符的查找与替换
+     * @brief [新] 私有辅助函数：查找最匹配的占位符替换器
+     * @param pluginName 插件名称视图
+     * @param placeholderName 占位符名称视图
+     * @param ctx 占位符上下文
+     * @return 包含找到的替换器信息的 ReplacerMatch 对象
+     */
+    ReplacerMatch findBestReplacer(
+        std::string_view          pluginName,
+        std::string_view          placeholderName,
+        const PlaceholderContext& ctx
+    );
+
+    /**
+     * @brief [新] 私有辅助函数：获取解析后的参数
+     * @param paramString 参数字符串
+     * @return 共享的 ParsedParams 智能指针
+     */
+    std::shared_ptr<Utils::ParsedParams> getParsedParams(const std::string& paramString);
+
+    /**
+     * @brief [新] 私有辅助函数：执行找到的替换器
+     * @param match 替换器匹配信息
+     * @param p 主体对象指针
+     * @param p_rel 关系型对象指针
+     * @param params 解析后的参数
+     * @param allowEmpty 是否允许返回空字符串
+     * @param st 替换状态 (用于递归调用)
+     * @return 替换器的原始结果
+     */
+    std::string executeFoundReplacer(
+        const ReplacerMatch&                 match,
+        void*                                p,
+        void*                                p_rel,
+        const Utils::ParsedParams&           params,
+        bool                                 allowEmpty,
+        ReplaceState&                        st
+    );
+
+    /**
+     * @brief [新] 私有辅助函数：应用格式化、处理缓存和日志记录
+     * @param originalResult 替换器的原始结果
+     * @param params 解析后的参数
+     * @param defaultText 默认文本
+     * @param allowEmpty 是否允许返回空字符串
+     * @param cacheKey 缓存键
+     * @param cacheDuration 缓存持续时间
+     * @param type 占位符类型
+     * @param startTime 开始时间
+     * @param st 替换状态
+     * @param pluginName 插件名称视图
+     * @param placeholderName 占位符名称视图
+     * @param paramString 参数字符串
+     * @param ctx 占位符上下文
+     * @param replaced 是否成功替换
+     * @return 最终输出字符串
+     */
+    std::string applyFormattingAndCache(
+        const std::string&                   originalResult,
+        const Utils::ParsedParams&           params,
+        const std::string&                   defaultText,
+        bool                                 allowEmpty,
+        const std::string&                   cacheKey,
+        std::optional<CacheDuration>         cacheDuration,
+        PlaceholderType                      type,
+        std::chrono::steady_clock::time_point startTime,
+        ReplaceState&                        st,
+        std::string_view                     pluginName,
+        std::string_view                     placeholderName,
+        const std::string&                   paramString,
+        const PlaceholderContext&            ctx,
+        bool                                 replaced
+    );
+
+    /**
+     * @brief [新] 私有辅助函数：执行单个占位符的查找与替换 (同步版本)
      *
      * 根据插件名、占位符名、参数、默认文本和上下文，查找并执行对应的替换函数。
      * @param pluginName 插件名称视图
