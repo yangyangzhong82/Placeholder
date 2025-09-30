@@ -532,13 +532,16 @@ std::vector<std::string> PlaceholderManager::replacePlaceholdersBatch(
 std::string
 PlaceholderManager::replacePlaceholdersSync(const CompiledTemplate& tpl, const PlaceholderContext& ctx, int depth) {
     if (depth > mMaxRecursionDepth) {
-        return tpl.source; // 超出深度，返回原始文本
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn("Max recursion depth {} exceeded, returning source text", mMaxRecursionDepth);
+        }
+        return tpl.source;
     }
 
     std::string result;
     result.reserve(tpl.source.size());
 
-    ReplaceState st; // 同步执行的本地状态
+    ReplaceState st;
     st.depth = depth;
 
     for (const auto& token : tpl.tokens) {
@@ -548,18 +551,36 @@ PlaceholderManager::replacePlaceholdersSync(const CompiledTemplate& tpl, const P
                 if (mEnableDoubleBraceEscape && i + 1 < text.size()) {
                     if (text[i] == '{' && text[i + 1] == '{') {
                         result.push_back('{');
-                        i++; // Skip the second brace
+                        i++;
                         continue;
                     }
                     if (text[i] == '}' && text[i + 1] == '}') {
                         result.push_back('}');
-                        i++; // Skip the second brace
+                        i++;
                         continue;
                     }
                 }
                 result.push_back(text[i]);
             }
         } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
+            // 在递归前检查深度
+            if (depth + 1 > mMaxRecursionDepth) {
+                if (ConfigManager::getInstance().get().debugMode) {
+                    logger.warn(
+                        "Skipping placeholder '{}:{}' due to max recursion depth",
+                        std::string(placeholder->pluginName),
+                        std::string(placeholder->placeholderName)
+                    );
+                }
+                // 返回原始占位符文本
+                result.append("{").append(placeholder->pluginName).append(":").append(placeholder->placeholderName);
+                if (placeholder->paramsTemplate) {
+                    result.append("|...");
+                }
+                result.append("}");
+                continue;
+            }
+
             std::string paramString;
             if (placeholder->paramsTemplate) {
                 paramString = replacePlaceholdersSync(*placeholder->paramsTemplate, ctx, depth + 1);
