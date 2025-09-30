@@ -1196,9 +1196,9 @@ std::string PlaceholderManager::executePlaceholder(
     PlaceholderRegistry::ReplacerMatch match = mRegistry->findBestReplacer(pluginName, placeholderName, ctx);
 
     // 2. 构建缓存键并检查缓存
-    std::string cacheKey;
+    std::string                  cacheKey;
     std::optional<CacheDuration> cacheDuration = cache_duration_override;
-    bool hasCandidate = match.type != PlaceholderRegistry::PlaceholderType::None;
+    bool                         hasCandidate  = match.type != PlaceholderRegistry::PlaceholderType::None;
 
     if (hasCandidate) {
         cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, match.strategy);
@@ -1218,7 +1218,7 @@ std::string PlaceholderManager::executePlaceholder(
                     "Placeholder '{}:{}' | Cache Hit: Yes (local) | Type: {} | Time: {}us",
                     std::string(pluginName),
                     std::string(placeholderName),
-                    static_cast<int>(match.type), // Log type as int for now
+                    static_cast<int>(match.type),
                     duration
                 );
             }
@@ -1239,7 +1239,7 @@ std::string PlaceholderManager::executePlaceholder(
                         "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
                         std::string(pluginName),
                         std::string(placeholderName),
-                        static_cast<int>(match.type), // Log type as int for now
+                        static_cast<int>(match.type),
                         duration
                     );
                 }
@@ -1251,32 +1251,78 @@ std::string PlaceholderManager::executePlaceholder(
         }
     }
 
-    // 3. Request Coalescing: Check if another thread is already computing this placeholder.
+    // 3. Request Coalescing: 检查是否有其他线程正在计算
+    std::shared_future<std::string> existingFuture;
     {
         std::lock_guard<std::mutex> lock(mFuturesMutex);
         auto                        fit = mComputingFutures.find(cacheKey);
         if (fit != mComputingFutures.end()) {
-            // Another thread is computing. Wait for its result.
-            auto future = fit->second;
-            lock.~lock_guard(); // Unlock before waiting
+            existingFuture = fit->second;
+        }
+    } // lock 自动释放
+
+    if (existingFuture.valid()) {
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.info(
+                "Placeholder '{}:{}' is being computed by another thread, waiting...",
+                std::string(pluginName),
+                std::string(placeholderName)
+            );
+        }
+        try {
+            return existingFuture.get();
+        } catch (...) {
+            // 如果其他线程的计算失败，我们重新计算
             if (ConfigManager::getInstance().get().debugMode) {
-                logger.info("Placeholder '{}:{}' is being computed by another thread, waiting...", std::string(pluginName), std::string(placeholderName));
+                logger.warn(
+                    "Another thread's computation of '{}:{}' failed, retrying...",
+                    std::string(pluginName),
+                    std::string(placeholderName)
+                );
             }
-            return future.get(); // This might throw, which is acceptable.
         }
     }
 
-    // 4. If not cached and not being computed, compute it now.
-    std::promise<std::string> promise;
+    // 4. 如果没有缓存且没有其他线程在计算，现在开始计算
+    std::promise<std::string>       promise;
+    std::shared_future<std::string> ourFuture;
     {
         std::lock_guard<std::mutex> lock(mFuturesMutex);
-        mComputingFutures[cacheKey] = promise.get_future().share();
+        // 双重检查，防止竞态
+        auto fit = mComputingFutures.find(cacheKey);
+        if (fit != mComputingFutures.end()) {
+            ourFuture = fit->second;
+        } else {
+            ourFuture                   = promise.get_future().share();
+            mComputingFutures[cacheKey] = ourFuture;
+        }
     }
+
+    // 如果双重检查发现已有future，等待它
+    if (!promise.get_future().valid()) {
+        try {
+            return ourFuture.get();
+        } catch (...) {
+            // 继续执行自己的计算
+        }
+    }
+
+    // 使用 RAII 确保清理
+    struct FutureCleanup {
+        PlaceholderManager& manager;
+        const std::string&  key;
+
+        ~FutureCleanup() {
+            std::lock_guard<std::mutex> lock(manager.mFuturesMutex);
+            manager.mComputingFutures.erase(key);
+        }
+    };
+    FutureCleanup cleanup{*this, cacheKey};
 
     try {
         // 5. 获取解析后的参数
-        std::shared_ptr<Utils::ParsedParams> paramsPtr = getParsedParams(paramString);
-        const auto&                          params    = *paramsPtr;
+        std::shared_ptr<Utils::ParsedParams> paramsPtr  = getParsedParams(paramString);
+        const auto&                          params     = *paramsPtr;
         bool                                 allowEmpty = params.getBool("allowempty").value_or(false);
 
         // 6. 执行替换器
@@ -1314,21 +1360,11 @@ std::string PlaceholderManager::executePlaceholder(
         );
 
         promise.set_value(finalResult);
-        {
-            std::lock_guard<std::mutex> lock(mFuturesMutex);
-            mComputingFutures.erase(cacheKey);
-        }
         return finalResult;
 
     } catch (...) {
-        // If any exception occurs during computation, set the exception on the promise
-        // and remove the future from the map to allow retries.
         promise.set_exception(std::current_exception());
-        {
-            std::lock_guard<std::mutex> lock(mFuturesMutex);
-            mComputingFutures.erase(cacheKey);
-        }
-        throw; // Re-throw the exception for the current thread.
+        throw;
     }
 }
 
