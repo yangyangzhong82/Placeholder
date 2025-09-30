@@ -1251,44 +1251,85 @@ std::string PlaceholderManager::executePlaceholder(
         }
     }
 
-    // 3. 获取解析后的参数
-    std::shared_ptr<Utils::ParsedParams> paramsPtr = getParsedParams(paramString);
-    const auto& params = *paramsPtr;
-    bool allowEmpty = params.getBool("allowempty").value_or(false);
-
-    // 4. 执行替换器
-    void* p = ctx.ptr;
-    for (auto& cfun : match.chain) {
-        p = cfun(p);
-    }
-    void* p_rel = nullptr;
-    if (ctx.relationalContext) {
-        p_rel = ctx.relationalContext->ptr;
-        for (auto& cfun : match.relationalChain) {
-            p_rel = cfun(p_rel);
+    // 3. Request Coalescing: Check if another thread is already computing this placeholder.
+    {
+        std::lock_guard<std::mutex> lock(mFuturesMutex);
+        auto                        fit = mComputingFutures.find(cacheKey);
+        if (fit != mComputingFutures.end()) {
+            // Another thread is computing. Wait for its result.
+            auto future = fit->second;
+            lock.~lock_guard(); // Unlock before waiting
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.info("Placeholder '{}:{}' is being computed by another thread, waiting...", std::string(pluginName), std::string(placeholderName));
+            }
+            return future.get(); // This might throw, which is acceptable.
         }
     }
-    
-    std::string originalResult = executeFoundReplacer(match, p, p_rel, params, allowEmpty, st);
-    bool replaced = !originalResult.empty() || allowEmpty;
 
-    // 5. 应用格式化、处理缓存和日志记录
-    return applyFormattingAndCache(
-        originalResult,
-        params,
-        defaultText,
-        allowEmpty,
-        cacheKey,
-        cacheDuration,
-        match.type,
-        startTime,
-        st,
-        pluginName,
-        placeholderName,
-        paramString,
-        ctx,
-        replaced
-    );
+    // 4. If not cached and not being computed, compute it now.
+    std::promise<std::string> promise;
+    {
+        std::lock_guard<std::mutex> lock(mFuturesMutex);
+        mComputingFutures[cacheKey] = promise.get_future().share();
+    }
+
+    try {
+        // 5. 获取解析后的参数
+        std::shared_ptr<Utils::ParsedParams> paramsPtr = getParsedParams(paramString);
+        const auto&                          params    = *paramsPtr;
+        bool                                 allowEmpty = params.getBool("allowempty").value_or(false);
+
+        // 6. 执行替换器
+        void* p = ctx.ptr;
+        for (auto& cfun : match.chain) {
+            p = cfun(p);
+        }
+        void* p_rel = nullptr;
+        if (ctx.relationalContext) {
+            p_rel = ctx.relationalContext->ptr;
+            for (auto& cfun : match.relationalChain) {
+                p_rel = cfun(p_rel);
+            }
+        }
+
+        std::string originalResult = executeFoundReplacer(match, p, p_rel, params, allowEmpty, st);
+        bool        replaced       = !originalResult.empty() || allowEmpty;
+
+        // 7. 应用格式化、处理缓存和日志记录
+        std::string finalResult = applyFormattingAndCache(
+            originalResult,
+            params,
+            defaultText,
+            allowEmpty,
+            cacheKey,
+            cacheDuration,
+            match.type,
+            startTime,
+            st,
+            pluginName,
+            placeholderName,
+            paramString,
+            ctx,
+            replaced
+        );
+
+        promise.set_value(finalResult);
+        {
+            std::lock_guard<std::mutex> lock(mFuturesMutex);
+            mComputingFutures.erase(cacheKey);
+        }
+        return finalResult;
+
+    } catch (...) {
+        // If any exception occurs during computation, set the exception on the promise
+        // and remove the future from the map to allow retries.
+        promise.set_exception(std::current_exception());
+        {
+            std::lock_guard<std::mutex> lock(mFuturesMutex);
+            mComputingFutures.erase(cacheKey);
+        }
+        throw; // Re-throw the exception for the current thread.
+    }
 }
 
 
