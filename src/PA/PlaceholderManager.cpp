@@ -52,6 +52,8 @@ PlaceholderManager& PlaceholderManager::getInstance() {
 }
 
 PlaceholderManager::PlaceholderManager() :
+    mTypeSystem(std::make_shared<PlaceholderTypeSystem>()),
+    mRegistry(std::make_shared<PlaceholderRegistry>(mTypeSystem)),
     mGlobalCache(ConfigManager::getInstance().get().globalCacheSize),
     mCompileCache(ConfigManager::getInstance().get().globalCacheSize),
     mParamsCache(ConfigManager::getInstance().get().globalCacheSize) {
@@ -83,13 +85,7 @@ PlaceholderManager::PlaceholderManager() :
 // ==== 类型系统实现 ====
 
 std::size_t PlaceholderManager::ensureTypeId(const std::string& typeKeyStr) {
-    std::unique_lock lk(mMutex);
-    auto             it = mTypeKeyToId.find(typeKeyStr);
-    if (it != mTypeKeyToId.end()) return it->second;
-    auto id                  = mNextTypeId++;
-    mTypeKeyToId[typeKeyStr] = id;
-    mIdToTypeKey[id]         = typeKeyStr;
-    return id;
+    return mTypeSystem->ensureTypeId(typeKeyStr);
 }
 
 void PlaceholderManager::registerInheritanceByKeys(
@@ -97,95 +93,20 @@ void PlaceholderManager::registerInheritanceByKeys(
     const std::string& baseKey,
     Caster             caster
 ) {
-    std::unique_lock lk(mMutex);
-    auto             d = ensureTypeId(derivedKey);
-    auto             b = ensureTypeId(baseKey);
-    mUpcastEdges[d][b] = caster;
-    mUpcastCache.clear(); // 继承关系变更，清空缓存
+    mTypeSystem->registerInheritanceByKeys(derivedKey, baseKey, caster);
 }
 
 void PlaceholderManager::registerInheritanceByKeysBatch(const std::vector<InheritancePair>& pairs) {
-    std::unique_lock lk(mMutex);
-    for (const auto& pair : pairs) {
-        auto d             = ensureTypeId(pair.derivedKey);
-        auto b             = ensureTypeId(pair.baseKey);
-        mUpcastEdges[d][b] = pair.caster;
-    }
-    mUpcastCache.clear(); // 继承关系变更，清空缓存
+    mTypeSystem->registerInheritanceByKeysBatch(pairs);
 }
 
 void PlaceholderManager::registerTypeAlias(const std::string& alias, const std::string& typeKeyStr) {
-    auto             id = ensureTypeId(typeKeyStr);
-    std::unique_lock lk(mMutex);
-    mIdToAlias[id] = alias;
+    mTypeSystem->registerTypeAlias(alias, typeKeyStr);
 }
 
-// BFS 查询 from -> to 的“最短上行路径”
 bool PlaceholderManager::findUpcastChain(std::size_t fromTypeId, std::size_t toTypeId, std::vector<Caster>& outChain)
     const {
-    outChain.clear();
-    if (fromTypeId == 0 || toTypeId == 0) return false;
-    if (fromTypeId == toTypeId) return true; // 空链表示已是同型
-
-    uint64_t cacheKey = (static_cast<uint64_t>(fromTypeId) << 32) | toTypeId;
-
-    // 1. 检查缓存
-    {
-        std::shared_lock lk(mMutex);
-        auto             it = mUpcastCache.find(cacheKey);
-        if (it != mUpcastCache.end()) {
-            outChain = it->second.chain;
-            return it->second.success;
-        }
-    }
-
-    // 2. 缓存未命中，执行 BFS
-    std::vector<Caster> resultChain;
-    bool                success = false;
-    {
-        std::shared_lock                                                lk(mMutex);
-        std::unordered_map<std::size_t, std::pair<std::size_t, Caster>> prev;
-        std::queue<std::size_t>                                         q;
-
-        prev[fromTypeId] = {0, nullptr};
-        q.push(fromTypeId);
-
-        while (!q.empty()) {
-            auto cur = q.front();
-            q.pop();
-
-            auto it = mUpcastEdges.find(cur);
-            if (it == mUpcastEdges.end()) continue;
-
-            for (auto& [nxt, caster] : it->second) {
-                if (prev.find(nxt) != prev.end()) continue;
-                prev[nxt] = {cur, caster};
-                if (nxt == toTypeId) {
-                    // 回溯构造链
-                    std::size_t x = nxt;
-                    while (x != fromTypeId) {
-                        auto [p, c] = prev[x];
-                        resultChain.push_back(c);
-                        x = p;
-                    }
-                    std::reverse(resultChain.begin(), resultChain.end());
-                    success = true;
-                    goto bfs_end; // 找到路径，跳出循环
-                }
-                q.push(nxt);
-            }
-        }
-    }
-bfs_end:
-
-    // 3. 结果写入缓存
-    {
-        std::unique_lock lk(mMutex);
-        mUpcastCache[cacheKey] = {success, resultChain};
-    }
-
-    outChain = std::move(resultChain);
-    return success;
+    return mTypeSystem->findUpcastChain(fromTypeId, toTypeId, outChain);
 }
 
 // ==== 占位符注册 ====
@@ -197,8 +118,7 @@ void PlaceholderManager::registerServerPlaceholder(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerPlaceholders[pluginName][placeholder] = ServerReplacerEntry{replacer, cache_duration, strategy};
+    mRegistry->registerServerPlaceholder(pluginName, placeholder, replacer, cache_duration, strategy);
 }
 
 void PlaceholderManager::registerServerPlaceholderWithParams(
@@ -208,44 +128,9 @@ void PlaceholderManager::registerServerPlaceholderWithParams(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerPlaceholders[pluginName][placeholder] =
-        ServerReplacerEntry{ServerReplacerWithParams(std::move(replacer)), cache_duration, strategy};
+    mRegistry->registerServerPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
-void PlaceholderManager::registerPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    AnyPtrReplacer               replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedReplacer{
-        targetTypeId,
-        std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
-
-void PlaceholderManager::registerPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    AnyPtrReplacerWithParams&&   replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedReplacer{
-        targetTypeId,
-        std::variant<AnyPtrReplacer, AnyPtrReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
 
 void PlaceholderManager::registerPlaceholderForTypeKey(
     const std::string& pluginName,
@@ -254,7 +139,14 @@ void PlaceholderManager::registerPlaceholderForTypeKey(
     AnyPtrReplacer     replacer
 ) {
     auto id = ensureTypeId(typeKeyStr);
-    registerPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+    mRegistry->registerPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        id,
+        std::move(replacer),
+        std::nullopt,
+        CacheKeyStrategy::Default
+    );
 }
 
 void PlaceholderManager::registerPlaceholderForTypeKeyWithParams(
@@ -264,7 +156,14 @@ void PlaceholderManager::registerPlaceholderForTypeKeyWithParams(
     AnyPtrReplacerWithParams&& replacer
 ) {
     auto id = ensureTypeId(typeKeyStr);
-    registerPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+    mRegistry->registerPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        id,
+        std::move(replacer),
+        std::nullopt,
+        CacheKeyStrategy::Default
+    );
 }
 
 
@@ -277,9 +176,7 @@ void PlaceholderManager::registerAsyncServerPlaceholder(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mAsyncServerPlaceholders[pluginName][placeholder] =
-        AsyncServerReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerAsyncServerPlaceholder(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
 void PlaceholderManager::registerAsyncServerPlaceholderWithParams(
@@ -289,44 +186,9 @@ void PlaceholderManager::registerAsyncServerPlaceholderWithParams(
     std::optional<CacheDuration>    cache_duration,
     CacheKeyStrategy                strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mAsyncServerPlaceholders[pluginName][placeholder] =
-        AsyncServerReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerAsyncServerPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
-void PlaceholderManager::registerAsyncPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    AsyncAnyPtrReplacer&&        replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, AsyncTypedReplacer{
-        targetTypeId,
-        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy
-    });
-}
-
-void PlaceholderManager::registerAsyncPlaceholderForTypeId(
-    const std::string&              pluginName,
-    const std::string&              placeholder,
-    std::size_t                     targetTypeId,
-    AsyncAnyPtrReplacerWithParams&& replacer,
-    std::optional<CacheDuration>    cache_duration,
-    CacheKeyStrategy                strategy
-) {
-    std::unique_lock lk(mMutex);
-    mAsyncContextPlaceholders[pluginName][placeholder].emplace(targetTypeId, AsyncTypedReplacer{
-        targetTypeId,
-        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy
-    });
-}
 
 void PlaceholderManager::registerAsyncPlaceholderForTypeKey(
     const std::string&    pluginName,
@@ -335,7 +197,14 @@ void PlaceholderManager::registerAsyncPlaceholderForTypeKey(
     AsyncAnyPtrReplacer&& replacer
 ) {
     auto id = ensureTypeId(typeKeyStr);
-    registerAsyncPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+    mRegistry->registerAsyncPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        id,
+        std::move(replacer),
+        std::nullopt,
+        CacheKeyStrategy::Default
+    );
 }
 
 void PlaceholderManager::registerAsyncPlaceholderForTypeKeyWithParams(
@@ -345,7 +214,14 @@ void PlaceholderManager::registerAsyncPlaceholderForTypeKeyWithParams(
     AsyncAnyPtrReplacerWithParams&& replacer
 ) {
     auto id = ensureTypeId(typeKeyStr);
-    registerAsyncPlaceholderForTypeId(pluginName, placeholder, id, std::move(replacer));
+    mRegistry->registerAsyncPlaceholderForTypeId(
+        pluginName,
+        placeholder,
+        id,
+        std::move(replacer),
+        std::nullopt,
+        CacheKeyStrategy::Default
+    );
 }
 
 // ==== 注销 & 缓存清理 ====
@@ -389,143 +265,15 @@ void PlaceholderManager::clearCache(const std::string& pluginName) {
 }
 
 void PlaceholderManager::unregisterPlaceholders(const std::string& pluginName) {
-    std::unique_lock lk(mMutex);
-    mServerPlaceholders.erase(pluginName);
-    mContextPlaceholders.erase(pluginName);
-    mRelationalPlaceholders.erase(pluginName);
-    mServerObjectListPlaceholders.erase(pluginName);
-    mContextObjectListPlaceholders.erase(pluginName);
-    mUpcastCache.clear(); // 插件注销可能影响类型，为安全起见清空
+    mRegistry->unregisterPlaceholders(pluginName);
 }
 
 void PlaceholderManager::unregisterAsyncPlaceholders(const std::string& pluginName) {
-    std::unique_lock lk(mMutex);
-    mAsyncServerPlaceholders.erase(pluginName);
-    mAsyncContextPlaceholders.erase(pluginName);
-    mServerListPlaceholders.erase(pluginName);
-    mContextListPlaceholders.erase(pluginName);
+    mRegistry->unregisterAsyncPlaceholders(pluginName);
 }
 
 PlaceholderManager::AllPlaceholders PlaceholderManager::getAllPlaceholders() const {
-    AllPlaceholders  result;
-    std::shared_lock lk(mMutex);
-
-    auto getTypeName = [&](std::size_t typeId) -> std::string {
-        if (typeId == 0) return "N/A";
-        auto aliasIt = mIdToAlias.find(typeId);
-        if (aliasIt != mIdToAlias.end()) {
-            return aliasIt->second;
-        }
-        auto keyIt = mIdToTypeKey.find(typeId);
-        if (keyIt != mIdToTypeKey.end()) {
-            return keyIt->second;
-        }
-        return "UnknownTypeId(" + std::to_string(typeId) + ")";
-    };
-
-    // 辅助函数，用于添加或更新占位符信息
-    auto addPlaceholder =
-        [&](const std::string& plugin, const std::string& name, PlaceholderCategory category, bool isAsync,
-            const std::string& targetType = "", const std::string& relationalType = "") {
-            auto& pluginPlaceholders = result.placeholders[plugin];
-
-            auto it = std::find_if(
-                pluginPlaceholders.begin(),
-                pluginPlaceholders.end(),
-                [&](const PlaceholderInfo& p) {
-                    return p.name == name && p.category == category && p.isAsync == isAsync;
-                }
-            );
-
-            if (it != pluginPlaceholders.end()) {
-                // 找到了一个具有相同名称、类别和异步状态的现有条目。
-                // 这是一个具有不同目标类型的重载。
-                if (!targetType.empty() && it->targetType != targetType) {
-                    // 如果这是找到的第一个重载，则将初始 targetType 添加到 overloads 中。
-                    if (it->overloads.empty() && !it->targetType.empty()) {
-                        it->overloads.push_back(it->targetType);
-                    }
-                    it->overloads.push_back(targetType);
-                }
-            } else {
-                // 添加新条目
-                pluginPlaceholders.push_back({name, category, isAsync, targetType, relationalType, {}});
-            }
-        };
-
-    // 1. Server Placeholders
-    for (const auto& [plugin, phs] : mServerPlaceholders) {
-        for (const auto& [name, entry] : phs) {
-            addPlaceholder(plugin, name, PlaceholderCategory::Server, false);
-        }
-    }
-    for (const auto& [plugin, phs] : mAsyncServerPlaceholders) {
-        for (const auto& [name, entry] : phs) {
-            addPlaceholder(plugin, name, PlaceholderCategory::Server, true);
-        }
-    }
-
-    // 2. Context Placeholders
-    for (const auto& [plugin, phs] : mContextPlaceholders) {
-        for (const auto& [name, overloads] : phs) {
-            for (const auto& [typeId, entry] : overloads) {
-                addPlaceholder(plugin, name, PlaceholderCategory::Context, false, getTypeName(entry.targetTypeId));
-            }
-        }
-    }
-    for (const auto& [plugin, phs] : mAsyncContextPlaceholders) {
-        for (const auto& [name, overloads] : phs) {
-            for (const auto& [typeId, entry] : overloads) {
-                addPlaceholder(plugin, name, PlaceholderCategory::Context, true, getTypeName(entry.targetTypeId));
-            }
-        }
-    }
-
-    // 3. Relational Placeholders
-    for (const auto& [plugin, phs] : mRelationalPlaceholders) {
-        for (const auto& [name, entries] : phs) {
-            for (const auto& entry : entries) {
-                addPlaceholder(
-                    plugin,
-                    name,
-                    PlaceholderCategory::Relational,
-                    false,
-                    getTypeName(entry.targetTypeId),
-                    getTypeName(entry.relationalTypeId)
-                );
-            }
-        }
-    }
-
-    // 4. List Placeholders
-    for (const auto& [plugin, phs] : mServerListPlaceholders) {
-        for (const auto& [name, entry] : phs) {
-            addPlaceholder(plugin, name, PlaceholderCategory::List, false);
-        }
-    }
-    for (const auto& [plugin, phs] : mContextListPlaceholders) {
-        for (const auto& [name, overloads] : phs) {
-            for (const auto& [typeId, entry] : overloads) {
-                addPlaceholder(plugin, name, PlaceholderCategory::List, false, getTypeName(entry.targetTypeId));
-            }
-        }
-    }
-
-    // 5. Object List Placeholders
-    for (const auto& [plugin, phs] : mServerObjectListPlaceholders) {
-        for (const auto& [name, entry] : phs) {
-            addPlaceholder(plugin, name, PlaceholderCategory::ObjectList, false);
-        }
-    }
-    for (const auto& [plugin, phs] : mContextObjectListPlaceholders) {
-        for (const auto& [name, overloads] : phs) {
-            for (const auto& [typeId, entry] : overloads) {
-                addPlaceholder(plugin, name, PlaceholderCategory::ObjectList, false, getTypeName(entry.targetTypeId));
-            }
-        }
-    }
-
-    return result;
+    return mRegistry->getAllPlaceholders();
 }
 
 bool PlaceholderManager::hasPlaceholder(
@@ -533,45 +281,7 @@ bool PlaceholderManager::hasPlaceholder(
     const std::string&                placeholderName,
     const std::optional<std::string>& typeKey
 ) const {
-    std::shared_lock lk(mMutex);
-
-    if (typeKey) {
-        // Check context placeholders
-        auto itPlugin = mContextPlaceholders.find(pluginName);
-        if (itPlugin != mContextPlaceholders.end()) {
-            auto itPh = itPlugin->second.find(placeholderName);
-            if (itPh != itPlugin->second.end()) {
-                // If a typeKey is provided, we need to check if any registered replacer
-                // is compatible with this type. This is a complex check involving inheritance.
-                // For simplicity here, we check if any replacer is registered for this placeholder.
-                // A more thorough check would involve findUpcastChain.
-                return !itPh->second.empty();
-            }
-        }
-        auto itAsyncPlugin = mAsyncContextPlaceholders.find(pluginName);
-        if (itAsyncPlugin != mAsyncContextPlaceholders.end()) {
-            auto itPh = itAsyncPlugin->second.find(placeholderName);
-            if (itPh != itAsyncPlugin->second.end()) {
-                return !itPh->second.empty();
-            }
-        }
-    } else {
-        // Check server placeholders
-        auto itPlugin = mServerPlaceholders.find(pluginName);
-        if (itPlugin != mServerPlaceholders.end()) {
-            if (itPlugin->second.count(placeholderName)) {
-                return true;
-            }
-        }
-        auto itAsyncPlugin = mAsyncServerPlaceholders.find(pluginName);
-        if (itAsyncPlugin != mAsyncServerPlaceholders.end()) {
-            if (itAsyncPlugin->second.count(placeholderName)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
+    return mRegistry->hasPlaceholder(pluginName, placeholderName, typeKey);
 }
 
 
@@ -634,43 +344,6 @@ std::string PlaceholderManager::replacePlaceholders(const std::string& text, Pla
 
 // --- 新：关系型占位符注册 ---
 
-void PlaceholderManager::registerRelationalPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    std::size_t                  relationalTypeId,
-    AnyPtrRelationalReplacer&&   replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
-        targetTypeId,
-        relationalTypeId,
-        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
-
-void PlaceholderManager::registerRelationalPlaceholderForTypeId(
-    const std::string&                   pluginName,
-    const std::string&                   placeholder,
-    std::size_t                          targetTypeId,
-    std::size_t                          relationalTypeId,
-    AnyPtrRelationalReplacerWithParams&& replacer,
-    std::optional<CacheDuration>         cache_duration,
-    CacheKeyStrategy                     strategy
-) {
-    std::unique_lock lk(mMutex);
-    mRelationalPlaceholders[pluginName][placeholder].push_back(RelationalTypedReplacer{
-        targetTypeId,
-        relationalTypeId,
-        std::variant<AnyPtrRelationalReplacer, AnyPtrRelationalReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
 
 void PlaceholderManager::registerRelationalPlaceholderForTypeKey(
     const std::string&           pluginName,
@@ -683,7 +356,7 @@ void PlaceholderManager::registerRelationalPlaceholderForTypeKey(
 ) {
     auto targetId     = ensureTypeId(typeKeyStr);
     auto relationalId = ensureTypeId(relationalTypeKeyStr);
-    registerRelationalPlaceholderForTypeId(
+    mRegistry->registerRelationalPlaceholderForTypeId(
         pluginName,
         placeholder,
         targetId,
@@ -705,7 +378,7 @@ void PlaceholderManager::registerRelationalPlaceholderForTypeKeyWithParams(
 ) {
     auto targetId     = ensureTypeId(typeKeyStr);
     auto relationalId = ensureTypeId(relationalTypeKeyStr);
-    registerRelationalPlaceholderForTypeId(
+    mRegistry->registerRelationalPlaceholderForTypeId(
         pluginName,
         placeholder,
         targetId,
@@ -1120,9 +793,7 @@ void PlaceholderManager::registerServerListPlaceholder(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerListPlaceholders[pluginName][placeholder] =
-        ServerListReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerServerListPlaceholder(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
 void PlaceholderManager::registerServerListPlaceholderWithParams(
@@ -1132,44 +803,9 @@ void PlaceholderManager::registerServerListPlaceholderWithParams(
     std::optional<CacheDuration>   cache_duration,
     CacheKeyStrategy               strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerListPlaceholders[pluginName][placeholder] =
-        ServerListReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerServerListPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
-void PlaceholderManager::registerListPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    AnyPtrListReplacer&&         replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedListReplacer{
-        targetTypeId,
-        std::variant<AnyPtrListReplacer, AnyPtrListReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
-
-void PlaceholderManager::registerListPlaceholderForTypeId(
-    const std::string&             pluginName,
-    const std::string&             placeholder,
-    std::size_t                    targetTypeId,
-    AnyPtrListReplacerWithParams&& replacer,
-    std::optional<CacheDuration>   cache_duration,
-    CacheKeyStrategy               strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedListReplacer{
-        targetTypeId,
-        std::variant<AnyPtrListReplacer, AnyPtrListReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
 
 // --- 新：对象列表/集合型占位符注册 ---
 
@@ -1180,9 +816,7 @@ void PlaceholderManager::registerServerObjectListPlaceholder(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerObjectListPlaceholders[pluginName][placeholder] =
-        ServerObjectListReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerServerObjectListPlaceholder(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
 void PlaceholderManager::registerServerObjectListPlaceholderWithParams(
@@ -1192,227 +826,9 @@ void PlaceholderManager::registerServerObjectListPlaceholderWithParams(
     std::optional<CacheDuration>         cache_duration,
     CacheKeyStrategy                     strategy
 ) {
-    std::unique_lock lk(mMutex);
-    mServerObjectListPlaceholders[pluginName][placeholder] =
-        ServerObjectListReplacerEntry{std::move(replacer), cache_duration, strategy};
+    mRegistry->registerServerObjectListPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
-void PlaceholderManager::registerObjectListPlaceholderForTypeId(
-    const std::string&           pluginName,
-    const std::string&           placeholder,
-    std::size_t                  targetTypeId,
-    AnyPtrObjectListReplacer&&   replacer,
-    std::optional<CacheDuration> cache_duration,
-    CacheKeyStrategy             strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextObjectListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedObjectListReplacer{
-        targetTypeId,
-        std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
-
-void PlaceholderManager::registerObjectListPlaceholderForTypeId(
-    const std::string&                   pluginName,
-    const std::string&                   placeholder,
-    std::size_t                          targetTypeId,
-    AnyPtrObjectListReplacerWithParams&& replacer,
-    std::optional<CacheDuration>         cache_duration,
-    CacheKeyStrategy                     strategy
-) {
-    std::unique_lock lk(mMutex);
-    mContextObjectListPlaceholders[pluginName][placeholder].emplace(targetTypeId, TypedObjectListReplacer{
-        targetTypeId,
-        std::variant<AnyPtrObjectListReplacer, AnyPtrObjectListReplacerWithParams>(std::move(replacer)),
-        cache_duration,
-        strategy,
-    });
-}
-
-// [新] 私有辅助函数：查找最匹配的占位符替换器
-PlaceholderManager::ReplacerMatch PlaceholderManager::findBestReplacer(
-    std::string_view          pluginName,
-    std::string_view          placeholderName,
-    const PlaceholderContext& ctx
-) {
-    ReplacerMatch match;
-
-    // 1. 查找关系型占位符
-    if (ctx.ptr != nullptr && ctx.typeId != 0 && ctx.relationalContext != nullptr
-        && ctx.relationalContext->ptr != nullptr && ctx.relationalContext->typeId != 0) {
-        std::vector<RelationalTypedReplacer> potentialReplacers;
-        {
-            std::shared_lock lk(mMutex);
-            auto             plugin_it = mRelationalPlaceholders.find(std::string(pluginName));
-            if (plugin_it != mRelationalPlaceholders.end()) {
-                auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != plugin_it->second.end()) {
-                    potentialReplacers = ph_it->second;
-                }
-            }
-        }
-
-        std::vector<std::pair<int, ReplacerMatch>> candidates;
-        for (auto& entry : potentialReplacers) {
-            std::vector<Caster> chain;
-            std::vector<Caster> rel_chain;
-            bool main_ok = (entry.targetTypeId == ctx.typeId) || findUpcastChain(ctx.typeId, entry.targetTypeId, chain);
-            bool rel_ok  = (entry.relationalTypeId == ctx.relationalContext->typeId)
-                       || findUpcastChain(ctx.relationalContext->typeId, entry.relationalTypeId, rel_chain);
-
-            if (main_ok && rel_ok) {
-                ReplacerMatch currentMatch;
-                currentMatch.type            = PlaceholderType::Relational;
-                currentMatch.cacheDuration   = entry.cacheDuration;
-                currentMatch.strategy        = entry.strategy;
-                currentMatch.entry           = entry;
-                currentMatch.chain           = std::move(chain);
-                currentMatch.relationalChain = std::move(rel_chain);
-                candidates.push_back({(int)(currentMatch.chain.size() + currentMatch.relationalChain.size()),
-                                      std::move(currentMatch)});
-            }
-        }
-        if (!candidates.empty()) {
-            std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
-            return candidates.front().second;
-        }
-    }
-
-    // 2. 查找上下文相关占位符 (普通、列表、对象列表)
-    if (ctx.ptr != nullptr && ctx.typeId != 0) {
-        std::vector<std::pair<int, ReplacerMatch>> candidates;
-
-        std::shared_lock lk(mMutex);
-        std::queue<std::size_t>         q;
-        q.push(ctx.typeId);
-        std::unordered_set<std::size_t> visited;
-        visited.insert(ctx.typeId);
-
-        while (!q.empty()) {
-            std::size_t currentTypeId = q.front();
-            q.pop();
-
-            std::vector<Caster> chain;
-            bool chain_found = findUpcastChain(ctx.typeId, currentTypeId, chain);
-            if (!chain_found && ctx.typeId != currentTypeId) continue;
-
-            // 2.1. 普通上下文占位符
-            auto plugin_it = mContextPlaceholders.find(std::string(pluginName));
-            if (plugin_it != mContextPlaceholders.end()) {
-                auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != plugin_it->second.end()) {
-                    auto range = ph_it->second.equal_range(currentTypeId);
-                    for (auto it = range.first; it != range.second; ++it) {
-                        ReplacerMatch currentMatch;
-                        currentMatch.type          = PlaceholderType::Context;
-                        currentMatch.cacheDuration = it->second.cacheDuration;
-                        currentMatch.strategy      = it->second.strategy;
-                        currentMatch.entry         = it->second;
-                        currentMatch.chain         = chain;
-                        candidates.push_back({(int)chain.size(), std::move(currentMatch)});
-                    }
-                }
-            }
-
-            // 2.2. 列表上下文占位符
-            auto list_plugin_it = mContextListPlaceholders.find(std::string(pluginName));
-            if (list_plugin_it != mContextListPlaceholders.end()) {
-                auto ph_it = list_plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != list_plugin_it->second.end()) {
-                    auto range = ph_it->second.equal_range(currentTypeId);
-                    for (auto it = range.first; it != range.second; ++it) {
-                        ReplacerMatch currentMatch;
-                        currentMatch.type          = PlaceholderType::ListContext;
-                        currentMatch.cacheDuration = it->second.cacheDuration;
-                        currentMatch.strategy      = it->second.strategy;
-                        currentMatch.entry         = it->second;
-                        currentMatch.chain         = chain;
-                        candidates.push_back({(int)chain.size(), std::move(currentMatch)});
-                    }
-                }
-            }
-
-            // 2.3. 对象列表上下文占位符
-            auto obj_list_plugin_it = mContextObjectListPlaceholders.find(std::string(pluginName));
-            if (obj_list_plugin_it != mContextObjectListPlaceholders.end()) {
-                auto ph_it = obj_list_plugin_it->second.find(std::string(placeholderName));
-                if (ph_it != obj_list_plugin_it->second.end()) {
-                    auto range = ph_it->second.equal_range(currentTypeId);
-                    for (auto it = range.first; it != range.second; ++it) {
-                        ReplacerMatch currentMatch;
-                        currentMatch.type          = PlaceholderType::ObjectListContext;
-                        currentMatch.cacheDuration = it->second.cacheDuration;
-                        currentMatch.strategy      = it->second.strategy;
-                        currentMatch.entry         = it->second;
-                        currentMatch.chain         = chain;
-                        candidates.push_back({(int)chain.size(), std::move(currentMatch)});
-                    }
-                }
-            }
-
-            // Enqueue parents
-            auto edge_it = mUpcastEdges.find(currentTypeId);
-            if (edge_it != mUpcastEdges.end()) {
-                for (const auto& [parentTypeId, caster] : edge_it->second) {
-                    if (visited.find(parentTypeId) == visited.end()) {
-                        visited.insert(parentTypeId);
-                        q.push(parentTypeId);
-                    }
-                }
-            }
-        }
-
-        if (!candidates.empty()) {
-            std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) { return a.first < b.first; });
-            return candidates.front().second;
-        }
-    }
-
-    // 3. 查找服务器级占位符 (普通、列表、对象列表)
-    {
-        std::shared_lock lk(mMutex);
-        // 3.1. 普通服务器占位符
-        auto plugin_it = mServerPlaceholders.find(std::string(pluginName));
-        if (plugin_it != mServerPlaceholders.end()) {
-            auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
-            if (placeholder_it != plugin_it->second.end()) {
-                match.type          = PlaceholderType::Server;
-                match.cacheDuration = placeholder_it->second.cacheDuration;
-                match.strategy      = placeholder_it->second.strategy;
-                match.entry         = placeholder_it->second;
-                return match;
-            }
-        }
-        // 3.2. 列表型服务器占位符
-        auto list_plugin_it = mServerListPlaceholders.find(std::string(pluginName));
-        if (list_plugin_it != mServerListPlaceholders.end()) {
-            auto list_placeholder_it = list_plugin_it->second.find(std::string(placeholderName));
-            if (list_placeholder_it != list_plugin_it->second.end()) {
-                match.type          = PlaceholderType::ListServer;
-                match.cacheDuration = list_placeholder_it->second.cacheDuration;
-                match.strategy      = list_placeholder_it->second.strategy;
-                match.entry         = list_placeholder_it->second;
-                return match;
-            }
-        }
-        // 3.3. 对象列表型服务器占位符
-        auto object_list_plugin_it = mServerObjectListPlaceholders.find(std::string(pluginName));
-        if (object_list_plugin_it != mServerObjectListPlaceholders.end()) {
-            auto object_list_placeholder_it = object_list_plugin_it->second.find(std::string(placeholderName));
-            if (object_list_placeholder_it != object_list_plugin_it->second.end()) {
-                match.type          = PlaceholderType::ObjectListServer;
-                match.cacheDuration = object_list_placeholder_it->second.cacheDuration;
-                match.strategy      = object_list_placeholder_it->second.strategy;
-                match.entry         = object_list_placeholder_it->second;
-                return match;
-            }
-        }
-    }
-
-    return match; // 未找到任何匹配
-}
 
 // [新] 私有辅助函数：获取解析后的参数
 std::shared_ptr<Utils::ParsedParams> PlaceholderManager::getParsedParams(const std::string& paramString) {
@@ -1426,19 +842,19 @@ std::shared_ptr<Utils::ParsedParams> PlaceholderManager::getParsedParams(const s
 
 // [新] 私有辅助函数：执行找到的替换器
 std::string PlaceholderManager::executeFoundReplacer(
-    const ReplacerMatch&                 match,
-    void*                                p,
-    void*                                p_rel,
-    const Utils::ParsedParams&           params,
-    bool                                 allowEmpty,
-    ReplaceState&                        st
+    const PlaceholderRegistry::ReplacerMatch& match,
+    void*                                     p,
+    void*                                     p_rel,
+    const Utils::ParsedParams&                params,
+    bool                                      allowEmpty,
+    ReplaceState&                             st
 ) {
     std::string replaced_val;
     bool        replaced = false;
 
     switch (match.type) {
-    case PlaceholderType::Relational: {
-        const auto& entry = std::get<RelationalTypedReplacer>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::Relational: {
+        const auto& entry = std::get<PlaceholderRegistry::RelationalTypedReplacer>(match.entry);
         if (p && p_rel) {
             if (std::holds_alternative<AnyPtrRelationalReplacer>(entry.fn)) {
                 replaced_val = std::get<AnyPtrRelationalReplacer>(entry.fn)(p, p_rel);
@@ -1451,8 +867,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::Context: {
-        const auto& entry = std::get<TypedReplacer>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::Context: {
+        const auto& entry = std::get<PlaceholderRegistry::TypedReplacer>(match.entry);
         if (p) {
             if (std::holds_alternative<AnyPtrReplacer>(entry.fn)) {
                 replaced_val = std::get<AnyPtrReplacer>(entry.fn)(p);
@@ -1465,8 +881,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::ListContext: {
-        const auto& entry = std::get<TypedListReplacer>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::ListContext: {
+        const auto& entry = std::get<PlaceholderRegistry::TypedListReplacer>(match.entry);
         if (p) {
             std::vector<std::string> result_list;
             if (std::holds_alternative<AnyPtrListReplacer>(entry.fn)) {
@@ -1482,8 +898,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::ObjectListContext: {
-        const auto& entry = std::get<TypedObjectListReplacer>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::ObjectListContext: {
+        const auto& entry = std::get<PlaceholderRegistry::TypedObjectListReplacer>(match.entry);
         if (p) {
             std::vector<PlaceholderContext> object_list;
             if (std::holds_alternative<AnyPtrObjectListReplacer>(entry.fn)) {
@@ -1506,19 +922,7 @@ std::string PlaceholderManager::executeFoundReplacer(
                     }
                 } else {
                     for (const auto& obj_ctx : object_list) {
-                        std::string typeName;
-                        auto        aliasIt = mIdToAlias.find(obj_ctx.typeId);
-                        if (aliasIt != mIdToAlias.end()) {
-                            typeName = aliasIt->second;
-                        } else {
-                            auto keyIt = mIdToTypeKey.find(obj_ctx.typeId);
-                            if (keyIt != mIdToTypeKey.end()) {
-                                typeName = keyIt->second;
-                            } else {
-                                typeName = "UnknownTypeId(" + std::to_string(obj_ctx.typeId) + ")";
-                            }
-                        }
-                        replaced_objects.push_back(typeName);
+                        replaced_objects.push_back(mTypeSystem->getTypeName(obj_ctx.typeId));
                     }
                 }
                 replaced_val = PA::Utils::join(replaced_objects, join_separator);
@@ -1527,8 +931,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::Server: {
-        const auto& entry = std::get<ServerReplacerEntry>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::Server: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerReplacerEntry>(match.entry);
         if (std::holds_alternative<ServerReplacer>(entry.fn)) {
             replaced_val = std::get<ServerReplacer>(entry.fn)();
         } else {
@@ -1539,8 +943,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::ListServer: {
-        const auto& entry = std::get<ServerListReplacerEntry>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::ListServer: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerListReplacerEntry>(match.entry);
         std::vector<std::string> result_list;
         if (std::holds_alternative<ServerListReplacer>(entry.fn)) {
             result_list = std::get<ServerListReplacer>(entry.fn)();
@@ -1554,8 +958,8 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::ObjectListServer: {
-        const auto& entry = std::get<ServerObjectListReplacerEntry>(match.entry);
+    case PlaceholderRegistry::PlaceholderType::ObjectListServer: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerObjectListReplacerEntry>(match.entry);
         std::vector<PlaceholderContext> object_list;
         if (std::holds_alternative<ServerObjectListReplacer>(entry.fn)) {
             object_list = std::get<ServerObjectListReplacer>(entry.fn)();
@@ -1577,19 +981,7 @@ std::string PlaceholderManager::executeFoundReplacer(
                 }
             } else {
                 for (const auto& obj_ctx : object_list) {
-                    std::string typeName;
-                    auto        aliasIt = mIdToAlias.find(obj_ctx.typeId);
-                    if (aliasIt != mIdToAlias.end()) {
-                        typeName = aliasIt->second;
-                    } else {
-                        auto keyIt = mIdToTypeKey.find(obj_ctx.typeId);
-                        if (keyIt != mIdToTypeKey.end()) {
-                            typeName = keyIt->second;
-                        } else {
-                            typeName = "UnknownTypeId(" + std::to_string(obj_ctx.typeId) + ")";
-                        }
-                    }
-                    replaced_objects.push_back(typeName);
+                    replaced_objects.push_back(mTypeSystem->getTypeName(obj_ctx.typeId));
                 }
             }
             replaced_val = PA::Utils::join(replaced_objects, join_separator);
@@ -1597,10 +989,38 @@ std::string PlaceholderManager::executeFoundReplacer(
         }
         break;
     }
-    case PlaceholderType::None:
-    case PlaceholderType::AsyncServer:
-    case PlaceholderType::AsyncContext:
-    case PlaceholderType::SyncFallback:
+    case PlaceholderRegistry::PlaceholderType::AsyncServer: {
+        const auto& entry = std::get<PlaceholderRegistry::AsyncServerReplacerEntry>(match.entry);
+        std::future<std::string> future_val;
+        if (std::holds_alternative<AsyncServerReplacer>(entry.fn)) {
+            future_val = std::get<AsyncServerReplacer>(entry.fn)();
+        } else {
+            future_val = std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
+        }
+        replaced_val = future_val.get(); // Block for async result in sync call
+        if (!replaced_val.empty() || allowEmpty) {
+            replaced = true;
+        }
+        break;
+    }
+    case PlaceholderRegistry::PlaceholderType::AsyncContext: {
+        const auto& entry = std::get<PlaceholderRegistry::AsyncTypedReplacer>(match.entry);
+        if (p) {
+            std::future<std::string> future_val;
+            if (std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)) {
+                future_val = std::get<AsyncAnyPtrReplacer>(entry.fn)(p);
+            } else {
+                future_val = std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(p, params);
+            }
+            replaced_val = future_val.get(); // Block for async result in sync call
+            if (!replaced_val.empty() || allowEmpty) {
+                replaced = true;
+            }
+        }
+        break;
+    }
+    case PlaceholderRegistry::PlaceholderType::None:
+    case PlaceholderRegistry::PlaceholderType::SyncFallback:
         // These types are not handled by this synchronous execution function.
         // They should be handled by the caller or are fallback types.
         break;
@@ -1616,7 +1036,7 @@ std::string PlaceholderManager::applyFormattingAndCache(
     bool                                 allowEmpty,
     const std::string&                   cacheKey,
     std::optional<CacheDuration>         cacheDuration,
-    PlaceholderType                      type,
+    PlaceholderRegistry::PlaceholderType type,
     std::chrono::steady_clock::time_point startTime,
     ReplaceState&                        st,
     std::string_view                     pluginName,
@@ -1642,13 +1062,13 @@ std::string PlaceholderManager::applyFormattingAndCache(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime)
                 .count();
         const char* typeStr = "Unknown";
-        if (type == PlaceholderType::Relational) typeStr = "Relational";
-        else if (type == PlaceholderType::Context) typeStr = "Context";
-        else if (type == PlaceholderType::Server) typeStr = "Server";
-        else if (type == PlaceholderType::ListContext) typeStr = "ListContext";
-        else if (type == PlaceholderType::ListServer) typeStr = "ListServer";
-        else if (type == PlaceholderType::ObjectListContext) typeStr = "ObjectListContext";
-        else if (type == PlaceholderType::ObjectListServer) typeStr = "ObjectListServer";
+        if (type == PlaceholderRegistry::PlaceholderType::Relational) typeStr = "Relational";
+        else if (type == PlaceholderRegistry::PlaceholderType::Context) typeStr = "Context";
+        else if (type == PlaceholderRegistry::PlaceholderType::Server) typeStr = "Server";
+        else if (type == PlaceholderRegistry::PlaceholderType::ListContext) typeStr = "ListContext";
+        else if (type == PlaceholderRegistry::PlaceholderType::ListServer) typeStr = "ListServer";
+        else if (type == PlaceholderRegistry::PlaceholderType::ObjectListContext) typeStr = "ObjectListContext";
+        else if (type == PlaceholderRegistry::PlaceholderType::ObjectListServer) typeStr = "ObjectListServer";
 
         if (!replaced) {
             logger.warn(
@@ -1701,12 +1121,12 @@ std::string PlaceholderManager::executePlaceholder(
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     // 1. 查找最匹配的替换器
-    ReplacerMatch match = findBestReplacer(pluginName, placeholderName, ctx);
+    PlaceholderRegistry::ReplacerMatch match = mRegistry->findBestReplacer(pluginName, placeholderName, ctx);
 
     // 2. 构建缓存键并检查缓存
     std::string cacheKey;
     std::optional<CacheDuration> cacheDuration = cache_duration_override;
-    bool hasCandidate = match.type != PlaceholderType::None;
+    bool hasCandidate = match.type != PlaceholderRegistry::PlaceholderType::None;
 
     if (hasCandidate) {
         cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, match.strategy);
@@ -1809,261 +1229,25 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     const PlaceholderContext&    ctx,
     std::optional<CacheDuration> cache_duration_override
 ) {
-    const auto startTime = std::chrono::high_resolution_clock::now();
-    enum class PlaceholderType {
-        None,
-        Server,
-        Context,
-        Relational,
-        ListServer,
-        ListContext,
-        ObjectListServer,
-        ObjectListContext,
-        AsyncServer,
-        AsyncContext,
-        SyncFallback
-    };
-    PlaceholderType type = PlaceholderType::None;
-
-    // --- 1. Find Async Candidate ---
-    struct AsyncCandidate {
-        std::vector<Caster>                                              chain;
-        std::variant<AsyncAnyPtrReplacer, AsyncAnyPtrReplacerWithParams> fn;
-        std::optional<CacheDuration>                                     cacheDuration;
-        CacheKeyStrategy                                                 strategy;
-    };
-    std::optional<AsyncCandidate> bestAsyncCandidate;
-
-    if (ctx.ptr != nullptr && ctx.typeId != 0) {
-        std::vector<std::pair<int, AsyncCandidate>> asyncCandidates;
-        {
-            std::shared_lock lk(mMutex);
-            std::queue<std::size_t>         q;
-            q.push(ctx.typeId);
-            std::unordered_set<std::size_t> visited;
-            visited.insert(ctx.typeId);
-
-            while (!q.empty()) {
-                std::size_t currentTypeId = q.front();
-                q.pop();
-
-                std::vector<Caster> chain;
-                if (findUpcastChain(ctx.typeId, currentTypeId, chain) || ctx.typeId == currentTypeId) {
-                    auto plugin_it = mAsyncContextPlaceholders.find(std::string(pluginName));
-                    if (plugin_it != mAsyncContextPlaceholders.end()) {
-                        auto ph_it = plugin_it->second.find(std::string(placeholderName));
-                        if (ph_it != plugin_it->second.end()) {
-                            auto range = ph_it->second.equal_range(currentTypeId);
-                            for (auto it = range.first; it != range.second; ++it) {
-                                asyncCandidates.push_back({(int)chain.size(),
-                                                           AsyncCandidate{chain,
-                                                                          it->second.fn,
-                                                                          it->second.cacheDuration,
-                                                                          it->second.strategy}});
-                            }
-                        }
-                    }
-                }
-
-                auto edge_it = mUpcastEdges.find(currentTypeId);
-                if (edge_it != mUpcastEdges.end()) {
-                    for (const auto& [parentTypeId, caster] : edge_it->second) {
-                        if (visited.find(parentTypeId) == visited.end()) {
-                            visited.insert(parentTypeId);
-                            q.push(parentTypeId);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!asyncCandidates.empty()) {
-            std::sort(asyncCandidates.begin(), asyncCandidates.end(), [](auto& a, auto& b) {
-                return a.first < b.first;
-            });
-            bestAsyncCandidate = std::move(asyncCandidates.front().second);
-            type               = PlaceholderType::AsyncContext;
-        }
-    }
-
-    std::optional<AsyncServerReplacerEntry> asyncServerEntry;
-    if (!bestAsyncCandidate) {
-        std::shared_lock lk(mMutex);
-        auto             plugin_it = mAsyncServerPlaceholders.find(std::string(pluginName));
-        if (plugin_it != mAsyncServerPlaceholders.end()) {
-            auto placeholder_it = plugin_it->second.find(std::string(placeholderName));
-            if (placeholder_it != plugin_it->second.end()) {
-                asyncServerEntry = placeholder_it->second;
-                type             = PlaceholderType::AsyncServer;
-            }
-        }
-    }
-
-    // --- 2. Build Cache Key & Check Cache ---
-    std::string                  cacheKey;
-    std::optional<CacheDuration> cacheDuration     = cache_duration_override;
-    bool                         hasAsyncCandidate = bestAsyncCandidate.has_value() || asyncServerEntry.has_value();
-
-    if (hasAsyncCandidate) {
-        CacheKeyStrategy strategy = bestAsyncCandidate ? bestAsyncCandidate->strategy
-                                  : asyncServerEntry   ? asyncServerEntry->strategy
-                                                       : CacheKeyStrategy::Default;
-        cacheKey                  = buildCacheKey(ctx, pluginName, placeholderName, paramString, strategy);
-
-        if (!cacheDuration) {
-            cacheDuration = bestAsyncCandidate ? bestAsyncCandidate->cacheDuration : asyncServerEntry->cacheDuration;
-        }
-
-        if (cacheDuration) {
-            auto cached = mGlobalCache.get(cacheKey);
-            if (cached && cached->expiresAt > std::chrono::steady_clock::now()) {
-                if (ConfigManager::getInstance().get().debugMode) {
-                    auto duration =
-                        std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::high_resolution_clock::now() - startTime
-                        )
-                            .count();
-                    logger.info(
-                        "Placeholder '{}:{}' | Cache Hit: Yes (global) | Type: {} | Time: {}us",
-                        std::string(pluginName),
-                        std::string(placeholderName),
-                        type == PlaceholderType::AsyncContext ? "AsyncContext" : "AsyncServer",
-                        duration
-                    );
-                }
-                std::promise<std::string> promise;
-                promise.set_value(cached->result);
-                return promise.get_future();
-            }
-        }
-    }
-
-    // --- 3. Execute Placeholder ---
-    std::shared_ptr<Utils::ParsedParams> paramsPtr;
-    if (auto cachedParams = mParamsCache.get(paramString)) {
-        paramsPtr = *cachedParams;
-    } else {
-        paramsPtr = std::make_shared<Utils::ParsedParams>(paramString);
-        mParamsCache.put(paramString, paramsPtr);
-    }
-
-    std::future<std::string> future;
-    if (bestAsyncCandidate) {
-        const auto& params = *paramsPtr;
-        void*       p      = ctx.ptr;
-        for (auto& cfun : bestAsyncCandidate->chain) {
-            p = cfun(p);
-        }
-        if (p) {
-            if (std::holds_alternative<AsyncAnyPtrReplacer>(bestAsyncCandidate->fn)) {
-                future = std::get<AsyncAnyPtrReplacer>(bestAsyncCandidate->fn)(p);
-            } else {
-                future = std::get<AsyncAnyPtrReplacerWithParams>(bestAsyncCandidate->fn)(p, params);
-            }
-        } else {
-            std::promise<std::string> p_promise;
-            p_promise.set_value("");
-            future = p_promise.get_future();
-        }
-    } else if (asyncServerEntry) {
-        const auto& params = *paramsPtr;
-        if (std::holds_alternative<AsyncServerReplacer>(asyncServerEntry->fn)) {
-            future = std::get<AsyncServerReplacer>(asyncServerEntry->fn)();
-        } else {
-            future = std::get<AsyncServerReplacerWithParams>(asyncServerEntry->fn)(params);
-        }
-    } else {
-        type = PlaceholderType::SyncFallback;
-        std::promise<std::string> promise;
-        ReplaceState              st;
-        promise.set_value(
-            executePlaceholder(pluginName, placeholderName, paramString, defaultText, ctx, st, cache_duration_override)
+    return mAsyncThreadPool->enqueue([this,
+                                      pluginName = std::string(pluginName),
+                                      placeholderName = std::string(placeholderName),
+                                      paramString,
+                                      defaultText,
+                                      ctx,
+                                      cache_duration_override]() -> std::string {
+        ReplaceState st; // Create a state for this async execution
+        // We are now on an async thread, so we can execute synchronously.
+        // The overall operation remains asynchronous from the caller's perspective.
+        return executePlaceholder(
+            pluginName,
+            placeholderName,
+            paramString,
+            defaultText,
+            ctx,
+            st,
+            cache_duration_override
         );
-        return promise.get_future();
-    }
-
-    // --- 4. Finalize & Cache (for async paths) ---
-    const auto& params     = *paramsPtr;
-    bool        allowEmpty = params.getBool("allowempty").value_or(false);
-
-    return mCombinerThreadPool->enqueue([this,
-                                         startTime,
-                                         type,
-                                         fut             = std::move(future),
-                                         pluginName      = std::string(pluginName),
-                                         placeholderName = std::string(placeholderName),
-                                         paramString,
-                                         defaultText,
-                                         allowEmpty,
-                                         cacheKey,
-                                         cacheDuration,
-                                         paramsPtr]() mutable {
-        auto timeout = std::chrono::milliseconds(ConfigManager::getInstance().get().asyncPlaceholderTimeoutMs);
-        if (fut.wait_for(timeout) == std::future_status::timeout) {
-            if (ConfigManager::getInstance().get().debugMode) {
-                logger.warn(
-                    "Async placeholder '{}:{}' timed out after {}ms. Using default value: '{}'.",
-                    pluginName,
-                    placeholderName,
-                    timeout.count(),
-                    defaultText
-                );
-            }
-            return defaultText;
-        }
-
-        std::string replaced_val = fut.get();
-        bool        replaced     = !replaced_val.empty() || allowEmpty;
-
-        const auto& params = *paramsPtr;
-        std::string formatted_val;
-        if (replaced) {
-            formatted_val = PA::Utils::applyFormatting(replaced_val, params);
-        }
-
-        std::string finalOut;
-        if (replaced && (!formatted_val.empty() || allowEmpty)) {
-            finalOut = formatted_val;
-        } else {
-            finalOut = defaultText;
-        }
-
-        if (ConfigManager::getInstance().get().debugMode) {
-            auto duration =
-                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime)
-                    .count();
-            const char* typeStr = "Unknown";
-            if (type == PlaceholderType::Relational) typeStr = "Relational";
-            else if (type == PlaceholderType::Context) typeStr = "Context";
-            else if (type == PlaceholderType::Server) typeStr = "Server";
-            else if (type == PlaceholderType::ListContext) typeStr = "ListContext";
-            else if (type == PlaceholderType::ListServer) typeStr = "ListServer";
-            else if (type == PlaceholderType::ObjectListContext) typeStr = "ObjectListContext";
-            else if (type == PlaceholderType::ObjectListServer) typeStr = "ObjectListServer";
-            else if (type == PlaceholderType::AsyncContext) typeStr = "AsyncContext";
-            else if (type == PlaceholderType::AsyncServer) typeStr = "AsyncServer";
-            else if (type == PlaceholderType::SyncFallback) typeStr = "SyncFallback";
-
-            logger.info(
-                "Placeholder '{}:{}' | Cache Hit: No | Type: {} | Time: {}us",
-                pluginName,
-                placeholderName,
-                typeStr,
-                duration
-            );
-        }
-
-        if (finalOut.empty() && defaultText.empty() && !replaced && ConfigManager::getInstance().get().debugMode) {
-            finalOut.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
-            finalOut.append("{").append(pluginName).append(":").append(placeholderName);
-            if (!paramString.empty()) finalOut.append("|").append(paramString);
-            finalOut.append("}");
-        }
-
-        if (replaced && cacheDuration) {
-            mGlobalCache.put(cacheKey, {finalOut, std::chrono::steady_clock::now() + *cacheDuration});
-        }
-        return finalOut;
     });
 }
 
