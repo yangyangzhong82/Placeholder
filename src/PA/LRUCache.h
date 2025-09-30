@@ -47,9 +47,11 @@ public:
 
         // 如果缓存已满，则淘汰最近最少使用的项
         if (mMap.size() >= mCapacity) {
-            Key lruKey = mList.back().first;
+            // 改进：直接使用迭代器，避免复制 key
+            auto lruIt = mList.end();
+            --lruIt;
+            mMap.erase(lruIt->first);
             mList.pop_back();
-            mMap.erase(lruKey);
         }
 
         // 在前面插入新项
@@ -77,11 +79,12 @@ public:
         if (mCapacity == 0) {
             mCapacity = 1;
         }
-        // 淘汰多余的项
+        // 淘汰多余的项（优化）
         while (mMap.size() > mCapacity) {
-            Key lruKey = mList.back().first;
+            auto lruIt = mList.end();
+            --lruIt;
+            mMap.erase(lruIt->first);
             mList.pop_back();
-            mMap.erase(lruKey);
         }
     }
 
