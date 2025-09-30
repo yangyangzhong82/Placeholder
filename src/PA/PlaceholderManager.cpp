@@ -607,9 +607,12 @@ PlaceholderManager::replacePlaceholdersSync(const CompiledTemplate& tpl, const P
 // [新] 编译模板
 CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
     CompiledTemplate tpl;
-    tpl.source         = text; // Keep the source string alive
+    tpl.source         = text;
     std::string_view s = tpl.source;
     size_t           n = s.size();
+
+    // 预分配 tokens 容量以减少重新分配
+    tpl.tokens.reserve(std::count(s.begin(), s.end(), '{') + 1);
 
     for (size_t i = 0; i < n;) {
         char c = s[i];
@@ -665,17 +668,14 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             continue;
         }
 
-        // 寻找占位符的开始 '{'
         size_t placeholderStart = s.find('{', i);
         if (placeholderStart == std::string::npos) {
-            // 剩余全是文本
             if (i < n) {
                 tpl.tokens.emplace_back(LiteralToken{s.substr(i)});
             }
             break;
         }
 
-        // i 到 placeholderStart 之间是文本
         if (placeholderStart > i) {
             tpl.tokens.emplace_back(LiteralToken{s.substr(i, placeholderStart - i)});
         }
@@ -706,24 +706,16 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
         }
 
         if (!matched) {
-            // 无匹配，后面全是文本
             tpl.tokens.emplace_back(LiteralToken{s.substr(placeholderStart)});
             break;
         }
 
-        // 提取占位符内部
-        std::string_view inside = s.substr(placeholderStart + 1, j - (placeholderStart + 1));
+        std::string_view inside      = s.substr(placeholderStart + 1, j - (placeholderStart + 1));
+        auto             colonPosOpt = PA::Utils::findSepOutside(inside, ":");
 
-        // 解析
-        auto colonPosOpt = PA::Utils::findSepOutside(inside, ":");
         if (!colonPosOpt) {
-            // 非法格式，视为文本
             if (ConfigManager::getInstance().get().debugMode) {
-                logger.warn(
-                    "Placeholder format error: '{}' is not a valid placeholder format. It seems to be missing a "
-                    "colon ':'. The correct format is {{plugin:placeholder}}.",
-                    std::string(inside)
-                );
+                logger.warn("Placeholder format error: '{}' is not a valid placeholder format.", std::string(inside));
             }
             tpl.tokens.emplace_back(LiteralToken{s.substr(placeholderStart, j - placeholderStart + 1)});
             i = j + 1;
@@ -744,17 +736,36 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             size_t defaultStart = *defaultPosOpt + 2;
             size_t defaultEnd   = pipePosOpt ? *pipePosOpt : rest.size();
             if (defaultStart < defaultEnd) {
-                token.defaultTemplate = std::make_unique<CompiledTemplate>(
-                    compileTemplate(std::string(rest.substr(defaultStart, defaultEnd - defaultStart)))
-                );
+                std::string_view defaultView = rest.substr(defaultStart, defaultEnd - defaultStart);
+                // 改进：只有在需要递归编译时才创建字符串
+                // 对于简单的字面值，可以直接存储
+                if (defaultView.find('{') == std::string_view::npos) {
+                    // 简单字面值，创建只包含一个 LiteralToken 的模板
+                    auto simpleTpl    = std::make_unique<CompiledTemplate>();
+                    simpleTpl->source = std::string(defaultView);
+                    simpleTpl->tokens.emplace_back(LiteralToken{simpleTpl->source});
+                    token.defaultTemplate = std::move(simpleTpl);
+                } else {
+                    // 包含占位符，需要完整编译
+                    token.defaultTemplate =
+                        std::make_unique<CompiledTemplate>(compileTemplate(std::string(defaultView)));
+                }
             }
         }
 
         if (pipePosOpt) {
             size_t paramStart = *pipePosOpt + 1;
             if (paramStart < rest.size()) {
-                token.paramsTemplate =
-                    std::make_unique<CompiledTemplate>(compileTemplate(std::string(rest.substr(paramStart))));
+                std::string_view paramsView = rest.substr(paramStart);
+                // 同样的优化
+                if (paramsView.find('{') == std::string_view::npos) {
+                    auto simpleTpl    = std::make_unique<CompiledTemplate>();
+                    simpleTpl->source = std::string(paramsView);
+                    simpleTpl->tokens.emplace_back(LiteralToken{simpleTpl->source});
+                    token.paramsTemplate = std::move(simpleTpl);
+                } else {
+                    token.paramsTemplate = std::make_unique<CompiledTemplate>(compileTemplate(std::string(paramsView)));
+                }
             }
         }
 
