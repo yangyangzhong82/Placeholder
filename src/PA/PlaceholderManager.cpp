@@ -773,22 +773,22 @@ std::string PlaceholderManager::buildCacheKey(
     CacheKeyStrategy          strategy
 ) {
     std::string cacheKey;
-    cacheKey.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 80);
+    cacheKey.reserve(pluginName.size() + placeholderName.size() + 80);
+
     if (strategy == CacheKeyStrategy::ServerOnly) {
         cacheKey.push_back('#');
         cacheKey.append(pluginName);
         cacheKey.push_back(':');
         cacheKey.append(placeholderName);
         cacheKey.push_back('|');
-        cacheKey.append(paramString);
-    } else { // Default
+        cacheKey.append(hashString(paramString)); // 使用哈希优化
+    } else {
         if (ctx.ptr) {
             cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.ptr)));
             cacheKey.push_back('#');
             cacheKey.append(std::to_string(ctx.typeId));
             cacheKey.push_back('#');
         }
-        // Add relational context to cache key
         if (ctx.relationalContext && ctx.relationalContext->ptr) {
             cacheKey.append(std::to_string(reinterpret_cast<uintptr_t>(ctx.relationalContext->ptr)));
             cacheKey.push_back('#');
@@ -799,7 +799,7 @@ std::string PlaceholderManager::buildCacheKey(
         cacheKey.push_back(':');
         cacheKey.append(placeholderName);
         cacheKey.push_back('|');
-        cacheKey.append(paramString);
+        cacheKey.append(hashString(paramString)); // 使用哈希优化
     }
     return cacheKey;
 }

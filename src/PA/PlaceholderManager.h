@@ -589,7 +589,15 @@ private:
         int                                          depth{0};
         std::unordered_map<std::string, std::string> cache;
     };
-
+    // 为长字符串生成哈希作为缓存键的一部分
+    static std::string hashString(const std::string& str) {
+        if (str.size() <= 128) {
+            return str; // 短字符串直接使用
+        }
+        // 对长字符串使用哈希
+        std::hash<std::string> hasher;
+        return "hash:" + std::to_string(hasher(str));
+    }
     std::string replacePlaceholdersSync(const CompiledTemplate& tpl, const PlaceholderContext& ctx, int depth);
 
     std::shared_ptr<Utils::ParsedParams> getParsedParams(const std::string& paramString);
