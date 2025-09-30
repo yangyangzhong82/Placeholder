@@ -856,13 +856,21 @@ std::string PlaceholderManager::executeFoundReplacer(
     case PlaceholderRegistry::PlaceholderType::Relational: {
         const auto& entry = std::get<PlaceholderRegistry::RelationalTypedReplacer>(match.entry);
         if (p && p_rel) {
-            if (std::holds_alternative<AnyPtrRelationalReplacer>(entry.fn)) {
-                replaced_val = std::get<AnyPtrRelationalReplacer>(entry.fn)(p, p_rel);
-            } else {
-                replaced_val = std::get<AnyPtrRelationalReplacerWithParams>(entry.fn)(p, p_rel, params);
-            }
-            if (!replaced_val.empty() || allowEmpty) {
-                replaced = true;
+            try {
+                if (std::holds_alternative<AnyPtrRelationalReplacer>(entry.fn)) {
+                    replaced_val = std::get<AnyPtrRelationalReplacer>(entry.fn)(p, p_rel);
+                } else {
+                    replaced_val = std::get<AnyPtrRelationalReplacerWithParams>(entry.fn)(p, p_rel, params);
+                }
+                if (!replaced_val.empty() || allowEmpty) {
+                    replaced = true;
+                }
+            } catch (const std::exception& e) {
+                logger.error("Relational replacer threw an exception: {}", e.what());
+                replaced_val = ""; // Return empty string on exception
+            } catch (...) {
+                logger.error("Relational replacer threw an unknown exception.");
+                replaced_val = ""; // Return empty string on unknown exception
             }
         }
         break;
@@ -870,13 +878,21 @@ std::string PlaceholderManager::executeFoundReplacer(
     case PlaceholderRegistry::PlaceholderType::Context: {
         const auto& entry = std::get<PlaceholderRegistry::TypedReplacer>(match.entry);
         if (p) {
-            if (std::holds_alternative<AnyPtrReplacer>(entry.fn)) {
-                replaced_val = std::get<AnyPtrReplacer>(entry.fn)(p);
-            } else {
-                replaced_val = std::get<AnyPtrReplacerWithParams>(entry.fn)(p, params);
-            }
-            if (!replaced_val.empty() || allowEmpty) {
-                replaced = true;
+            try {
+                if (std::holds_alternative<AnyPtrReplacer>(entry.fn)) {
+                    replaced_val = std::get<AnyPtrReplacer>(entry.fn)(p);
+                } else {
+                    replaced_val = std::get<AnyPtrReplacerWithParams>(entry.fn)(p, params);
+                }
+                if (!replaced_val.empty() || allowEmpty) {
+                    replaced = true;
+                }
+            } catch (const std::exception& e) {
+                logger.error("Context replacer threw an exception: {}", e.what());
+                replaced_val = "";
+            } catch (...) {
+                logger.error("Context replacer threw an unknown exception.");
+                replaced_val = "";
             }
         }
         break;
@@ -885,15 +901,23 @@ std::string PlaceholderManager::executeFoundReplacer(
         const auto& entry = std::get<PlaceholderRegistry::TypedListReplacer>(match.entry);
         if (p) {
             std::vector<std::string> result_list;
-            if (std::holds_alternative<AnyPtrListReplacer>(entry.fn)) {
-                result_list = std::get<AnyPtrListReplacer>(entry.fn)(p);
-            } else {
-                result_list = std::get<AnyPtrListReplacerWithParams>(entry.fn)(p, params);
-            }
-            if (!result_list.empty() || allowEmpty) {
-                std::string separator = std::string(params.get("separator").value_or(", "));
-                replaced_val          = PA::Utils::join(result_list, separator);
-                replaced              = true;
+            try {
+                if (std::holds_alternative<AnyPtrListReplacer>(entry.fn)) {
+                    result_list = std::get<AnyPtrListReplacer>(entry.fn)(p);
+                } else {
+                    result_list = std::get<AnyPtrListReplacerWithParams>(entry.fn)(p, params);
+                }
+                if (!result_list.empty() || allowEmpty) {
+                    std::string separator = std::string(params.get("separator").value_or(", "));
+                    replaced_val          = PA::Utils::join(result_list, separator);
+                    replaced              = true;
+                }
+            } catch (const std::exception& e) {
+                logger.error("ListContext replacer threw an exception: {}", e.what());
+                replaced_val = "";
+            } catch (...) {
+                logger.error("ListContext replacer threw an unknown exception.");
+                replaced_val = "";
             }
         }
         break;
@@ -902,10 +926,94 @@ std::string PlaceholderManager::executeFoundReplacer(
         const auto& entry = std::get<PlaceholderRegistry::TypedObjectListReplacer>(match.entry);
         if (p) {
             std::vector<PlaceholderContext> object_list;
-            if (std::holds_alternative<AnyPtrObjectListReplacer>(entry.fn)) {
-                object_list = std::get<AnyPtrObjectListReplacer>(entry.fn)(p);
+            try {
+                if (std::holds_alternative<AnyPtrObjectListReplacer>(entry.fn)) {
+                    object_list = std::get<AnyPtrObjectListReplacer>(entry.fn)(p);
+                } else {
+                    object_list = std::get<AnyPtrObjectListReplacerWithParams>(entry.fn)(p, params);
+                }
+
+                if (!object_list.empty() || allowEmpty) {
+                    std::string join_separator = std::string(params.get("join").value_or(""));
+                    std::string template_str   = std::string(params.get("template").value_or(""));
+
+                    std::vector<std::string> replaced_objects;
+                    replaced_objects.reserve(object_list.size());
+
+                    if (!template_str.empty()) {
+                        auto compiled_template = compileTemplate(template_str);
+                        for (const auto& obj_ctx : object_list) {
+                            replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1));
+                        }
+                    } else {
+                        for (const auto& obj_ctx : object_list) {
+                            replaced_objects.push_back(mTypeSystem->getTypeName(obj_ctx.typeId));
+                        }
+                    }
+                    replaced_val = PA::Utils::join(replaced_objects, join_separator);
+                    replaced     = true;
+                }
+            } catch (const std::exception& e) {
+                logger.error("ObjectListContext replacer threw an exception: {}", e.what());
+                replaced_val = "";
+            } catch (...) {
+                logger.error("ObjectListContext replacer threw an unknown exception.");
+                replaced_val = "";
+            }
+        }
+        break;
+    }
+    case PlaceholderRegistry::PlaceholderType::Server: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerReplacerEntry>(match.entry);
+        try {
+            if (std::holds_alternative<ServerReplacer>(entry.fn)) {
+                replaced_val = std::get<ServerReplacer>(entry.fn)();
             } else {
-                object_list = std::get<AnyPtrObjectListReplacerWithParams>(entry.fn)(p, params);
+                replaced_val = std::get<ServerReplacerWithParams>(entry.fn)(params);
+            }
+            if (!replaced_val.empty() || allowEmpty) {
+                replaced = true;
+            }
+        } catch (const std::exception& e) {
+            logger.error("Server replacer threw an exception: {}", e.what());
+            replaced_val = "";
+        } catch (...) {
+            logger.error("Server replacer threw an unknown exception.");
+            replaced_val = "";
+        }
+        break;
+    }
+    case PlaceholderRegistry::PlaceholderType::ListServer: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerListReplacerEntry>(match.entry);
+        std::vector<std::string> result_list;
+        try {
+            if (std::holds_alternative<ServerListReplacer>(entry.fn)) {
+                result_list = std::get<ServerListReplacer>(entry.fn)();
+            } else {
+                result_list = std::get<ServerListReplacerWithParams>(entry.fn)(params);
+            }
+            if (!result_list.empty() || allowEmpty) {
+                std::string separator = std::string(params.get("separator").value_or(", "));
+                replaced_val          = PA::Utils::join(result_list, separator);
+                replaced              = true;
+            }
+        } catch (const std::exception& e) {
+            logger.error("ListServer replacer threw an exception: {}", e.what());
+            replaced_val = "";
+        } catch (...) {
+            logger.error("ListServer replacer threw an unknown exception.");
+            replaced_val = "";
+        }
+        break;
+    }
+    case PlaceholderRegistry::PlaceholderType::ObjectListServer: {
+        const auto& entry = std::get<PlaceholderRegistry::ServerObjectListReplacerEntry>(match.entry);
+        std::vector<PlaceholderContext> object_list;
+        try {
+            if (std::holds_alternative<ServerObjectListReplacer>(entry.fn)) {
+                object_list = std::get<ServerObjectListReplacer>(entry.fn)();
+            } else {
+                object_list = std::get<ServerObjectListReplacerWithParams>(entry.fn)(params);
             }
 
             if (!object_list.empty() || allowEmpty) {
@@ -928,78 +1036,34 @@ std::string PlaceholderManager::executeFoundReplacer(
                 replaced_val = PA::Utils::join(replaced_objects, join_separator);
                 replaced     = true;
             }
-        }
-        break;
-    }
-    case PlaceholderRegistry::PlaceholderType::Server: {
-        const auto& entry = std::get<PlaceholderRegistry::ServerReplacerEntry>(match.entry);
-        if (std::holds_alternative<ServerReplacer>(entry.fn)) {
-            replaced_val = std::get<ServerReplacer>(entry.fn)();
-        } else {
-            replaced_val = std::get<ServerReplacerWithParams>(entry.fn)(params);
-        }
-        if (!replaced_val.empty() || allowEmpty) {
-            replaced = true;
-        }
-        break;
-    }
-    case PlaceholderRegistry::PlaceholderType::ListServer: {
-        const auto& entry = std::get<PlaceholderRegistry::ServerListReplacerEntry>(match.entry);
-        std::vector<std::string> result_list;
-        if (std::holds_alternative<ServerListReplacer>(entry.fn)) {
-            result_list = std::get<ServerListReplacer>(entry.fn)();
-        } else {
-            result_list = std::get<ServerListReplacerWithParams>(entry.fn)(params);
-        }
-        if (!result_list.empty() || allowEmpty) {
-            std::string separator = std::string(params.get("separator").value_or(", "));
-            replaced_val          = PA::Utils::join(result_list, separator);
-            replaced              = true;
-        }
-        break;
-    }
-    case PlaceholderRegistry::PlaceholderType::ObjectListServer: {
-        const auto& entry = std::get<PlaceholderRegistry::ServerObjectListReplacerEntry>(match.entry);
-        std::vector<PlaceholderContext> object_list;
-        if (std::holds_alternative<ServerObjectListReplacer>(entry.fn)) {
-            object_list = std::get<ServerObjectListReplacer>(entry.fn)();
-        } else {
-            object_list = std::get<ServerObjectListReplacerWithParams>(entry.fn)(params);
-        }
-
-        if (!object_list.empty() || allowEmpty) {
-            std::string join_separator = std::string(params.get("join").value_or(""));
-            std::string template_str   = std::string(params.get("template").value_or(""));
-
-            std::vector<std::string> replaced_objects;
-            replaced_objects.reserve(object_list.size());
-
-            if (!template_str.empty()) {
-                auto compiled_template = compileTemplate(template_str);
-                for (const auto& obj_ctx : object_list) {
-                    replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1));
-                }
-            } else {
-                for (const auto& obj_ctx : object_list) {
-                    replaced_objects.push_back(mTypeSystem->getTypeName(obj_ctx.typeId));
-                }
-            }
-            replaced_val = PA::Utils::join(replaced_objects, join_separator);
-            replaced     = true;
+        } catch (const std::exception& e) {
+            logger.error("ObjectListServer replacer threw an exception: {}", e.what());
+            replaced_val = "";
+        } catch (...) {
+            logger.error("ObjectListServer replacer threw an unknown exception.");
+            replaced_val = "";
         }
         break;
     }
     case PlaceholderRegistry::PlaceholderType::AsyncServer: {
         const auto& entry = std::get<PlaceholderRegistry::AsyncServerReplacerEntry>(match.entry);
         std::future<std::string> future_val;
-        if (std::holds_alternative<AsyncServerReplacer>(entry.fn)) {
-            future_val = std::get<AsyncServerReplacer>(entry.fn)();
-        } else {
-            future_val = std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
-        }
-        replaced_val = future_val.get(); // Block for async result in sync call
-        if (!replaced_val.empty() || allowEmpty) {
-            replaced = true;
+        try {
+            if (std::holds_alternative<AsyncServerReplacer>(entry.fn)) {
+                future_val = std::get<AsyncServerReplacer>(entry.fn)();
+            } else {
+                future_val = std::get<AsyncServerReplacerWithParams>(entry.fn)(params);
+            }
+            replaced_val = future_val.get(); // Block for async result in sync call
+            if (!replaced_val.empty() || allowEmpty) {
+                replaced = true;
+            }
+        } catch (const std::exception& e) {
+            logger.error("AsyncServer replacer threw an exception: {}", e.what());
+            replaced_val = "";
+        } catch (...) {
+            logger.error("AsyncServer replacer threw an unknown exception.");
+            replaced_val = "";
         }
         break;
     }
@@ -1007,14 +1071,22 @@ std::string PlaceholderManager::executeFoundReplacer(
         const auto& entry = std::get<PlaceholderRegistry::AsyncTypedReplacer>(match.entry);
         if (p) {
             std::future<std::string> future_val;
-            if (std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)) {
-                future_val = std::get<AsyncAnyPtrReplacer>(entry.fn)(p);
-            } else {
-                future_val = std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(p, params);
-            }
-            replaced_val = future_val.get(); // Block for async result in sync call
-            if (!replaced_val.empty() || allowEmpty) {
-                replaced = true;
+            try {
+                if (std::holds_alternative<AsyncAnyPtrReplacer>(entry.fn)) {
+                    future_val = std::get<AsyncAnyPtrReplacer>(entry.fn)(p);
+                } else {
+                    future_val = std::get<AsyncAnyPtrReplacerWithParams>(entry.fn)(p, params);
+                }
+                replaced_val = future_val.get(); // Block for async result in sync call
+                if (!replaced_val.empty() || allowEmpty) {
+                    replaced = true;
+                }
+            } catch (const std::exception& e) {
+                logger.error("AsyncContext replacer threw an exception: {}", e.what());
+                replaced_val = "";
+            } catch (...) {
+                logger.error("AsyncContext replacer threw an unknown exception.");
+                replaced_val = "";
             }
         }
         break;
