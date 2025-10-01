@@ -8,6 +8,7 @@
 * **配置**
   * [配置文件 (config.json)](config/config.md)
   
-* **开发者 API**
-  * [插件 API](api/API.md)
-  * [PlaceholderAPI 系统](api/PlaceholderAPI.md)
+* **开发者**
+  * [API 文档](api/PlaceholderAPI.md)
+
+* [**更新日志**](CHANGELOG.md)
