@@ -1231,7 +1231,28 @@ std::string PlaceholderManager::executePlaceholder(
     std::string                  cacheKey;
     std::optional<CacheDuration> cacheDuration = cache_duration_override;
     bool                         hasCandidate  = match.type != PlaceholderRegistry::PlaceholderType::None;
-
+    if (!hasCandidate) {
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn(
+                "Plaeholder '{}:{}' not found. Using default value.",
+                std::string(pluginName),
+                std::string(placeholderName)
+            );
+        }
+        if (!defaultText.empty()) {
+            return defaultText;
+        }
+        // 与现有调试行为保持一致：若默认值为空且 debug 开启，回显原始占位符文本
+        if (ConfigManager::getInstance().get().debugMode) {
+            std::string out;
+            out.reserve(pluginName.size() + placeholderName.size() + paramString.size() + 4);
+            out.append("{").append(pluginName).append(":").append(placeholderName);
+            if (!paramString.empty()) out.append("|").append(paramString);
+            out.append("}");
+            return out;
+        }
+        return ""; // 无默认值且非 debug 模式
+    }
     if (hasCandidate) {
         cacheKey = buildCacheKey(ctx, pluginName, placeholderName, paramString, match.strategy);
 
