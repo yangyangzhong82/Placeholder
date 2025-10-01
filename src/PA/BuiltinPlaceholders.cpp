@@ -14,21 +14,21 @@
 namespace PA {
 
 void registerBuiltinPlaceholders(PlaceholderManager& manager) {
-    manager.registerPlaceholder("{player_name}", [](Player* player) -> std::string {
+    manager.registerPlayerPlaceholder("{player_name}", [](Player* player) -> std::string {
         return player ? player->getRealName() : "";
     });
 
-    manager.registerPlaceholder("{online_players}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{online_players}", []() -> std::string {
         auto level = ll::service::getLevel();
         return level ? std::to_string(level->getActivePlayerCount()) : std::string("0");
     });
 
-    manager.registerPlaceholder("{max_players}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{max_players}", []() -> std::string {
         auto level = ll::service::getLevel();
         return level ? std::to_string(level->getActivePlayerCount()) : std::string("0");
     });
 
-    manager.registerPlaceholder("{ping}", [](Player* player) -> std::string {
+    manager.registerPlayerPlaceholder("{ping}", [](Player* player) -> std::string {
         if (player) {
             if (auto networkStatus = player->getNetworkStatus()) {
                 return std::to_string(networkStatus->mAveragePing);
@@ -37,7 +37,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::string("0");
     });
 
-    manager.registerPlaceholder("{time}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{time}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -51,7 +51,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return ss.str();
     });
 
-    manager.registerPlaceholder("{year}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{year}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -63,7 +63,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::to_string(buf.tm_year + 1900);
     });
 
-    manager.registerPlaceholder("{month}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{month}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -75,7 +75,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::to_string(buf.tm_mon + 1);
     });
 
-    manager.registerPlaceholder("{day}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{day}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -87,7 +87,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::to_string(buf.tm_mday);
     });
 
-    manager.registerPlaceholder("{hour}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{hour}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -99,7 +99,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::to_string(buf.tm_hour);
     });
 
-    manager.registerPlaceholder("{minute}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{minute}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;
@@ -111,7 +111,7 @@ void registerBuiltinPlaceholders(PlaceholderManager& manager) {
         return std::to_string(buf.tm_min);
     });
 
-    manager.registerPlaceholder("{second}", [](Player* /*player*/) -> std::string {
+    manager.registerServerPlaceholder("{second}", []() -> std::string {
         auto    now       = std::chrono::system_clock::now();
         auto    in_time_t = std::chrono::system_clock::to_time_t(now);
         std::tm buf;

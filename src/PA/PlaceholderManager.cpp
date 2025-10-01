@@ -21,23 +21,42 @@ PlaceholderManager& PlaceholderManager::getInstance() {
 
 PlaceholderManager::PlaceholderManager() {}
 
-void PlaceholderManager::registerPlaceholder(
+void PlaceholderManager::registerPlayerPlaceholder(
     const std::string&                  placeholder,
     std::function<std::string(Player*)> replacer
 ) {
-    mPlaceholders[placeholder] = replacer;
+    mPlayerPlaceholders[placeholder] = replacer;
+}
+
+void PlaceholderManager::registerServerPlaceholder(
+    const std::string&                placeholder,
+    std::function<std::string()> replacer
+) {
+    mServerPlaceholders[placeholder] = replacer;
 }
 
 std::string PlaceholderManager::replacePlaceholders(const std::string& text, Player* player) {
     std::string result = text;
-    for (const auto& pair : mPlaceholders) {
+
+    // 替换玩家占位符
+    for (const auto& pair : mPlayerPlaceholders) {
         size_t pos = result.find(pair.first);
         while (pos != std::string::npos) {
             result.replace(pos, pair.first.length(), pair.second(player));
             pos = result.find(pair.first, pos + pair.second(player).length());
         }
     }
+
+    // 替换服务器占位符
+    for (const auto& pair : mServerPlaceholders) {
+        size_t pos = result.find(pair.first);
+        while (pos != std::string::npos) {
+            result.replace(pos, pair.first.length(), pair.second());
+            pos = result.find(pair.first, pos + pair.second().length());
+        }
+    }
+
     return result;
 }
 
-} // namespace Sidebar
+} // namespace PA
