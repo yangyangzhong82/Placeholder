@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>项目文档</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="description" content="项目文档描述">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css"> </head>
+<body>
+  <div id="app">加载中...</div>
+
+  <script>
+    // Docsify 配置
+    window.$docsify = {
+      name: '项目名称', // 文档标题，会显示在侧边栏顶部
+      repo: 'your-github-username/your-repo', // 你的 GitHub 仓库地址，会在右上角显示 GitHub 角标
+      loadSidebar: true, // 加载侧边栏，会寻找 _sidebar.md 文件
+      subMaxLevel: 3, // 侧边栏自动生成的目录最大层级
+      auto2top: true, // 切换页面后自动滚动到顶部
+      search: { // 搜索配置
+        maxAge: 86400000, // 过期时间，单位毫秒，默认一天
+        paths: 'auto', // 'auto' 自动根据侧边栏生成路径 | 或者指定路径数组 ['/', '/guide/', '/api/']
+        placeholder: '搜索文档',
+        noData: '找不到结果',
+        // 搜索标题的最大层级, 1 - 6
+        depth: 4,
+      },
+      // (可选) 启用封面页
+      // coverpage: true,
+      // (可选) 启用导航栏
+      // loadNavbar: true,
+    }
+  </script>
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-javascript.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-copy-code/dist/docsify-copy-code.min.js"></script>
+</body>
+</html>
