@@ -12,7 +12,7 @@
 #include <charconv>
 #include <regex>
 
-#include "fast_float/fast_float.h"
+#include <fast_float/fast_float.h>
 #include <unicode/uchar.h>
 #include <unicode/unistr.h>
 
