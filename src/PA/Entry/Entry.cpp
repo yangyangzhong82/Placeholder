@@ -1,6 +1,7 @@
 #include "PA/Entry/Entry.h"
 
 #include "PA/BuiltinPlaceholders.h"
+#include "PA/PlaceholderManager.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include "PA/Config/ConfigManager.h" // 引入 ConfigManager
 
@@ -14,7 +15,9 @@ Entry& Entry::getInstance() {
 bool Entry::load() {
     getSelf().getLogger().debug("Loading...");
     ConfigManager::getInstance().load((getSelf().getConfigDir() / "config.json").string());
-    registerBuiltinPlaceholders();
+
+    registerBuiltinPlaceholders(PlaceholderManager::getInstance());
+
     return true;
 }
 
