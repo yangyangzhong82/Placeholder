@@ -825,6 +825,54 @@ std::optional<double> evalMathExpression(
     return expression.value();
 }
 
+// Lua Scripting
+std::optional<std::string> evalLuaScript(
+    const std::string& script, const ParsedParams& params, std::optional<double> current_val, const std::string& raw_value
+) {
+    sol::state lua;
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::math, sol::lib::table);
+
+    // Bind variables
+    lua["_"] = current_val;
+    lua["raw"] = raw_value;
+
+    // Bind params as a table
+    sol::table params_table = lua.create_table();
+    for (const auto& [key, value] : params.getRawParams()) {
+        params_table[key] = value;
+    }
+    lua["params"] = params_table;
+
+    try {
+        auto result = lua.safe_script(script);
+        if (result.valid()) {
+            sol::object res_obj = result;
+            if (res_obj.is<std::string>()) {
+                return res_obj.as<std::string>();
+            } else if (res_obj.is<double>() || res_obj.is<int64_t>()) {
+                return std::to_string(res_obj.as<double>());
+            } else if (res_obj.is<bool>()) {
+                return res_obj.as<bool>() ? "true" : "false";
+            } else if (res_obj.is<sol::nil_t>()) {
+                return std::nullopt;
+            }
+        } else {
+            sol::error err = result;
+            if (ConfigManager::getInstance().get().debugMode) {
+                logger.warn("Lua script failed to execute. Error: {}", err.what());
+            }
+            return std::nullopt;
+        }
+    } catch (const sol::error& e) {
+        if (ConfigManager::getInstance().get().debugMode) {
+            logger.warn("Lua script threw an exception. Error: {}", e.what());
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+
 // 辅助函数：处理条件 if/then/else
 void applyConditionalFormatting(
     std::string&                 out,
@@ -1243,10 +1291,31 @@ void applyTextEffects(std::string& out, const PA::Utils::ParsedParams& params) {
 
 // 新接口
 std::string applyFormatting(const std::string& rawValue, const PA::Utils::ParsedParams& params) {
-    auto maybeBool = PA::Utils::parseBoolish(rawValue);
+    std::string out = rawValue;
     auto maybeNum  = PA::Utils::parseDouble(rawValue);
 
-    std::string out = rawValue;
+    // Lua script evaluation as the first step
+    if (auto script = params.get("lua")) {
+        auto result = evalLuaScript(std::string(*script), params, maybeNum, rawValue);
+        if (result) {
+            out = *result;
+        } else {
+            if (auto onerror = params.get("onerror")) {
+                auto action = trim(std::string(*onerror));
+                if (iequals(action, "empty")) {
+                    return "";
+                }
+                if (action.size() > 5 && iequals(action.substr(0, 5), "text:")) {
+                    return trim(action.substr(5));
+                }
+            }
+            // Default is "keep", so `out` remains `rawValue`.
+        }
+    }
+
+    // Re-parse numbers/bools from the (potentially modified) `out` string
+    auto maybeBool = PA::Utils::parseBoolish(out);
+    maybeNum       = PA::Utils::parseDouble(out);
 
     applyConditionalFormatting(out, rawValue, maybeNum, params);
     applyBooleanFormatting(out, maybeBool, params);

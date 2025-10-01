@@ -16,6 +16,8 @@
 #include <unicode/uchar.h>
 #include <unicode/unistr.h>
 
+#include "sol/sol.hpp"
+
 
 namespace PA::Utils {
 
@@ -175,6 +177,11 @@ inline double math_max(double a, double b);
 // 数学表达式求值
 std::optional<double> evalMathExpression(
     const std::string& expression, const ParsedParams& params, std::optional<double> current = std::nullopt
+);
+
+// Lua Scripting
+std::optional<std::string> evalLuaScript(
+    const std::string& script, const ParsedParams& params, std::optional<double> current_val, const std::string& raw_value
 );
 
 // 辅助函数：处理条件 if/then/else
