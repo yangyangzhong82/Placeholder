@@ -608,7 +608,7 @@ private:
     std::unique_ptr<ThreadPool> mAsyncThreadPool;
 
     // For request coalescing
-    mutable std::mutex                                                  mFuturesMutex;
+    mutable std::recursive_mutex                                        mFuturesMutex;
     mutable std::unordered_map<std::string, std::shared_future<std::string>> mComputingFutures;
 
     int  mMaxRecursionDepth{12};

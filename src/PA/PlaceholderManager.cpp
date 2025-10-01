@@ -1342,8 +1342,8 @@ std::string PlaceholderManager::executePlaceholder(
     // 3. Request Coalescing: 检查是否有其他线程正在计算
     std::shared_future<std::string> existingFuture;
     {
-        std::lock_guard<std::mutex> lock(mFuturesMutex);
-        auto                        fit = mComputingFutures.find(cacheKey);
+        std::lock_guard<std::recursive_mutex> lock(mFuturesMutex);
+        auto                                  fit = mComputingFutures.find(cacheKey);
         if (fit != mComputingFutures.end()) {
             existingFuture = fit->second;
         }
@@ -1375,9 +1375,9 @@ std::string PlaceholderManager::executePlaceholder(
     std::promise<std::string>       promise;
     std::shared_future<std::string> ourFuture;
     {
-        std::lock_guard<std::mutex> lock(mFuturesMutex);
+        std::lock_guard<std::recursive_mutex> lock(mFuturesMutex);
         // 双重检查，防止竞态
-        auto fit = mComputingFutures.find(cacheKey);
+        auto                                  fit = mComputingFutures.find(cacheKey);
         if (fit != mComputingFutures.end()) {
             ourFuture = fit->second;
         } else {
@@ -1401,7 +1401,7 @@ std::string PlaceholderManager::executePlaceholder(
         const std::string&  key;
 
         ~FutureCleanup() {
-            std::lock_guard<std::mutex> lock(manager.mFuturesMutex);
+            std::lock_guard<std::recursive_mutex> lock(manager.mFuturesMutex);
             manager.mComputingFutures.erase(key);
         }
     };
