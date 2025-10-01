@@ -154,11 +154,18 @@ public:
         std::optional<CacheDuration>             cache_duration = std::nullopt,
         CacheKeyStrategy                         strategy       = CacheKeyStrategy::Default
     ) {
-        auto                     targetId     = mTypeSystem->ensureTypeId(typeKey<T>());
-        auto                     relationalId = mTypeSystem->ensureTypeId(typeKey<T_Rel>());
+        static_assert(
+            !std::is_same_v<T, void> && !std::is_same_v<T_Rel, void>,
+            "void* is not allowed as a type argument for type-safe placeholder registration."
+        );
+        auto targetId     = mTypeSystem->ensureTypeId(typeKey<T>());
+        auto relationalId = mTypeSystem->ensureTypeId(typeKey<T_Rel>());
+
         AnyPtrRelationalReplacer fn = [r = std::move(replacer)](void* p, void* p_rel) -> std::string {
             if (!p || !p_rel) return std::string{};
-            return r(reinterpret_cast<T*>(p), reinterpret_cast<T_Rel*>(p_rel));
+            // The pointers p and p_rel are from the type system, which might have been upcasted.
+            // We trust the type system and perform a static_cast, which is safer than reinterpret_cast.
+            return r(static_cast<T*>(p), static_cast<T_Rel*>(p_rel));
         };
         mRegistry->registerRelationalPlaceholderForTypeId(
             pluginName,
@@ -179,12 +186,16 @@ public:
         std::optional<CacheDuration>                                         cache_duration = std::nullopt,
         CacheKeyStrategy                                                     strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(
+            !std::is_same_v<T, void> && !std::is_same_v<T_Rel, void>,
+            "void* is not allowed as a type argument for type-safe placeholder registration."
+        );
         auto targetId     = mTypeSystem->ensureTypeId(typeKey<T>());
         auto relationalId = mTypeSystem->ensureTypeId(typeKey<T_Rel>());
         AnyPtrRelationalReplacerWithParams fn =
             [r = std::move(replacer)](void* p, void* p_rel, const Utils::ParsedParams& params) -> std::string {
             if (!p || !p_rel) return std::string{};
-            return r(reinterpret_cast<T*>(p), reinterpret_cast<T_Rel*>(p_rel), params);
+            return r(static_cast<T*>(p), static_cast<T_Rel*>(p_rel), params);
         };
         mRegistry->registerRelationalPlaceholderForTypeId(
             pluginName,
@@ -216,10 +227,11 @@ public:
         std::optional<CacheDuration>     cache_duration = std::nullopt,
         CacheKeyStrategy                 strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto           targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::string {
             if (!p) return std::string{};
-            return r(reinterpret_cast<T*>(p));
+            return r(static_cast<T*>(p));
         };
         mRegistry->registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
@@ -232,6 +244,7 @@ public:
         std::optional<CacheDuration>                  cache_duration = std::nullopt,
         CacheKeyStrategy                              strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacer fn       = [r = std::move(replacer)](void* p) -> std::future<std::string> {
             if (!p) {
@@ -239,7 +252,7 @@ public:
                 promise.set_value({});
                 return promise.get_future();
             }
-            return r(reinterpret_cast<T*>(p));
+            return r(static_cast<T*>(p));
         };
         mRegistry->registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
@@ -250,11 +263,12 @@ public:
         const std::string&                                 placeholder,
         std::function<std::string(T*, std::string_view)>&& replacer
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                     targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
-            return r(reinterpret_cast<T*>(p), {});
+            return r(static_cast<T*>(p), {});
         };
         mRegistry->registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn));
     }
@@ -267,11 +281,12 @@ public:
         std::optional<CacheDuration>                                 cache_duration = std::nullopt,
         CacheKeyStrategy                                             strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                     targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::string {
             if (!p) return std::string{};
-            return r(reinterpret_cast<T*>(p), params);
+            return r(static_cast<T*>(p), params);
         };
         mRegistry->registerPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
@@ -284,6 +299,7 @@ public:
         std::optional<CacheDuration>                                              cache_duration = std::nullopt,
         CacheKeyStrategy                                                          strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                          targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AsyncAnyPtrReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::future<std::string> {
@@ -292,26 +308,31 @@ public:
                 promise.set_value({});
                 return promise.get_future();
             }
-            return r(reinterpret_cast<T*>(p), params);
+            return r(static_cast<T*>(p), params);
         };
         mRegistry->registerAsyncPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
-    PA_API void registerPlaceholderForTypeKey(
+    [[deprecated("Use the type-safe template overload, e.g., registerPlaceholder<T>(...), instead.")]] PA_API void
+    registerPlaceholderForTypeKey(
         const std::string& pluginName,
         const std::string& placeholder,
         const std::string& typeKeyStr,
         AnyPtrReplacer     replacer
     );
 
-    PA_API void registerPlaceholderForTypeKeyWithParams(
+    [[deprecated("Use the type-safe template overload, e.g., registerPlaceholderWithParams<T>(...), instead.")]] PA_API void
+    registerPlaceholderForTypeKeyWithParams(
         const std::string&         pluginName,
         const std::string&         placeholder,
         const std::string&         typeKeyStr,
         AnyPtrReplacerWithParams&& replacer
     );
 
-    PA_API void registerRelationalPlaceholderForTypeKey(
+    [[deprecated(
+        "Use the type-safe template overload, e.g., registerRelationalPlaceholder<T, T_Rel>(...), instead."
+    )]] PA_API void
+    registerRelationalPlaceholderForTypeKey(
         const std::string&           pluginName,
         const std::string&           placeholder,
         const std::string&           typeKeyStr,
@@ -321,7 +342,10 @@ public:
         CacheKeyStrategy             strategy       = CacheKeyStrategy::Default
     );
 
-    PA_API void registerRelationalPlaceholderForTypeKeyWithParams(
+    [[deprecated(
+        "Use the type-safe template overload, e.g., registerRelationalPlaceholderWithParams<T, T_Rel>(...), instead."
+    )]] PA_API void
+    registerRelationalPlaceholderForTypeKeyWithParams(
         const std::string&                   pluginName,
         const std::string&                   placeholder,
         const std::string&                   typeKeyStr,
@@ -355,10 +379,11 @@ public:
         std::optional<CacheDuration>                           cache_duration = std::nullopt,
         CacheKeyStrategy                                       strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                   targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrObjectListReplacer fn     = [r = std::move(replacer)](void* p) -> std::vector<PlaceholderContext> {
             if (!p) return {};
-            return r(reinterpret_cast<T*>(p));
+            return r(static_cast<T*>(p));
         };
         mRegistry->registerObjectListPlaceholderForTypeId(
             pluginName,
@@ -378,11 +403,12 @@ public:
         std::optional<CacheDuration>                                                 cache_duration = std::nullopt,
         CacheKeyStrategy                                                             strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrObjectListReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::vector<PlaceholderContext> {
             if (!p) return {};
-            return r(reinterpret_cast<T*>(p), params);
+            return r(static_cast<T*>(p), params);
         };
         mRegistry->registerObjectListPlaceholderForTypeId(
             pluginName,
@@ -418,10 +444,11 @@ public:
         std::optional<CacheDuration>                         cache_duration = std::nullopt,
         CacheKeyStrategy                                     strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto               targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrListReplacer fn       = [r = std::move(replacer)](void* p) -> std::vector<std::string> {
             if (!p) return {};
-            return r(reinterpret_cast<T*>(p));
+            return r(static_cast<T*>(p));
         };
         mRegistry->registerListPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
@@ -434,23 +461,28 @@ public:
         std::optional<CacheDuration>                                             cache_duration = std::nullopt,
         CacheKeyStrategy                                                         strategy       = CacheKeyStrategy::Default
     ) {
+        static_assert(!std::is_same_v<T, void>, "void* is not allowed as a type argument for type-safe placeholder registration.");
         auto                         targetId = mTypeSystem->ensureTypeId(typeKey<T>());
         AnyPtrListReplacerWithParams fn =
             [r = std::move(replacer)](void* p, const Utils::ParsedParams& params) -> std::vector<std::string> {
             if (!p) return {};
-            return r(reinterpret_cast<T*>(p), params);
+            return r(static_cast<T*>(p), params);
         };
         mRegistry->registerListPlaceholderForTypeId(pluginName, placeholder, targetId, std::move(fn), cache_duration, strategy);
     }
 
-    PA_API void registerAsyncPlaceholderForTypeKey(
+    [[deprecated("Use the type-safe template overload, e.g., registerAsyncPlaceholder<T>(...), instead.")]] PA_API void
+    registerAsyncPlaceholderForTypeKey(
         const std::string&    pluginName,
         const std::string&    placeholder,
         const std::string&    typeKeyStr,
         AsyncAnyPtrReplacer&& replacer
     );
 
-    PA_API void registerAsyncPlaceholderForTypeKeyWithParams(
+    [[deprecated(
+        "Use the type-safe template overload, e.g., registerAsyncPlaceholderWithParams<T>(...), instead."
+    )]] PA_API void
+    registerAsyncPlaceholderForTypeKeyWithParams(
         const std::string&              pluginName,
         const std::string&              placeholder,
         const std::string&              typeKeyStr,
@@ -459,10 +491,14 @@ public:
 
     template <typename Derived, typename Base>
     void registerInheritance() {
+        static_assert(
+            std::is_base_of_v<Base, Derived>,
+            "In registerInheritance<Derived, Base>, Base must be a public base of Derived."
+        );
         mTypeSystem->registerInheritanceByKeys(
             typeKey<Derived>(),
             typeKey<Base>(),
-            +[](void* p) -> void* { return static_cast<Base*>(reinterpret_cast<Derived*>(p)); }
+            +[](void* p) -> void* { return static_cast<Base*>(static_cast<Derived*>(p)); }
         );
     }
 

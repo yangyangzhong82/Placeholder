@@ -51,12 +51,12 @@ PlaceholderManager& PlaceholderManager::getInstance() {
     return instance;
 }
 
-PlaceholderManager::PlaceholderManager() :
-    mTypeSystem(std::make_shared<PlaceholderTypeSystem>()),
-    mRegistry(std::make_shared<PlaceholderRegistry>(mTypeSystem)),
-    mGlobalCache(ConfigManager::getInstance().get().globalCacheSize),
-    mCompileCache(ConfigManager::getInstance().get().globalCacheSize),
-    mParamsCache(ConfigManager::getInstance().get().globalCacheSize) {
+PlaceholderManager::PlaceholderManager()
+: mTypeSystem(std::make_shared<PlaceholderTypeSystem>()),
+  mRegistry(std::make_shared<PlaceholderRegistry>(mTypeSystem)),
+  mGlobalCache(ConfigManager::getInstance().get().globalCacheSize),
+  mCompileCache(ConfigManager::getInstance().get().globalCacheSize),
+  mParamsCache(ConfigManager::getInstance().get().globalCacheSize) {
     unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
     if (hardwareConcurrency == 0) {
         hardwareConcurrency = 2; // 硬件并发未知时的默认值
@@ -64,8 +64,8 @@ PlaceholderManager::PlaceholderManager() :
 
     mCombinerThreadPool = std::make_unique<ThreadPool>(1); // 合并线程池只需要一个线程
 
-    const auto&  config        = ConfigManager::getInstance().get();
-    int          asyncPoolSize = config.asyncThreadPoolSize;
+    const auto& config        = ConfigManager::getInstance().get();
+    int         asyncPoolSize = config.asyncThreadPoolSize;
     if (asyncPoolSize <= 0) {
         asyncPoolSize = hardwareConcurrency;
     }
@@ -128,7 +128,8 @@ void PlaceholderManager::registerServerPlaceholderWithParams(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    mRegistry->registerServerPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
+    mRegistry
+        ->registerServerPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
 
@@ -186,7 +187,13 @@ void PlaceholderManager::registerAsyncServerPlaceholderWithParams(
     std::optional<CacheDuration>    cache_duration,
     CacheKeyStrategy                strategy
 ) {
-    mRegistry->registerAsyncServerPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
+    mRegistry->registerAsyncServerPlaceholderWithParams(
+        pluginName,
+        placeholder,
+        std::move(replacer),
+        cache_duration,
+        strategy
+    );
 }
 
 
@@ -425,6 +432,12 @@ PlaceholderManager::replacePlaceholdersAsync(const CompiledTemplate& tpl, const 
                         continue;
                     }
                 }
+                // 新增：处理 %% 转义
+                if (i + 1 < text.size() && text[i] == '%' && text[i + 1] == '%') {
+                    unescaped.push_back('%');
+                    i++; // Skip the second brace
+                    continue;
+                }
                 unescaped.push_back(text[i]);
             }
             p.set_value(std::move(unescaped));
@@ -560,6 +573,12 @@ PlaceholderManager::replacePlaceholdersSync(const CompiledTemplate& tpl, const P
                         continue;
                     }
                 }
+                // 新增：处理 %% 转义
+                if (i + 1 < text.size() && text[i] == '%' && text[i + 1] == '%') {
+                    result.push_back('%');
+                    i++; // 跳过第二个 %
+                    continue;
+                }
                 result.push_back(text[i]);
             }
         } else if (auto* placeholder = std::get_if<PlaceholderToken>(&token)) {
@@ -655,9 +674,11 @@ CompiledTemplate PlaceholderManager::compileTemplate(const std::string& text) {
             while (literalEnd < n) {
                 if (s[literalEnd] == '%' && literalEnd + 1 < n && s[literalEnd + 1] == '%') {
                     literalEnd += 2;
-                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '{' && literalEnd + 1 < n && s[literalEnd + 1] == '{') {
+                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '{' && literalEnd + 1 < n
+                           && s[literalEnd + 1] == '{') {
                     literalEnd += 2;
-                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '}' && literalEnd + 1 < n && s[literalEnd + 1] == '}') {
+                } else if (mEnableDoubleBraceEscape && s[literalEnd] == '}' && literalEnd + 1 < n
+                           && s[literalEnd + 1] == '}') {
                     literalEnd += 2;
                 } else {
                     break;
@@ -835,7 +856,13 @@ void PlaceholderManager::registerServerListPlaceholderWithParams(
     std::optional<CacheDuration>   cache_duration,
     CacheKeyStrategy               strategy
 ) {
-    mRegistry->registerServerListPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
+    mRegistry->registerServerListPlaceholderWithParams(
+        pluginName,
+        placeholder,
+        std::move(replacer),
+        cache_duration,
+        strategy
+    );
 }
 
 
@@ -848,7 +875,8 @@ void PlaceholderManager::registerServerObjectListPlaceholder(
     std::optional<CacheDuration> cache_duration,
     CacheKeyStrategy             strategy
 ) {
-    mRegistry->registerServerObjectListPlaceholder(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
+    mRegistry
+        ->registerServerObjectListPlaceholder(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
 }
 
 void PlaceholderManager::registerServerObjectListPlaceholderWithParams(
@@ -858,7 +886,13 @@ void PlaceholderManager::registerServerObjectListPlaceholderWithParams(
     std::optional<CacheDuration>         cache_duration,
     CacheKeyStrategy                     strategy
 ) {
-    mRegistry->registerServerObjectListPlaceholderWithParams(pluginName, placeholder, std::move(replacer), cache_duration, strategy);
+    mRegistry->registerServerObjectListPlaceholderWithParams(
+        pluginName,
+        placeholder,
+        std::move(replacer),
+        cache_duration,
+        strategy
+    );
 }
 
 
@@ -975,7 +1009,8 @@ std::string PlaceholderManager::executeFoundReplacer(
                     if (!template_str.empty()) {
                         auto compiled_template = compileTemplate(template_str);
                         for (const auto& obj_ctx : object_list) {
-                            replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1));
+                            replaced_objects.push_back(replacePlaceholdersSync(compiled_template, obj_ctx, st.depth + 1)
+                            );
                         }
                     } else {
                         for (const auto& obj_ctx : object_list) {
@@ -1016,7 +1051,7 @@ std::string PlaceholderManager::executeFoundReplacer(
         break;
     }
     case PlaceholderRegistry::PlaceholderType::ListServer: {
-        const auto& entry = std::get<PlaceholderRegistry::ServerListReplacerEntry>(match.entry);
+        const auto&              entry = std::get<PlaceholderRegistry::ServerListReplacerEntry>(match.entry);
         std::vector<std::string> result_list;
         try {
             if (std::holds_alternative<ServerListReplacer>(entry.fn)) {
@@ -1078,7 +1113,7 @@ std::string PlaceholderManager::executeFoundReplacer(
         break;
     }
     case PlaceholderRegistry::PlaceholderType::AsyncServer: {
-        const auto& entry = std::get<PlaceholderRegistry::AsyncServerReplacerEntry>(match.entry);
+        const auto&              entry = std::get<PlaceholderRegistry::AsyncServerReplacerEntry>(match.entry);
         std::future<std::string> future_val;
         try {
             if (std::holds_alternative<AsyncServerReplacer>(entry.fn)) {
@@ -1134,20 +1169,20 @@ std::string PlaceholderManager::executeFoundReplacer(
 
 // [新] 私有辅助函数：应用格式化、处理缓存和日志记录
 std::string PlaceholderManager::applyFormattingAndCache(
-    const std::string&                   originalResult,
-    const Utils::ParsedParams&           params,
-    const std::string&                   defaultText,
-    bool                                 allowEmpty,
-    const std::string&                   cacheKey,
-    std::optional<CacheDuration>         cacheDuration,
-    PlaceholderRegistry::PlaceholderType type,
+    const std::string&                    originalResult,
+    const Utils::ParsedParams&            params,
+    const std::string&                    defaultText,
+    bool                                  allowEmpty,
+    const std::string&                    cacheKey,
+    std::optional<CacheDuration>          cacheDuration,
+    PlaceholderRegistry::PlaceholderType  type,
     std::chrono::steady_clock::time_point startTime,
-    ReplaceState&                        st,
-    std::string_view                     pluginName,
-    std::string_view                     placeholderName,
-    const std::string&                   paramString,
-    const PlaceholderContext&            ctx,
-    bool                                 replaced
+    ReplaceState&                         st,
+    std::string_view                      pluginName,
+    std::string_view                      placeholderName,
+    const std::string&                    paramString,
+    const PlaceholderContext&             ctx,
+    bool                                  replaced
 ) {
     std::string formatted_val;
     if (replaced) {
@@ -1431,26 +1466,28 @@ std::future<std::string> PlaceholderManager::executePlaceholderAsync(
     const PlaceholderContext&    ctx,
     std::optional<CacheDuration> cache_duration_override
 ) {
-    return mAsyncThreadPool->enqueue([this,
-                                      pluginName = std::string(pluginName),
-                                      placeholderName = std::string(placeholderName),
-                                      paramString,
-                                      defaultText,
-                                      ctx,
-                                      cache_duration_override]() -> std::string {
-        ReplaceState st; // Create a state for this async execution
-        // We are now on an async thread, so we can execute synchronously.
-        // The overall operation remains asynchronous from the caller's perspective.
-        return executePlaceholder(
-            pluginName,
-            placeholderName,
-            paramString,
-            defaultText,
-            ctx,
-            st,
-            cache_duration_override
-        );
-    });
+    return mAsyncThreadPool->enqueue(
+        [this,
+         pluginName      = std::string(pluginName),
+         placeholderName = std::string(placeholderName),
+         paramString,
+         defaultText,
+         ctx,
+         cache_duration_override]() -> std::string {
+            ReplaceState st; // Create a state for this async execution
+            // We are now on an async thread, so we can execute synchronously.
+            // The overall operation remains asynchronous from the caller's perspective.
+            return executePlaceholder(
+                pluginName,
+                placeholderName,
+                paramString,
+                defaultText,
+                ctx,
+                st,
+                cache_duration_override
+            );
+        }
+    );
 }
 
 // [新] 使用编译模板进行替换
