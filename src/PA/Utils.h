@@ -4,19 +4,11 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <variant>
 #include <vector>
 #include <utility>
 #include <algorithm>
 #include <cctype>
 #include <charconv>
-#include <regex>
-
-#include <fast_float/fast_float.h>
-#include <unicode/uchar.h>
-#include <unicode/unistr.h>
-
-#include "sol/sol.hpp"
 
 
 namespace PA::Utils {
@@ -69,16 +61,7 @@ inline std::optional<int> parseInt(const std::string& s) {
     return std::nullopt;
 }
 
-inline std::optional<double> parseDouble(const std::string& s) {
-    auto t = trim(s);
-    if (t.empty()) return std::nullopt;
-    double v     = 0.0;
-    auto   first = t.data();
-    auto   last  = t.data() + t.size();
-    auto   res   = fast_float::from_chars(first, last, v);
-    if (res.ec == std::errc() && res.ptr == last) return v;
-    return std::nullopt;
-}
+std::optional<double> parseDouble(const std::string& s);
 
 inline std::optional<bool> parseBoolish(const std::string& s) {
     auto v = toLower(trim(s));

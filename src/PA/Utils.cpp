@@ -1,11 +1,14 @@
 #include "Utils.h"
 
+#include <fast_float/fast_float.h>
 #include <unicode/brkiter.h>
 #include <unicode/locid.h>
 #include <unicode/uchar.h>
 #include <unicode/unistr.h>
 #include <unicode/utf8.h>
 #include <utf8.h>
+#include <regex>
+#include "sol/sol.hpp"
 
 #include "exprtk.hpp"
 #include <algorithm>
@@ -25,6 +28,17 @@
 #include "PA/logger.h"               // 引入 logger
 
 namespace PA::Utils {
+
+std::optional<double> parseDouble(const std::string& s) {
+    auto   t     = trim(s);
+    if (t.empty()) return std::nullopt;
+    double v     = 0.0;
+    auto   first = t.data();
+    auto   last  = t.data() + t.size();
+    auto   res   = fast_float::from_chars(first, last, v);
+    if (res.ec == std::errc() && res.ptr == last) return v;
+    return std::nullopt;
+}
 
 // 内部使用的参数解析实现
 static std::unordered_map<std::string, std::string>
