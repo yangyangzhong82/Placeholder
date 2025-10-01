@@ -86,7 +86,12 @@ private:
         bool                success; // 是否成功找到路径。
         std::vector<Caster> chain;   // 转换函数链。
     };
+    // 并查集：把等价的 typeId 合并为同一代表 id（root）
+    mutable std::unordered_map<std::size_t, std::size_t> mUnionParent;
 
+    // 在持锁前提下使用的内部工具（不做路径压缩，避免在 shared_lock 下写入）
+    std::size_t findRootNoLock(std::size_t x) const;
+    void        uniteNoLock(std::size_t a, std::size_t b);
     // 类型系统映射：类型键字符串 <-> 类型ID
     std::unordered_map<std::string, std::size_t> mTypeKeyToId; // 类型键到ID的映射。
     std::unordered_map<std::size_t, std::string> mIdToTypeKey; // ID到类型键的映射。

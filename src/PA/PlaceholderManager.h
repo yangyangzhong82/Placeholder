@@ -36,17 +36,56 @@ class ParsedParams; // 前向声明参数解析类
 } // namespace Utils
 
 /**
- * @brief 提供一个编译期稳定的“类型键”字符串（跨插件一致，且不依赖 RTTI）
- * @tparam T 要获取类型键的类型
- * @return 代表该类型的唯一字符串
+ * @brief 提供一个跨 DLL 稳定的“类型键”（不依赖 RTTI）
+ *        做法：从编译器的函数签名里提取类型名核心，去掉 class/struct/enum 等噪声。
  */
 template <typename T>
 inline std::string typeKey() {
 #if defined(_MSC_VER)
-    return __FUNCSIG__; // MSVC 编译器特有的函数签名宏
+    std::string_view sig = __FUNCSIG__;
+    // 形如：std::string __cdecl PA::typeKey<struct foo::Bar>(void)
+    auto             lb   = sig.find('<');
+    auto             rb   = sig.rfind('>');
+    std::string_view core = (lb != std::string_view::npos && rb != std::string_view::npos && rb > lb)
+                              ? sig.substr(lb + 1, rb - lb - 1)
+                              : sig;
 #else
-    return __PRETTY_FUNCTION__; // GCC/Clang 编译器特有的函数签名宏
+    std::string_view sig = __PRETTY_FUNCTION__;
+    // 形如：std::string PA::typeKey() [with T = foo::Bar]
+    constexpr std::string_view marker = "T = ";
+    auto                       pos    = sig.find(marker);
+    auto                       end    = (pos == std::string_view::npos) ? std::string_view::npos : sig.find(']', pos);
+    std::string_view           core   = (pos != std::string_view::npos && end != std::string_view::npos)
+                                          ? sig.substr(pos + marker.size(), end - (pos + marker.size()))
+                                          : sig;
 #endif
+
+    // 规范化：去掉 class/struct/enum 前缀，保留其余语义字符
+    std::string out;
+    out.reserve(core.size());
+    for (size_t i = 0; i < core.size();) {
+        if (core.compare(i, 6, "class ") == 0) {
+            i += 6;
+            continue;
+        }
+        if (core.compare(i, 7, "struct ") == 0) {
+            i += 7;
+            continue;
+        }
+        if (core.compare(i, 5, "enum ") == 0) {
+            i += 5;
+            continue;
+        }
+#if defined(_MSC_VER)
+        // MSVC 偶尔会在类型名里插入 __ptr64 等 ABI 噪声
+        if (core.compare(i, 7, "__ptr64") == 0) {
+            i += 7;
+            continue;
+        }
+#endif
+        out.push_back(core[i++]);
+    }
+    return out;
 }
 
 /**
