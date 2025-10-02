@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -79,11 +80,11 @@ struct PA_API IPlaceholder {
 struct PA_API IPlaceholderService {
     virtual ~IPlaceholderService() = default;
 
-    // 注册占位符：非拥有指针（服务不负责释放），由 owner 标识归属模块
+    // 注册占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
     // prefix 为占位符前缀，用于解决命名冲突。
     // 最终 token 形式为 "{prefix_token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
     // 若 prefix 为空，则 token 保持不变。
-    virtual void registerPlaceholder(std::string_view prefix, const IPlaceholder* p, void* owner) = 0;
+    virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) = 0;
 
     // 卸载 owner 名下的全部占位符（模块卸载时调用）
     virtual void unregisterByOwner(void* owner) = 0;

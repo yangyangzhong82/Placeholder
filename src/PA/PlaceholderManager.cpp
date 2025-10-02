@@ -2,6 +2,7 @@
 #define PA_BUILD
 #include "PA/PlaceholderAPI.h"
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -13,7 +14,7 @@ namespace PA {
 
 class PlaceholderManager final : public IPlaceholderService {
 public:
-    void registerPlaceholder(std::string_view prefix, const IPlaceholder* p, void* owner) override {
+    void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) override {
         if (!p) return;
 
         std::string      key;
@@ -70,8 +71,8 @@ public:
 
     std::string replace(std::string_view text, const IContext* ctx) const override {
         // 拷贝指针快照，避免持锁执行用户代码
-        std::vector<std::pair<std::string, const IPlaceholder*>> typedList;
-        std::vector<std::pair<std::string, const IPlaceholder*>> serverList;
+        std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> typedList;
+        std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
 
         {
             std::lock_guard<std::mutex> lk(mMutex);
@@ -96,20 +97,20 @@ public:
         // 先替换特定上下文
         if (ctx) {
             for (auto& kv : typedList) {
-                replaceAll(result, kv.first, kv.second, ctx);
+                replaceAll(result, kv.first, kv.second.get(), ctx);
             }
         }
 
         // 再替换服务器占位符
         for (auto& kv : serverList) {
-            replaceAll(result, kv.first, kv.second, nullptr);
+            replaceAll(result, kv.first, kv.second.get(), nullptr);
         }
 
         return result;
     }
 
     std::string replaceServer(std::string_view text) const override {
-        std::vector<std::pair<std::string, const IPlaceholder*>> serverList;
+        std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
         {
             std::lock_guard<std::mutex> lk(mMutex);
             serverList.reserve(mServer.size());
@@ -120,15 +121,15 @@ public:
 
         std::string result(text);
         for (auto& kv : serverList) {
-            replaceAll(result, kv.first, kv.second, nullptr);
+            replaceAll(result, kv.first, kv.second.get(), nullptr);
         }
         return result;
     }
 
 private:
     struct Entry {
-        const IPlaceholder* ptr{};
-        void*               owner{};
+        std::shared_ptr<const IPlaceholder> ptr{};
+        void*                               owner{};
     };
     struct Handle {
         bool        isServer{};

@@ -74,146 +74,185 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
     void*      owner            = &kBuiltinOwnerTag;
 
     // {player_name}
-    static TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)> PH_PLAYER_NAME(
-        "{player_name}",
-        +[](const PlayerContext& c, std::string& out) {
-            out.clear();
-            if (c.player) out = c.player->getRealName();
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_name}",
+            +[](const PlayerContext& c, std::string& out) {
+                out.clear();
+                if (c.player) out = c.player->getRealName();
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_PLAYER_NAME, owner);
 
     // {ping}
-    static TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)> PH_PING(
-        "{ping}",
-        +[](const PlayerContext& c, std::string& out) {
-            out = "0";
-            if (c.player) {
-                if (auto ns = c.player->getNetworkStatus()) {
-                    out = std::to_string(ns->mAveragePing);
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{ping}",
+            +[](const PlayerContext& c, std::string& out) {
+                out = "0";
+                if (c.player) {
+                    if (auto ns = c.player->getNetworkStatus()) {
+                        out = std::to_string(ns->mAveragePing);
+                    }
                 }
             }
-        }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_PING, owner);
 
     // {can_fly}
-    static TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)> PH_CAN_FLY(
-        "{can_fly}",
-        +[](const MobContext& c, std::string& out) {
-            bool can = false;
-            if (c.mob) can = c.mob->canFly();
-            out = can ? "true" : "false";
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)>>(
+            "{can_fly}",
+            +[](const MobContext& c, std::string& out) {
+                bool can = false;
+                if (c.mob) can = c.mob->canFly();
+                out = can ? "true" : "false";
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_CAN_FLY, owner);
 
     // {health}
-    static TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)> PH_HEALTH(
-        "{health}",
-        +[](const MobContext& c, std::string& out) {
-            out = "0";
-            if (c.mob) {
-                auto h = ActorAttribute::getHealth(c.mob->getEntityContext());
-                out    = std::to_string(h);
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)>>(
+            "{health}",
+            +[](const MobContext& c, std::string& out) {
+                out = "0";
+                if (c.mob) {
+                    auto h = ActorAttribute::getHealth(c.mob->getEntityContext());
+                    out    = std::to_string(h);
+                }
             }
-        }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_HEALTH, owner);
 
     // {online_players}
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_ONLINE(
-        "{online_players}",
-        +[](std::string& out) {
-            auto level = ll::service::getLevel();
-            out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{online_players}",
+            +[](std::string& out) {
+                auto level = ll::service::getLevel();
+                out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_ONLINE, owner);
 
     // {max_players}（示例中仍返回当前激活数，如有真实上限 API 可替换）
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MAX(
-        "{max_players}",
-        +[](std::string& out) {
-            auto level = ll::service::getLevel();
-            out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{max_players}",
+            +[](std::string& out) {
+                auto level = ll::service::getLevel();
+                out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_MAX, owner);
 
     // 时间类占位符
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_TIME(
-        "{time}",
-        +[](std::string& out) {
-            auto               now = std::chrono::system_clock::now();
-            auto               tt  = std::chrono::system_clock::to_time_t(now);
-            auto               tm  = local_tm(tt);
-            std::ostringstream ss;
-            ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-            out = ss.str();
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{time}",
+            +[](std::string& out) {
+                auto               now = std::chrono::system_clock::now();
+                auto               tt  = std::chrono::system_clock::to_time_t(now);
+                auto               tm  = local_tm(tt);
+                std::ostringstream ss;
+                ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+                out = ss.str();
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_TIME, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_YEAR(
-        "{year}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_year + 1900);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{year}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_year + 1900);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_YEAR, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MONTH(
-        "{month}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_mon + 1);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{month}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_mon + 1);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_MONTH, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_DAY(
-        "{day}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_mday);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{day}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_mday);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_DAY, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_HOUR(
-        "{hour}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_hour);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{hour}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_hour);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_HOUR, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MINUTE(
-        "{minute}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_min);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{minute}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_min);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_MINUTE, owner);
 
-    static ServerLambdaPlaceholder<void (*)(std::string&)> PH_SECOND(
-        "{second}",
-        +[](std::string& out) {
-            auto tt = std::time(nullptr);
-            auto tm = local_tm(tt);
-            out     = std::to_string(tm.tm_sec);
-        }
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{second}",
+            +[](std::string& out) {
+                auto tt = std::time(nullptr);
+                auto tm = local_tm(tt);
+                out     = std::to_string(tm.tm_sec);
+            }
+        ),
+        owner
     );
-    svc->registerPlaceholder("", &PH_SECOND, owner);
 }
 
 } // namespace PA
