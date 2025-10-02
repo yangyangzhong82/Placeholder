@@ -13,11 +13,26 @@ namespace PA {
 
 class PlaceholderManager final : public IPlaceholderService {
 public:
-    void registerPlaceholder(const IPlaceholder* p, void* owner) override {
+    void registerPlaceholder(std::string_view prefix, const IPlaceholder* p, void* owner) override {
         if (!p) return;
+
+        std::string      key;
+        std::string_view token_sv = p->token();
+
+        if (prefix.empty()) {
+            key = token_sv;
+        } else {
+            if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
+                std::string_view inner_token = token_sv.substr(1, token_sv.length() - 2);
+                key                          = "{" + std::string(prefix) + "_" + std::string(inner_token) + "}";
+            } else {
+                // Fallback for tokens not in "{...}" format, just use the original token.
+                key = token_sv;
+            }
+        }
+
         std::lock_guard<std::mutex> lk(mMutex);
         const uint64_t              ctxId = p->contextTypeId();
-        const std::string           key(p->token());
 
         if (ctxId == kServerContextId) {
             mServer[key] = {p, owner};

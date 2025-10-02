@@ -81,7 +81,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             if (c.player) out = c.player->getRealName();
         }
     );
-    svc->registerPlaceholder(&PH_PLAYER_NAME, owner);
+    svc->registerPlaceholder("", &PH_PLAYER_NAME, owner);
 
     // {ping}
     static TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)> PH_PING(
@@ -95,7 +95,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             }
         }
     );
-    svc->registerPlaceholder(&PH_PING, owner);
+    svc->registerPlaceholder("", &PH_PING, owner);
 
     // {can_fly}
     static TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)> PH_CAN_FLY(
@@ -106,7 +106,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out = can ? "true" : "false";
         }
     );
-    svc->registerPlaceholder(&PH_CAN_FLY, owner);
+    svc->registerPlaceholder("", &PH_CAN_FLY, owner);
 
     // {health}
     static TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)> PH_HEALTH(
@@ -119,7 +119,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             }
         }
     );
-    svc->registerPlaceholder(&PH_HEALTH, owner);
+    svc->registerPlaceholder("", &PH_HEALTH, owner);
 
     // {online_players}
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_ONLINE(
@@ -129,7 +129,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
         }
     );
-    svc->registerPlaceholder(&PH_ONLINE, owner);
+    svc->registerPlaceholder("", &PH_ONLINE, owner);
 
     // {max_players}（示例中仍返回当前激活数，如有真实上限 API 可替换）
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MAX(
@@ -139,7 +139,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
         }
     );
-    svc->registerPlaceholder(&PH_MAX, owner);
+    svc->registerPlaceholder("", &PH_MAX, owner);
 
     // 时间类占位符
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_TIME(
@@ -153,7 +153,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out = ss.str();
         }
     );
-    svc->registerPlaceholder(&PH_TIME, owner);
+    svc->registerPlaceholder("", &PH_TIME, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_YEAR(
         "{year}",
@@ -163,7 +163,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_year + 1900);
         }
     );
-    svc->registerPlaceholder(&PH_YEAR, owner);
+    svc->registerPlaceholder("", &PH_YEAR, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MONTH(
         "{month}",
@@ -173,7 +173,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_mon + 1);
         }
     );
-    svc->registerPlaceholder(&PH_MONTH, owner);
+    svc->registerPlaceholder("", &PH_MONTH, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_DAY(
         "{day}",
@@ -183,7 +183,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_mday);
         }
     );
-    svc->registerPlaceholder(&PH_DAY, owner);
+    svc->registerPlaceholder("", &PH_DAY, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_HOUR(
         "{hour}",
@@ -193,7 +193,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_hour);
         }
     );
-    svc->registerPlaceholder(&PH_HOUR, owner);
+    svc->registerPlaceholder("", &PH_HOUR, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_MINUTE(
         "{minute}",
@@ -203,7 +203,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_min);
         }
     );
-    svc->registerPlaceholder(&PH_MINUTE, owner);
+    svc->registerPlaceholder("", &PH_MINUTE, owner);
 
     static ServerLambdaPlaceholder<void (*)(std::string&)> PH_SECOND(
         "{second}",
@@ -213,7 +213,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             out     = std::to_string(tm.tm_sec);
         }
     );
-    svc->registerPlaceholder(&PH_SECOND, owner);
+    svc->registerPlaceholder("", &PH_SECOND, owner);
 }
 
 } // namespace PA
