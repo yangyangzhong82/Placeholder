@@ -2,8 +2,8 @@
 
 namespace PA {
 
-class PlaceholderManager;
+struct IPlaceholderService;
 
-void registerBuiltinPlaceholders(PlaceholderManager& manager);
+void registerBuiltinPlaceholders(IPlaceholderService* service);
 
 } // namespace PA
