@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
-
+#include <vector>
 #if defined(_WIN32)
 #ifdef PA_BUILD
 #define PA_API __declspec(dllexport)
@@ -16,7 +16,7 @@
 #define PA_API __attribute__((visibility("default")))
 #endif
 
-// 前置声明游戏类型，避免在接口头中引入第三方头
+
 class Player;
 class Mob;
 
@@ -40,6 +40,10 @@ constexpr uint64_t TypeId(const char (&str)[N]) {
 struct PA_API IContext {
     virtual ~IContext()                      = default;
     virtual uint64_t typeId() const noexcept = 0;
+    // 新增方法：获取所有继承的上下文类型 ID 列表，包括自身
+    virtual std::vector<uint64_t> getInheritedTypeIds() const noexcept {
+        return {typeId()}; // 默认只返回自己的 typeId
+    }
 };
 
 // 约定：服务器级（无上下文）占位符的上下文 ID = 0
@@ -47,18 +51,24 @@ inline constexpr uint64_t kServerContextId = 0;
 
 // 预定义的一些上下文（如需更多上下文，请扩展此处并保持 ID 字符串常量不变）
 
-// 玩家上下文
-struct PlayerContext final : public IContext {
-    static constexpr uint64_t kTypeId = TypeId("ctx:Player");
-    Player*                   player{};
-    uint64_t                  typeId() const noexcept override { return kTypeId; }
-};
-
 // 生物上下文
-struct MobContext final : public IContext {
+struct PA_API MobContext final : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:Mob");
     Mob*                      mob{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+        return {kTypeId}; // Mob 不继承其他上下文
+    }
+};
+
+// 玩家上下文
+struct PA_API PlayerContext final : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:Player");
+    Player*                   player{};
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+        return {kTypeId, MobContext::kTypeId}; // Player 继承自 Mob
+    }
 };
 
 // 占位符抽象基类：通过继承来定义不同占位符
@@ -82,7 +92,7 @@ struct PA_API IPlaceholderService {
 
     // 注册占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
     // prefix 为占位符前缀，用于解决命名冲突。
-    // 最终 token 形式为 "{prefix_token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
+    // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
     // 若 prefix 为空，则 token 保持不变。
     virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) = 0;
 

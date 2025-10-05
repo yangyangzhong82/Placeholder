@@ -25,7 +25,7 @@ public:
         } else {
             if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
                 std::string_view inner_token = token_sv.substr(1, token_sv.length() - 2);
-                key                          = "{" + std::string(prefix) + "_" + std::string(inner_token) + "}";
+                key                          = "{" + std::string(prefix) + ":" + std::string(inner_token) + "}";
             } else {
                 // Fallback for tokens not in "{...}" format, just use the original token.
                 key = token_sv;
@@ -77,13 +77,22 @@ public:
         {
             std::lock_guard<std::mutex> lk(mMutex);
             if (ctx) {
-                const uint64_t ctxId = ctx->typeId();
-                auto           tit   = mTyped.find(ctxId);
-                if (tit != mTyped.end()) {
-                    typedList.reserve(tit->second.size());
-                    for (auto& kv : tit->second) {
-                        typedList.emplace_back(kv.first, kv.second.ptr);
+                // 使用 unordered_map 确保更具体的上下文占位符优先
+                std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
+                std::vector<uint64_t> inheritedTypeIds = ctx->getInheritedTypeIds();
+                // 从最不具体的上下文（父类）开始，到最具体的上下文（子类）
+                // 这样，子类的同名占位符会覆盖父类的
+                for (uint64_t id : inheritedTypeIds) {
+                    auto tit = mTyped.find(id);
+                    if (tit != mTyped.end()) {
+                        for (auto& kv : tit->second) {
+                            tempTypedMap.try_emplace(kv.first, kv.second.ptr);
+                        }
                     }
+                }
+                typedList.reserve(tempTypedMap.size());
+                for (auto& kv : tempTypedMap) {
+                    typedList.emplace_back(kv.first, kv.second);
                 }
             }
             serverList.reserve(mServer.size());

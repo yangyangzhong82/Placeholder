@@ -1,11 +1,13 @@
 #include "PlaceholderAPI.h"
 #include "ll/api/service/Bedrock.h"
+#include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/Mob.h"
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
+
 
 #include <chrono>
 #include <ctime>
@@ -152,8 +154,8 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{max_players}",
             +[](std::string& out) {
-                auto level = ll::service::getLevel();
-                out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
+                auto server = ll::service::getServerNetworkHandler();
+                out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
             }
         ),
         owner
