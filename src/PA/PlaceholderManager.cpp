@@ -37,11 +37,33 @@ public:
 
         if (ctxId == kServerContextId) {
             mServer[key] = {p, owner};
-            mOwnerIndex[owner].push_back({true, 0, key});
+            mOwnerIndex[owner].push_back({true, false, 0, 0, 0, key}); // isServer, isRelational, mainCtxId, relCtxId, ctxId, token
         } else {
             mTyped[ctxId][key] = {p, owner};
-            mOwnerIndex[owner].push_back({false, ctxId, key});
+            mOwnerIndex[owner].push_back({false, false, 0, 0, ctxId, key}); // isServer, isRelational, mainCtxId, relCtxId, ctxId, token
         }
+    }
+
+    void registerRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId) override {
+        if (!p) return;
+
+        std::string      key;
+        std::string_view token_sv = p->token();
+
+        if (prefix.empty()) {
+            key = token_sv;
+        } else {
+            if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
+                std::string_view inner_token = token_sv.substr(1, token_sv.length() - 2);
+                key                          = "{" + std::string(prefix) + ":" + std::string(inner_token) + "}";
+            } else {
+                key = token_sv;
+            }
+        }
+
+        std::lock_guard<std::mutex> lk(mMutex);
+        mRelational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
+        mOwnerIndex[owner].push_back({false, true, mainContextTypeId, relationalContextTypeId, 0, key}); // isServer, isRelational, mainCtxId, relCtxId, ctxId, token
     }
 
     void unregisterByOwner(void* owner) override {
@@ -55,7 +77,21 @@ public:
                 if (sit != mServer.end() && sit->second.owner == owner) {
                     mServer.erase(sit);
                 }
-            } else {
+            } else if (h.isRelational) {
+                auto mainIt = mRelational.find(h.mainCtxId);
+                if (mainIt != mRelational.end()) {
+                    auto relIt = mainIt->second.find(h.relCtxId);
+                    if (relIt != mainIt->second.end()) {
+                        auto pit = relIt->second.find(h.token);
+                        if (pit != relIt->second.end() && pit->second.owner == owner) {
+                            relIt->second.erase(pit);
+                            if (relIt->second.empty()) mainIt->second.erase(relIt);
+                            if (mainIt->second.empty()) mRelational.erase(mainIt);
+                        }
+                    }
+                }
+            }
+            else { // 普通占位符
                 auto tit = mTyped.find(h.ctxId);
                 if (tit != mTyped.end()) {
                     auto pit = tit->second.find(h.token);
@@ -90,6 +126,21 @@ public:
                         }
                     }
                 }
+
+                // 处理关系型占位符
+                uint64_t mainCtxId = ctx->typeId();
+                auto mainIt = mRelational.find(mainCtxId);
+                if (mainIt != mRelational.end()) {
+                    for (uint64_t relId : inheritedTypeIds) {
+                        auto relIt = mainIt->second.find(relId);
+                        if (relIt != mainIt->second.end()) {
+                            for (auto& kv : relIt->second) {
+                                tempTypedMap.try_emplace(kv.first, kv.second.ptr);
+                            }
+                        }
+                    }
+                }
+
                 typedList.reserve(tempTypedMap.size());
                 for (auto& kv : tempTypedMap) {
                     typedList.emplace_back(kv.first, kv.second);
@@ -142,7 +193,10 @@ private:
     };
     struct Handle {
         bool        isServer{};
-        uint64_t    ctxId{};
+        bool        isRelational{}; // 新增字段，标识是否为关系型占位符
+        uint64_t    mainCtxId{};    // 主上下文 ID
+        uint64_t    relCtxId{};     // 关系上下文 ID
+        uint64_t    ctxId{};        // 普通占位符的上下文 ID
         std::string token;
     };
 
@@ -158,10 +212,11 @@ private:
     }
 
     // ctxId -> token -> Entry
-    mutable std::mutex                                                   mMutex;
-    std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>> mTyped;
-    std::unordered_map<std::string, Entry>                               mServer;
-    std::unordered_map<void*, std::vector<Handle>>                       mOwnerIndex;
+    mutable std::mutex                                                               mMutex;
+    std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>             mTyped;
+    std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>> mRelational; // mainCtxId -> relCtxId -> token -> Entry
+    std::unordered_map<std::string, Entry>                                           mServer;
+    std::unordered_map<void*, std::vector<Handle>>                                   mOwnerIndex;
 };
 
 static PlaceholderManager gManager;

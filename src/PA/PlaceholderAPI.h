@@ -96,6 +96,13 @@ struct PA_API IPlaceholderService {
     // 若 prefix 为空，则 token 保持不变。
     virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) = 0;
 
+    // 注册关系型占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
+    // prefix 为占位符前缀，用于解决命名冲突。
+    // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
+    // 若 prefix 为空，则 token 保持不变。
+    // mainContextTypeId 为主上下文类型 ID，relationalContextTypeId 为关系上下文类型 ID。
+    virtual void registerRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId) = 0;
+
     // 卸载 owner 名下的全部占位符（模块卸载时调用）
     virtual void unregisterByOwner(void* owner) = 0;
 
