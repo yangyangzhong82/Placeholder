@@ -20,6 +20,8 @@ public:
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> getTypedPlaceholders(const IContext* ctx) const;
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> getServerPlaceholders() const;
 
+    const IPlaceholder* findPlaceholder(const std::string& token, const IContext* ctx) const;
+
 private:
     struct Entry {
         std::shared_ptr<const IPlaceholder> ptr{};

@@ -141,4 +141,48 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
     return serverList;
 }
 
+const IPlaceholder* PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
+    std::lock_guard<std::mutex> lk(mMutex);
+
+    // 1. Check server placeholders (case-insensitive for token)
+    for (const auto& kv : mServer) {
+        if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
+            return kv.second.ptr.get();
+        }
+    }
+
+    if (ctx) {
+        // 2. Check typed placeholders
+        auto inheritedTypeIds = ctx->getInheritedTypeIds();
+        for (uint64_t id : inheritedTypeIds) {
+            auto it = mTyped.find(id);
+            if (it != mTyped.end()) {
+                for (const auto& kv : it->second) {
+                    if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
+                        return kv.second.ptr.get();
+                    }
+                }
+            }
+        }
+
+        // 3. Check relational placeholders
+        uint64_t mainCtxId = ctx->typeId();
+        auto mainIt = mRelational.find(mainCtxId);
+        if (mainIt != mRelational.end()) {
+            for (uint64_t relId : inheritedTypeIds) {
+                auto relIt = mainIt->second.find(relId);
+                if (relIt != mainIt->second.end()) {
+                    for (const auto& kv : relIt->second) {
+                        if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
+                            return kv.second.ptr.get();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace PA
