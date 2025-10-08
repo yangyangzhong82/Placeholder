@@ -84,7 +84,19 @@ struct PA_API IPlaceholder {
     // 计算替换文本；服务器级占位符 ctx 可为 nullptr
     // 输出写入 out，由调用方持有，不跨模块传递分配权
     virtual void evaluate(const IContext* ctx, std::string& out) const = 0;
+
+    // 新增带参数的 evaluate 方法
+    virtual void evaluateWithParam(const IContext* ctx, std::string_view param, std::string& out) const {
+        // 默认实现调用无参数的 evaluate
+        evaluate(ctx, out);
+    }
 };
+
+// 颜色代码定义
+#define PA_COLOR_RED    "§c"
+#define PA_COLOR_YELLOW "§e"
+#define PA_COLOR_GREEN  "§a"
+#define PA_COLOR_RESET  "§r" // 重置颜色
 
 // 跨模块服务接口（稳定 ABI）
 struct PA_API IPlaceholderService {

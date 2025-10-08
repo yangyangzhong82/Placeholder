@@ -8,7 +8,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-
+#include <charconv> // For std::from_chars
+#include <iomanip>  // For std::fixed, std::setprecision
+#include <sstream>  // For std::stringstream
 
 namespace PA {
 
@@ -200,14 +202,153 @@ private:
         std::string token;
     };
 
+    // 修改后的 replaceAll 函数，支持参数和颜色
     static void replaceAll(std::string& text, const std::string& token, const IPlaceholder* ph, const IContext* ctx) {
         if (!ph) return;
-        size_t pos = text.find(token);
-        while (pos != std::string::npos) {
-            std::string out;
-            ph->evaluate(ctx, out);
-            text.replace(pos, token.size(), out);
-            pos = text.find(token, pos + out.size());
+
+        // 提取原始 token 的内部部分，例如 "{player_name}" -> "player_name"
+        std::string_view innerToken;
+        if (token.length() > 2 && token.front() == '{' && token.back() == '}') {
+            innerToken = std::string_view(token).substr(1, token.length() - 2);
+        } else {
+            innerToken = token; // Fallback for non-{...} tokens
+        }
+
+        size_t pos = 0;
+        // 查找 "{innerToken}" 或 "{innerToken:param}" 形式的占位符
+        std::string searchPrefix = "{" + std::string(innerToken);
+
+        while ((pos = text.find(searchPrefix, pos)) != std::string::npos) {
+            size_t endPos = text.find('}', pos);
+            if (endPos == std::string::npos) {
+                // 占位符格式错误，跳过
+                pos += searchPrefix.length();
+                continue;
+            }
+
+            std::string_view fullMatch = std::string_view(text).substr(pos, endPos - pos + 1);
+            std::string_view contentInsideBraces = std::string_view(text).substr(pos + 1, endPos - (pos + 1));
+
+            std::string_view actualTokenPart;
+            std::string_view paramPart;
+
+            size_t colonPos = contentInsideBraces.find(':');
+            if (colonPos != std::string::npos) {
+                actualTokenPart = contentInsideBraces.substr(0, colonPos);
+                paramPart       = contentInsideBraces.substr(colonPos + 1);
+            } else {
+                actualTokenPart = contentInsideBraces;
+                paramPart       = "";
+            }
+
+            // 确保匹配到的 token 部分与我们注册的 innerToken 相同
+            if (actualTokenPart == innerToken) {
+                std::string evaluatedValue;
+                if (!paramPart.empty()) {
+                    ph->evaluateWithParam(ctx, paramPart, evaluatedValue);
+                } else {
+                    ph->evaluate(ctx, evaluatedValue);
+                }
+
+                // 尝试将 evaluatedValue 转换为数字
+                double value;
+                bool isNumeric = false;
+                auto [ptr, ec] = std::from_chars(evaluatedValue.data(), evaluatedValue.data() + evaluatedValue.size(), value);
+                if (ec == std::errc()) {
+                    isNumeric = true;
+                }
+
+                int precision = -1; // 默认不设置小数位数
+                std::string colorParamPart;
+
+                if (!paramPart.empty()) {
+                    std::string currentParam(paramPart);
+                    std::vector<std::string> params;
+                    size_t start = 0;
+                    size_t end = currentParam.find(',');
+                    while (end != std::string::npos) {
+                        params.push_back(currentParam.substr(start, end - start));
+                        start = end + 1;
+                        end = currentParam.find(',', start);
+                    }
+                    params.push_back(currentParam.substr(start));
+
+                    std::vector<std::string> remainingParams;
+                    for (const auto& p : params) {
+                        if (p.rfind("precision=", 0) == 0) { // 检查是否以 "precision=" 开头
+                            std::string_view precision_sv = std::string_view(p).substr(10); // "precision=".length()
+                            int parsedPrecision;
+                            auto [prec_ptr, prec_ec] = std::from_chars(precision_sv.data(), precision_sv.data() + precision_sv.size(), parsedPrecision);
+                            if (prec_ec == std::errc()) {
+                                precision = parsedPrecision;
+                            }
+                        } else {
+                            remainingParams.push_back(p);
+                        }
+                    }
+
+                    // 重新组合剩余的参数作为颜色参数
+                    if (!remainingParams.empty()) {
+                        std::stringstream ss;
+                        for (size_t i = 0; i < remainingParams.size(); ++i) {
+                            ss << remainingParams[i];
+                            if (i < remainingParams.size() - 1) {
+                                ss << ",";
+                            }
+                        }
+                        colorParamPart = ss.str();
+                    }
+                }
+
+                // 如果是数字且设置了小数位数，则格式化
+                if (isNumeric && precision != -1) {
+                    std::stringstream ss;
+                    ss << std::fixed << std::setprecision(precision) << value;
+                    evaluatedValue = ss.str();
+                }
+
+                // 应用颜色规则
+                if (!colorParamPart.empty()) {
+                    std::string currentParam(colorParamPart);
+                    std::vector<std::string> params;
+                    size_t start = 0;
+                    size_t end = currentParam.find(',');
+                    while (end != std::string::npos) {
+                        params.push_back(currentParam.substr(start, end - start));
+                        start = end + 1;
+                        end = currentParam.find(',', start);
+                    }
+                    params.push_back(currentParam.substr(start));
+
+                    if (params.size() == 1) {
+                        // 如果只有一个参数，直接作为颜色代码
+                        evaluatedValue = params[0] + evaluatedValue + PA_COLOR_RESET;
+                    } else if (params.size() >= 3 && params.size() % 2 == 1 && isNumeric) {
+                        // 格式: {value,color_low,value,color_mid,default_color}
+                        // 例如: {my_value:100,§c,300,§e,§a}
+                        std::string appliedColor = params.back(); // 默认颜色
+                        for (size_t i = 0; i < params.size() - 1; i += 2) {
+                            double threshold;
+                            std::string_view threshold_sv = params[i];
+                            auto [t_ptr, t_ec] = std::from_chars(threshold_sv.data(), threshold_sv.data() + threshold_sv.size(), threshold);
+                            if (t_ec == std::errc()) {
+                                if (value < threshold) {
+                                    appliedColor = params[i+1];
+                                    break;
+                                }
+                            }
+                        }
+                        evaluatedValue = appliedColor + evaluatedValue + PA_COLOR_RESET;
+                    }
+                }
+                // 如果转换失败或参数格式不匹配，则不应用颜色，保持原样
+
+                text.replace(pos, fullMatch.length(), evaluatedValue);
+                pos += evaluatedValue.length(); // 继续从替换后的位置开始查找
+            } else {
+                // 如果实际 token 部分不匹配，则跳过此占位符
+                pos = endPos + 1;
+            }
         }
     }
 
