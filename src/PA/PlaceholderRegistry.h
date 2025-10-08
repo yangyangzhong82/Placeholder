@@ -3,7 +3,7 @@
 
 #include "PA/PlaceholderAPI.h"
 #include <memory>
-#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -36,7 +36,7 @@ private:
         std::string token;
     };
 
-    mutable std::mutex                                                               mMutex;
+    mutable std::shared_mutex                                                        mMutex;
     std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>             mTyped;
     std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>> mRelational;
     std::unordered_map<std::string, Entry>                                           mServer;

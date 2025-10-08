@@ -20,7 +20,7 @@ void PlaceholderRegistry::registerPlaceholder(std::string_view prefix, std::shar
         }
     }
 
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::unique_lock<std::shared_mutex> lk(mMutex);
     const uint64_t              ctxId = p->contextTypeId();
 
     if (ctxId == kServerContextId) {
@@ -49,13 +49,13 @@ void PlaceholderRegistry::registerRelationalPlaceholder(std::string_view prefix,
         }
     }
 
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::unique_lock<std::shared_mutex> lk(mMutex);
     mRelational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
     mOwnerIndex[owner].push_back({false, true, mainContextTypeId, relationalContextTypeId, 0, key});
 }
 
 void PlaceholderRegistry::unregisterByOwner(void* owner) {
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::unique_lock<std::shared_mutex> lk(mMutex);
     auto                        it = mOwnerIndex.find(owner);
     if (it == mOwnerIndex.end()) return;
 
@@ -96,7 +96,7 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> typedList;
     if (!ctx) return typedList;
 
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::shared_lock<std::shared_mutex> lk(mMutex);
     
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
     std::vector<uint64_t> inheritedTypeIds = ctx->getInheritedTypeIds();
@@ -133,7 +133,7 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
 
 std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> PlaceholderRegistry::getServerPlaceholders() const {
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::shared_lock<std::shared_mutex> lk(mMutex);
     serverList.reserve(mServer.size());
     for (auto& kv : mServer) {
         serverList.emplace_back(kv.first, kv.second.ptr);
@@ -142,7 +142,7 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
 }
 
 const IPlaceholder* PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
-    std::lock_guard<std::mutex> lk(mMutex);
+    std::shared_lock<std::shared_mutex> lk(mMutex);
 
     // 1. Check server placeholders (case-insensitive for token)
     for (const auto& kv : mServer) {
