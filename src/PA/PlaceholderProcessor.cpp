@@ -7,9 +7,9 @@
 
 namespace PA {
 
-// Regex to find placeholders like %placeholder_name:param% or {placeholder_name:param}
-// It captures the token name and optional parameters.
-static const std::regex placeholderRegex(R"((%|\{)([^%\{\}:]+)(?::([^%\{\}]+))?(%|\}))");
+// Regex to find placeholders like %placeholder% or {placeholder}
+// It captures the full content between delimiters.
+static const std::regex placeholderRegex(R"((%|\{)([^%\{\}]+)(%|\}))");
 
 std::string PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const PlaceholderRegistry& registry) {
     std::string result;
@@ -25,14 +25,33 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
         last_match_end = text.begin() + match.position(0) + match.length(0);
 
         std::string open_delim  = match[1].str();
-        std::string token       = match[2].str();
-        std::string param_part  = match[3].str();
-        std::string close_delim = match[4].str();
+        std::string content     = match[2].str();
+        std::string close_delim = match[3].str();
 
         // Basic validation: delimiters must match (%...% or {...})
         if ((open_delim == "%" && close_delim != "%") || (open_delim == "{" && close_delim != "}")) {
             result.append(match[0].str());
             continue;
+        }
+
+        std::string token;
+        std::string param_part;
+
+        // Heuristically split content into token and param_part
+        size_t last_colon = content.rfind(':');
+        if (last_colon != std::string::npos) {
+            std::string after_colon = content.substr(last_colon + 1);
+            // Simple heuristic: if the part after the last colon contains typical parameter characters,
+            // treat it as a parameter. This covers "precision=2" and "100,red".
+            if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos ||
+                (isdigit(after_colon[0]) && after_colon.length() > 0)) {
+                token      = content.substr(0, last_colon);
+                param_part = after_colon;
+            } else {
+                token = content;
+            }
+        } else {
+            token = content;
         }
 
         const IPlaceholder* ph = registry.findPlaceholder(token, ctx);

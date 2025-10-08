@@ -9,15 +9,17 @@ void PlaceholderRegistry::registerPlaceholder(std::string_view prefix, std::shar
     std::string      key;
     std::string_view token_sv = p->token();
 
-    if (prefix.empty()) {
-        key = token_sv;
+    std::string inner_token_str;
+    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
+        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
     } else {
-        if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-            std::string_view inner_token = token_sv.substr(1, token_sv.length() - 2);
-            key                          = "{" + std::string(prefix) + ":" + std::string(inner_token) + "}";
-        } else {
-            key = token_sv;
-        }
+        inner_token_str = token_sv;
+    }
+
+    if (prefix.empty()) {
+        key = inner_token_str;
+    } else {
+        key = std::string(prefix) + ":" + inner_token_str;
     }
 
     std::unique_lock<std::shared_mutex> lk(mMutex);
@@ -38,15 +40,17 @@ void PlaceholderRegistry::registerRelationalPlaceholder(std::string_view prefix,
     std::string      key;
     std::string_view token_sv = p->token();
 
-    if (prefix.empty()) {
-        key = token_sv;
+    std::string inner_token_str;
+    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
+        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
     } else {
-        if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-            std::string_view inner_token = token_sv.substr(1, token_sv.length() - 2);
-            key                          = "{" + std::string(prefix) + ":" + std::string(inner_token) + "}";
-        } else {
-            key = token_sv;
-        }
+        inner_token_str = token_sv;
+    }
+
+    if (prefix.empty()) {
+        key = inner_token_str;
+    } else {
+        key = std::string(prefix) + ":" + inner_token_str;
     }
 
     std::unique_lock<std::shared_mutex> lk(mMutex);
