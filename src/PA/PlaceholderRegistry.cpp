@@ -3,6 +3,8 @@
 
 namespace PA {
 
+PlaceholderRegistry::PlaceholderRegistry() : mSnapshot(std::make_shared<const Snapshot>()) {}
+
 void PlaceholderRegistry::registerPlaceholder(
     std::string_view                    prefix,
     std::shared_ptr<const IPlaceholder> p,
@@ -26,16 +28,18 @@ void PlaceholderRegistry::registerPlaceholder(
         key = std::string(prefix) + ":" + inner_token_str;
     }
 
-    std::unique_lock<std::shared_mutex> lk(mMutex);
-    const uint64_t                      ctxId = p->contextTypeId();
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
+    const uint64_t ctxId = p->contextTypeId();
     if (ctxId == kServerContextId) {
-        mServer[key] = {p, owner};
-        mOwnerIndex[owner].push_back({true, false, 0, 0, 0, key});
+        newSnapshot->server[key] = {p, owner};
+        newSnapshot->ownerIndex[owner].push_back({true, false, 0, 0, 0, key});
     } else {
-        mTyped[ctxId][key] = {p, owner};
-        mOwnerIndex[owner].push_back({false, false, 0, 0, ctxId, key});
+        newSnapshot->typed[ctxId][key] = {p, owner};
+        newSnapshot->ownerIndex[owner].push_back({false, false, 0, 0, ctxId, key});
     }
+    mSnapshot.store(newSnapshot);
 }
 
 void PlaceholderRegistry::registerRelationalPlaceholder(
@@ -63,62 +67,68 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
         key = std::string(prefix) + ":" + inner_token_str;
     }
 
-    std::unique_lock<std::shared_mutex> lk(mMutex);
-    mRelational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
-    mOwnerIndex[owner].push_back({false, true, mainContextTypeId, relationalContextTypeId, 0, key});
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
+
+    newSnapshot->relational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
+    newSnapshot->ownerIndex[owner].push_back({false, true, mainContextTypeId, relationalContextTypeId, 0, key});
+    mSnapshot.store(newSnapshot);
 }
 
 void PlaceholderRegistry::unregisterByOwner(void* owner) {
-    std::unique_lock<std::shared_mutex> lk(mMutex);
-    auto                                it = mOwnerIndex.find(owner);
-    if (it == mOwnerIndex.end()) return;
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto currentSnapshot = mSnapshot.load();
+    auto it = currentSnapshot->ownerIndex.find(owner);
+    if (it == currentSnapshot->ownerIndex.end()) return;
+
+    auto newSnapshot = std::make_shared<Snapshot>(*currentSnapshot);
 
     for (const Handle& h : it->second) {
         if (h.isServer) {
-            auto sit = mServer.find(h.token);
-            if (sit != mServer.end() && sit->second.owner == owner) {
-                mServer.erase(sit);
+            auto sit = newSnapshot->server.find(h.token);
+            if (sit != newSnapshot->server.end() && sit->second.owner == owner) {
+                newSnapshot->server.erase(sit);
             }
         } else if (h.isRelational) {
-            auto mainIt = mRelational.find(h.mainCtxId);
-            if (mainIt != mRelational.end()) {
+            auto mainIt = newSnapshot->relational.find(h.mainCtxId);
+            if (mainIt != newSnapshot->relational.end()) {
                 auto relIt = mainIt->second.find(h.relCtxId);
                 if (relIt != mainIt->second.end()) {
                     auto pit = relIt->second.find(h.token);
                     if (pit != relIt->second.end() && pit->second.owner == owner) {
                         relIt->second.erase(pit);
                         if (relIt->second.empty()) mainIt->second.erase(relIt);
-                        if (mainIt->second.empty()) mRelational.erase(mainIt);
+                        if (mainIt->second.empty()) newSnapshot->relational.erase(mainIt);
                     }
                 }
             }
         } else {
-            auto tit = mTyped.find(h.ctxId);
-            if (tit != mTyped.end()) {
+            auto tit = newSnapshot->typed.find(h.ctxId);
+            if (tit != newSnapshot->typed.end()) {
                 auto pit = tit->second.find(h.token);
                 if (pit != tit->second.end() && pit->second.owner == owner) {
                     tit->second.erase(pit);
-                    if (tit->second.empty()) mTyped.erase(tit);
+                    if (tit->second.empty()) newSnapshot->typed.erase(tit);
                 }
             }
         }
     }
-    mOwnerIndex.erase(it);
+    newSnapshot->ownerIndex.erase(owner);
+    mSnapshot.store(newSnapshot);
 }
 
 std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
 PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
+    auto snapshot = mSnapshot.load();
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> typedList;
     if (!ctx) return typedList;
-
-    std::shared_lock<std::shared_mutex> lk(mMutex);
 
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
     std::vector<uint64_t>                                                inheritedTypeIds = ctx->getInheritedTypeIds();
 
     for (uint64_t id : inheritedTypeIds) {
-        auto tit = mTyped.find(id);
-        if (tit != mTyped.end()) {
+        auto tit = snapshot->typed.find(id);
+        if (tit != snapshot->typed.end()) {
             for (auto& kv : tit->second) {
                 tempTypedMap.try_emplace(kv.first, kv.second.ptr);
             }
@@ -126,8 +136,8 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
     }
 
     uint64_t mainCtxId = ctx->typeId();
-    auto     mainIt    = mRelational.find(mainCtxId);
-    if (mainIt != mRelational.end()) {
+    auto     mainIt    = snapshot->relational.find(mainCtxId);
+    if (mainIt != snapshot->relational.end()) {
         for (uint64_t relId : inheritedTypeIds) {
             auto relIt = mainIt->second.find(relId);
             if (relIt != mainIt->second.end()) {
@@ -148,10 +158,10 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
 
 std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
 PlaceholderRegistry::getServerPlaceholders() const {
+    auto snapshot = mSnapshot.load();
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
-    std::shared_lock<std::shared_mutex>                                      lk(mMutex);
-    serverList.reserve(mServer.size());
-    for (auto& kv : mServer) {
+    serverList.reserve(snapshot->server.size());
+    for (auto& kv : snapshot->server) {
         serverList.emplace_back(kv.first, kv.second.ptr);
     }
     return serverList;
@@ -159,10 +169,10 @@ PlaceholderRegistry::getServerPlaceholders() const {
 
 std::shared_ptr<const IPlaceholder>
 PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
-    std::shared_lock<std::shared_mutex> lk(mMutex);
+    auto snapshot = mSnapshot.load();
 
     // 1. Check server placeholders (case-insensitive for token)
-    for (const auto& kv : mServer) {
+    for (const auto& kv : snapshot->server) {
         if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
             return kv.second.ptr;
         }
@@ -172,8 +182,8 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
         // 2. Check typed placeholders
         auto inheritedTypeIds = ctx->getInheritedTypeIds();
         for (uint64_t id : inheritedTypeIds) {
-            auto it = mTyped.find(id);
-            if (it != mTyped.end()) {
+            auto it = snapshot->typed.find(id);
+            if (it != snapshot->typed.end()) {
                 for (const auto& kv : it->second) {
                     if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
                         return kv.second.ptr;
@@ -184,8 +194,8 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
 
         // 3. Check relational placeholders
         uint64_t mainCtxId = ctx->typeId();
-        auto     mainIt    = mRelational.find(mainCtxId);
-        if (mainIt != mRelational.end()) {
+        auto     mainIt    = snapshot->relational.find(mainCtxId);
+        if (mainIt != snapshot->relational.end()) {
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {

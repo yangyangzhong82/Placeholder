@@ -44,7 +44,7 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
             // Simple heuristic: if the part after the last colon contains typical parameter characters,
             // treat it as a parameter. This covers "precision=2" and "100,red".
             if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos ||
-                (isdigit(after_colon[0]) && after_colon.length() > 0)) {
+                (!after_colon.empty() && isdigit(static_cast<unsigned char>(after_colon[0])))) {
                 token      = content.substr(0, last_colon);
                 param_part = after_colon;
             } else {
