@@ -2,10 +2,13 @@
 #pragma once
 
 #include "PA/PlaceholderAPI.h"
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string.h>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -38,11 +41,26 @@ private:
         std::string token;
     };
 
+    struct ci_hash {
+        size_t operator()(const std::string& s) const {
+            std::string lower_s;
+            lower_s.resize(s.size());
+            std::transform(s.begin(), s.end(), lower_s.begin(), [](unsigned char c) { return std::tolower(c); });
+            return std::hash<std::string>()(lower_s);
+        }
+    };
+
+    struct ci_equal {
+        bool operator()(const std::string& s1, const std::string& s2) const {
+            return _stricmp(s1.c_str(), s2.c_str()) == 0;
+        }
+    };
+
     struct Snapshot {
-        std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>             typed;
-        std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>> relational;
-        std::unordered_map<std::string, Entry>                                           server;
-        std::unordered_map<void*, std::vector<Handle>>                                   ownerIndex;
+        std::unordered_map<uint64_t, std::unordered_map<std::string, Entry, ci_hash, ci_equal>>             typed;
+        std::unordered_map<uint64_t, std::unordered_map<uint64_t, std::unordered_map<std::string, Entry, ci_hash, ci_equal>>> relational;
+        std::unordered_map<std::string, Entry, ci_hash, ci_equal>                                           server;
+        std::unordered_map<void*, std::vector<Handle>>                                                      ownerIndex;
     };
 
     mutable std::mutex                                     mWriteMutex;

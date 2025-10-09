@@ -3,46 +3,45 @@
 #include "PA/PlaceholderRegistry.h"
 #include "PA/ParameterParser.h"
 #include <vector>
-#include <regex>
 
 namespace PA {
-
-// Regex to find placeholders like %placeholder% or {placeholder}
-// It captures the full content between delimiters.
-static const std::regex placeholderRegex(R"((%|\{)([^%\{\}]+)(%|\}))");
 
 std::string PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const PlaceholderRegistry& registry) {
     std::string result;
     result.reserve(text.length());
-    auto last_match_end = text.begin();
+    size_t pos = 0;
 
-    auto it = std::cregex_iterator(text.data(), text.data() + text.size(), placeholderRegex);
-    auto end = std::cregex_iterator();
+    while (pos < text.length()) {
+        size_t start_pos = text.find_first_of("%{", pos);
 
-    for (; it != end; ++it) {
-        const std::cmatch& match = *it;
-        result.append(last_match_end, text.begin() + match.position(0));
-        last_match_end = text.begin() + match.position(0) + match.length(0);
+        if (start_pos == std::string_view::npos) {
+            result.append(text.substr(pos));
+            break;
+        }
 
-        std::string open_delim  = match[1].str();
-        std::string content     = match[2].str();
-        std::string close_delim = match[3].str();
+        result.append(text.substr(pos, start_pos - pos));
 
-        // Basic validation: delimiters must match (%...% or {...})
-        if ((open_delim == "%" && close_delim != "%") || (open_delim == "{" && close_delim != "}")) {
-            result.append(match[0].str());
+        char open_delim = text[start_pos];
+        char close_delim = (open_delim == '{') ? '}' : '%';
+
+        size_t end_pos = text.find(close_delim, start_pos + 1);
+
+        if (end_pos == std::string_view::npos) {
+            result.push_back(open_delim);
+            pos = start_pos + 1;
             continue;
         }
+
+        std::string_view full_placeholder = text.substr(start_pos, end_pos - start_pos + 1);
+        std::string_view content_sv = text.substr(start_pos + 1, end_pos - start_pos - 1);
+        std::string content(content_sv);
 
         std::string token;
         std::string param_part;
 
-        // Heuristically split content into token and param_part
         size_t last_colon = content.rfind(':');
         if (last_colon != std::string::npos) {
             std::string after_colon = content.substr(last_colon + 1);
-            // Simple heuristic: if the part after the last colon contains typical parameter characters,
-            // treat it as a parameter. This covers "precision=2" and "100,red".
             if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos ||
                 (!after_colon.empty() && isdigit(static_cast<unsigned char>(after_colon[0])))) {
                 token      = content.substr(0, last_colon);
@@ -66,8 +65,7 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
             auto params = ParameterParser::parse(param_part);
             ParameterParser::formatNumericValue(evaluatedValue, params.precision);
 
-            // 从参数中提取颜色格式
-            std::string_view colorFormat = "{color}{value}"; // 默认值
+            std::string_view colorFormat = "{color}{value}";
             auto colorFormatIt = params.otherParams.find("color_format");
             if (colorFormatIt != params.otherParams.end()) {
                 colorFormat = colorFormatIt->second;
@@ -76,12 +74,11 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
             ParameterParser::applyColorRules(evaluatedValue, params.colorParamPart, colorFormat);
             result.append(evaluatedValue);
         } else {
-            // If placeholder is not found, append the original text
-            result.append(match[0].str());
+            result.append(full_placeholder);
         }
+        pos = end_pos + 1;
     }
 
-    result.append(last_match_end, text.end());
     return result;
 }
 

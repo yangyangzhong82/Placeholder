@@ -171,11 +171,10 @@ std::shared_ptr<const IPlaceholder>
 PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
     auto snapshot = mSnapshot.load();
 
-    // 1. Check server placeholders (case-insensitive for token)
-    for (const auto& kv : snapshot->server) {
-        if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-            return kv.second.ptr;
-        }
+    // 1. Check server placeholders
+    auto serverIt = snapshot->server.find(token);
+    if (serverIt != snapshot->server.end()) {
+        return serverIt->second.ptr;
     }
 
     if (ctx) {
@@ -184,10 +183,9 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->typed.find(id);
             if (it != snapshot->typed.end()) {
-                for (const auto& kv : it->second) {
-                    if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-                        return kv.second.ptr;
-                    }
+                auto placeholderIt = it->second.find(token);
+                if (placeholderIt != it->second.end()) {
+                    return placeholderIt->second.ptr;
                 }
             }
         }
@@ -199,10 +197,9 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {
-                    for (const auto& kv : relIt->second) {
-                        if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-                            return kv.second.ptr;
-                        }
+                    auto placeholderIt = relIt->second.find(token);
+                    if (placeholderIt != relIt->second.end()) {
+                        return placeholderIt->second.ptr;
                     }
                 }
             }
