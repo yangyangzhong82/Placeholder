@@ -65,6 +65,8 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
             auto params = ParameterParser::parse(param_part);
             ParameterParser::formatNumericValue(evaluatedValue, params.precision);
 
+            ParameterParser::applyConditionalOutput(evaluatedValue, params.conditional);
+
             std::string_view colorFormat = "{color}{value}";
             auto colorFormatIt = params.otherParams.find("color_format");
             if (colorFormatIt != params.otherParams.end()) {

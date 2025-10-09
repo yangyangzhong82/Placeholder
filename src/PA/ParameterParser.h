@@ -4,17 +4,33 @@
 #include <string>
 #include <string_view>
 #include <map>
+#include <vector>
 #include "PA/PlaceholderAPI.h"
 
 namespace PA {
 
 namespace ParameterParser {
 
+// 表示单个条件规则
+struct Condition {
+    enum class Operator { GT, LT, EQ, GTE, LTE, NEQ } op;
+    double      threshold;
+    std::string output;
+};
+
+// 表示完整的条件输出规则
+struct ConditionalOutput {
+    bool                   enabled = false;
+    std::vector<Condition> conditions;
+    std::string            elseOutput;
+};
+
 // 表示从占位符解析的参数
 struct PlaceholderParams {
     int                                precision = -1;
     std::string                        colorParamPart;
     std::map<std::string, std::string> otherParams;
+    ConditionalOutput                  conditional;
 };
 
 // 解析占位符的参数部分
@@ -25,6 +41,9 @@ void formatNumericValue(std::string& evaluatedValue, int precision);
 
 // 将颜色规则应用于评估值
 void applyColorRules(std::string& evaluatedValue, const std::string& colorParamPart, std::string_view colorFormat);
+
+// 将条件输出规则应用于评估值
+void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput& conditional);
 
 } // namespace ParameterParser
 } // namespace PA

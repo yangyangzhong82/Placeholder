@@ -35,6 +35,36 @@ PlaceholderParams parse(std::string_view paramPart) {
             if (prec_ec == std::errc()) {
                 params.precision = parsedPrecision;
             }
+        } else if (p.rfind("map=", 0) == 0) {
+            params.conditional.enabled = true;
+            std::string_view rules_sv  = std::string_view(p).substr(4); // "map=".length()
+            size_t           start = 0, end;
+            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
+                std::string_view rule = rules_sv.substr(start, end - start);
+                if (rule.find(':') != std::string_view::npos) {
+                    // This is a condition
+                    size_t           op_end = rule.find_first_of("0123456789.");
+                    std::string_view op_str = rule.substr(0, op_end);
+                    size_t           val_end = rule.find(':');
+                    std::string_view val_str = rule.substr(op_end, val_end - op_end);
+                    
+                    Condition c;
+                    if (op_str == ">") c.op = Condition::Operator::GT;
+                    else if (op_str == "<") c.op = Condition::Operator::LT;
+                    else if (op_str == "=") c.op = Condition::Operator::EQ;
+                    else if (op_str == ">=") c.op = Condition::Operator::GTE;
+                    else if (op_str == "<=") c.op = Condition::Operator::LTE;
+                    else if (op_str == "!=") c.op = Condition::Operator::NEQ;
+                    else continue;
+
+                    std::from_chars(val_str.data(), val_str.data() + val_str.size(), c.threshold);
+                    c.output = rule.substr(val_end + 1);
+                    params.conditional.conditions.push_back(c);
+                }
+                start = end + 1;
+            }
+            // The last part is the else output
+            params.conditional.elseOutput = rules_sv.substr(start);
         } else if (p.find('=') != std::string::npos) {
             size_t separatorPos               = p.find('=');
             params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
@@ -128,6 +158,37 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
         }
         applyFormat(appliedColor);
     }
+}
+
+void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput& conditional) {
+    if (!conditional.enabled) {
+        return;
+    }
+
+    double value;
+    auto [ptr, ec] = std::from_chars(evaluatedValue.data(), evaluatedValue.data() + evaluatedValue.size(), value);
+    if (ec != std::errc()) {
+        // Not a numeric value, cannot apply conditional output
+        return;
+    }
+
+    for (const auto& condition : conditional.conditions) {
+        bool result = false;
+        switch (condition.op) {
+            case Condition::Operator::GT:  result = value >  condition.threshold; break;
+            case Condition::Operator::LT:  result = value <  condition.threshold; break;
+            case Condition::Operator::EQ:  result = value == condition.threshold; break;
+            case Condition::Operator::GTE: result = value >= condition.threshold; break;
+            case Condition::Operator::LTE: result = value <= condition.threshold; break;
+            case Condition::Operator::NEQ: result = value != condition.threshold; break;
+        }
+        if (result) {
+            evaluatedValue = condition.output;
+            return;
+        }
+    }
+
+    evaluatedValue = conditional.elseOutput;
 }
 
 } // namespace ParameterParser
