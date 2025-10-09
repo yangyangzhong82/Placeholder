@@ -13,7 +13,6 @@ public:
     static std::string processServer(std::string_view text, const class PlaceholderRegistry& registry);
 
 private:
-    static void replaceAll(std::string& text, const std::string& token, const IPlaceholder* ph, const IContext* ctx);
 };
 
 } // namespace PA

@@ -3,7 +3,11 @@
 
 namespace PA {
 
-void PlaceholderRegistry::registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) {
+void PlaceholderRegistry::registerPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    void*                               owner
+) {
     if (!p) return;
 
     std::string      key;
@@ -23,7 +27,7 @@ void PlaceholderRegistry::registerPlaceholder(std::string_view prefix, std::shar
     }
 
     std::unique_lock<std::shared_mutex> lk(mMutex);
-    const uint64_t              ctxId = p->contextTypeId();
+    const uint64_t                      ctxId = p->contextTypeId();
 
     if (ctxId == kServerContextId) {
         mServer[key] = {p, owner};
@@ -34,7 +38,13 @@ void PlaceholderRegistry::registerPlaceholder(std::string_view prefix, std::shar
     }
 }
 
-void PlaceholderRegistry::registerRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId) {
+void PlaceholderRegistry::registerRelationalPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    void*                               owner,
+    uint64_t                            mainContextTypeId,
+    uint64_t                            relationalContextTypeId
+) {
     if (!p) return;
 
     std::string      key;
@@ -60,7 +70,7 @@ void PlaceholderRegistry::registerRelationalPlaceholder(std::string_view prefix,
 
 void PlaceholderRegistry::unregisterByOwner(void* owner) {
     std::unique_lock<std::shared_mutex> lk(mMutex);
-    auto                        it = mOwnerIndex.find(owner);
+    auto                                it = mOwnerIndex.find(owner);
     if (it == mOwnerIndex.end()) return;
 
     for (const Handle& h : it->second) {
@@ -96,15 +106,16 @@ void PlaceholderRegistry::unregisterByOwner(void* owner) {
     mOwnerIndex.erase(it);
 }
 
-std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
+std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
+PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> typedList;
     if (!ctx) return typedList;
 
     std::shared_lock<std::shared_mutex> lk(mMutex);
-    
+
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
-    std::vector<uint64_t> inheritedTypeIds = ctx->getInheritedTypeIds();
-    
+    std::vector<uint64_t>                                                inheritedTypeIds = ctx->getInheritedTypeIds();
+
     for (uint64_t id : inheritedTypeIds) {
         auto tit = mTyped.find(id);
         if (tit != mTyped.end()) {
@@ -115,7 +126,7 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
     }
 
     uint64_t mainCtxId = ctx->typeId();
-    auto mainIt = mRelational.find(mainCtxId);
+    auto     mainIt    = mRelational.find(mainCtxId);
     if (mainIt != mRelational.end()) {
         for (uint64_t relId : inheritedTypeIds) {
             auto relIt = mainIt->second.find(relId);
@@ -131,13 +142,14 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
     for (auto& kv : tempTypedMap) {
         typedList.emplace_back(kv.first, kv.second);
     }
-    
+
     return typedList;
 }
 
-std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> PlaceholderRegistry::getServerPlaceholders() const {
+std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
+PlaceholderRegistry::getServerPlaceholders() const {
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
-    std::shared_lock<std::shared_mutex> lk(mMutex);
+    std::shared_lock<std::shared_mutex>                                      lk(mMutex);
     serverList.reserve(mServer.size());
     for (auto& kv : mServer) {
         serverList.emplace_back(kv.first, kv.second.ptr);
@@ -145,13 +157,14 @@ std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> Placeho
     return serverList;
 }
 
-const IPlaceholder* PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
+std::shared_ptr<const IPlaceholder>
+PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
     std::shared_lock<std::shared_mutex> lk(mMutex);
 
     // 1. Check server placeholders (case-insensitive for token)
     for (const auto& kv : mServer) {
         if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-            return kv.second.ptr.get();
+            return kv.second.ptr;
         }
     }
 
@@ -163,7 +176,7 @@ const IPlaceholder* PlaceholderRegistry::findPlaceholder(const std::string& toke
             if (it != mTyped.end()) {
                 for (const auto& kv : it->second) {
                     if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-                        return kv.second.ptr.get();
+                        return kv.second.ptr;
                     }
                 }
             }
@@ -171,14 +184,14 @@ const IPlaceholder* PlaceholderRegistry::findPlaceholder(const std::string& toke
 
         // 3. Check relational placeholders
         uint64_t mainCtxId = ctx->typeId();
-        auto mainIt = mRelational.find(mainCtxId);
+        auto     mainIt    = mRelational.find(mainCtxId);
         if (mainIt != mRelational.end()) {
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {
                     for (const auto& kv : relIt->second) {
                         if (_stricmp(kv.first.c_str(), token.c_str()) == 0) {
-                            return kv.second.ptr.get();
+                            return kv.second.ptr;
                         }
                     }
                 }

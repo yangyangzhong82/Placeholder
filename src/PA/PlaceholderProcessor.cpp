@@ -54,7 +54,7 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
             token = content;
         }
 
-        const IPlaceholder* ph = registry.findPlaceholder(token, ctx);
+        auto ph = registry.findPlaceholder(token, ctx);
         if (ph) {
             std::string evaluatedValue;
             if (!param_part.empty()) {
@@ -65,7 +65,15 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
 
             auto params = ParameterParser::parse(param_part);
             ParameterParser::formatNumericValue(evaluatedValue, params.precision);
-            ParameterParser::applyColorRules(evaluatedValue, params.colorParamPart);
+
+            // 从参数中提取颜色格式
+            std::string_view colorFormat = "{color}{value}"; // 默认值
+            auto colorFormatIt = params.otherParams.find("color_format");
+            if (colorFormatIt != params.otherParams.end()) {
+                colorFormat = colorFormatIt->second;
+            }
+
+            ParameterParser::applyColorRules(evaluatedValue, params.colorParamPart, colorFormat);
             result.append(evaluatedValue);
         } else {
             // If placeholder is not found, append the original text

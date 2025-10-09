@@ -35,6 +35,9 @@ PlaceholderParams parse(std::string_view paramPart) {
             if (prec_ec == std::errc()) {
                 params.precision = parsedPrecision;
             }
+        } else if (p.find('=') != std::string::npos) {
+            size_t separatorPos               = p.find('=');
+            params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
         } else {
             remainingParams.push_back(p);
         }
@@ -68,10 +71,22 @@ void formatNumericValue(std::string& evaluatedValue, int precision) {
     }
 }
 
-void applyColorRules(std::string& evaluatedValue, const std::string& colorParamPart) {
+void applyColorRules(std::string& evaluatedValue, const std::string& colorParamPart, std::string_view colorFormat) {
     if (colorParamPart.empty()) {
         return;
     }
+
+    auto applyFormat = [&](const std::string& color) {
+        std::string formatted = std::string(colorFormat);
+        size_t      pos;
+        while ((pos = formatted.find("{color}")) != std::string::npos) {
+            formatted.replace(pos, 7, color);
+        }
+        while ((pos = formatted.find("{value}")) != std::string::npos) {
+            formatted.replace(pos, 7, evaluatedValue);
+        }
+        evaluatedValue = formatted;
+    };
 
     std::string              currentParam(colorParamPart);
     std::vector<std::string> params;
@@ -86,7 +101,7 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
 
     if (params.size() == 1) {
         // If there is only one parameter, treat it as a color code
-        evaluatedValue = params[0] + evaluatedValue + PA_COLOR_RESET;
+        applyFormat(params[0]);
         return;
     }
 
@@ -111,7 +126,7 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
                 }
             }
         }
-        evaluatedValue = appliedColor + evaluatedValue + PA_COLOR_RESET;
+        applyFormat(appliedColor);
     }
 }
 
