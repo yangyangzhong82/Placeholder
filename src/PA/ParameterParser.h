@@ -21,6 +21,7 @@ struct Condition {
 // 表示完整的条件输出规则
 struct ConditionalOutput {
     bool                   enabled = false;
+    bool                   hasElse = false;
     std::vector<Condition> conditions;
     std::string            elseOutput;
 };

@@ -1,12 +1,16 @@
 // src/PA/PlaceholderProcessor.cpp
 #include "PA/PlaceholderProcessor.h"
-#include "PA/PlaceholderRegistry.h"
 #include "PA/ParameterParser.h"
+#include "PA/PlaceholderRegistry.h"
+#include "PA/logger.h"
+#include <sstream>
 #include <vector>
+
 
 namespace PA {
 
-std::string PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const PlaceholderRegistry& registry) {
+std::string
+PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const PlaceholderRegistry& registry) {
     std::string result;
     result.reserve(text.length());
     size_t pos = 0;
@@ -21,7 +25,7 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
 
         result.append(text.substr(pos, start_pos - pos));
 
-        char open_delim = text[start_pos];
+        char open_delim  = text[start_pos];
         char close_delim = (open_delim == '{') ? '}' : '%';
 
         size_t end_pos = text.find(close_delim, start_pos + 1);
@@ -33,47 +37,103 @@ std::string PlaceholderProcessor::process(std::string_view text, const IContext*
         }
 
         std::string_view full_placeholder = text.substr(start_pos, end_pos - start_pos + 1);
-        std::string_view content_sv = text.substr(start_pos + 1, end_pos - start_pos - 1);
-        std::string content(content_sv);
+        std::string_view content_sv       = text.substr(start_pos + 1, end_pos - start_pos - 1);
+        std::string      content(content_sv);
 
         std::string token;
         std::string param_part;
 
-        size_t last_colon = content.rfind(':');
-        if (last_colon != std::string::npos) {
-            std::string after_colon = content.substr(last_colon + 1);
-            if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos ||
-                (!after_colon.empty() && isdigit(static_cast<unsigned char>(after_colon[0])))) {
-                token      = content.substr(0, last_colon);
-                param_part = after_colon;
+        size_t comma_pos = content.find(',');
+        if (comma_pos != std::string::npos) {
+            token      = content.substr(0, comma_pos);
+            param_part = content.substr(comma_pos + 1);
+        } else {
+            size_t last_colon = content.rfind(':');
+            if (last_colon != std::string::npos) {
+                std::string after_colon = content.substr(last_colon + 1);
+                if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos
+                    || (!after_colon.empty() && isdigit(static_cast<unsigned char>(after_colon[0])))) {
+                    token      = content.substr(0, last_colon);
+                    param_part = after_colon;
+                } else {
+                    token = content;
+                }
             } else {
                 token = content;
             }
-        } else {
-            token = content;
         }
+        logger.debug("1. Initial Parse: token='{}', param_part='{}'", token, param_part);
 
         auto ph = registry.findPlaceholder(token, ctx);
         if (ph) {
             std::string evaluatedValue;
+            std::string placeholder_param_part;
+            std::string formatting_param_part;
+
             if (!param_part.empty()) {
-                ph->evaluateWithParam(ctx, param_part, evaluatedValue);
+                std::string              currentParam(param_part);
+                std::vector<std::string> paramSegments;
+                size_t                   start = 0;
+                size_t                   end   = currentParam.find(',');
+                while (end != std::string::npos) {
+                    paramSegments.push_back(currentParam.substr(start, end - start));
+                    start = end + 1;
+                    end   = currentParam.find(',', start);
+                }
+                paramSegments.push_back(currentParam.substr(start));
+
+                std::stringstream p_param_ss;
+                std::stringstream f_param_ss;
+                bool              first_p = true;
+                bool              first_f = true;
+
+                for (const auto& p : paramSegments) {
+                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0) {
+                        if (!first_f) f_param_ss << ",";
+                        f_param_ss << p;
+                        first_f = false;
+                    } else {
+                        if (!first_p) p_param_ss << ",";
+                        p_param_ss << p;
+                        first_p = false;
+                    }
+                }
+                placeholder_param_part = p_param_ss.str();
+                formatting_param_part  = f_param_ss.str();
+            }
+            logger.debug(
+                "2. Separated Params: placeholder_param='{}', formatting_param='{}'",
+                placeholder_param_part,
+                formatting_param_part
+            );
+
+            if (!placeholder_param_part.empty()) {
+                ph->evaluateWithParam(ctx, placeholder_param_part, evaluatedValue);
             } else {
                 ph->evaluate(ctx, evaluatedValue);
             }
+            logger.debug("3. After Evaluate: evaluatedValue='{}'", evaluatedValue);
 
-            auto params = ParameterParser::parse(param_part);
-            ParameterParser::formatNumericValue(evaluatedValue, params.precision);
+            if (!formatting_param_part.empty()) {
+                auto params = ParameterParser::parse(formatting_param_part);
+                ParameterParser::formatNumericValue(evaluatedValue, params.precision);
+                logger.debug("4. After formatNumericValue: evaluatedValue='{}'", evaluatedValue);
+                ParameterParser::applyConditionalOutput(evaluatedValue, params.conditional);
+                logger.debug("5. After applyConditionalOutput: evaluatedValue='{}'", evaluatedValue);
 
-            ParameterParser::applyConditionalOutput(evaluatedValue, params.conditional);
-
-            std::string_view colorFormat = "{color}{value}";
-            auto colorFormatIt = params.otherParams.find("color_format");
-            if (colorFormatIt != params.otherParams.end()) {
-                colorFormat = colorFormatIt->second;
+                std::string_view colorFormat   = "{color}{value}";
+                auto             colorFormatIt = params.otherParams.find("color_format");
+                if (colorFormatIt != params.otherParams.end()) {
+                    colorFormat = colorFormatIt->second;
+                }
+                // If map= is used, it takes precedence over color rules.
+                if (!params.conditional.enabled) {
+                    ParameterParser::applyColorRules(evaluatedValue, params.colorParamPart, colorFormat);
+                }
+                logger.debug("6. After applyColorRules: evaluatedValue='{}'", evaluatedValue);
             }
 
-            ParameterParser::applyColorRules(evaluatedValue, params.colorParamPart, colorFormat);
+            logger.debug("7. Final Value: evaluatedValue='{}'", evaluatedValue);
             result.append(evaluatedValue);
         } else {
             result.append(full_placeholder);
