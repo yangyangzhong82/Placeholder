@@ -2,6 +2,7 @@
 #include "ll/api/service/Bedrock.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
+#include "mc/server/commands/CommandUtils.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/Mob.h"
 #include "mc/world/actor/player/Player.h"
@@ -105,6 +106,8 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
+
+
     // {can_fly}
     svc->registerPlaceholder(
         "",
@@ -130,6 +133,187 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
                     auto h = ActorAttribute::getHealth(c.mob->getEntityContext());
                     out    = std::to_string(h);
                 }
+            }
+        ),
+        owner
+    );
+    // {actor_is_on_ground}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_on_ground}",
+            +[](const ActorContext& c, std::string& out) {
+                bool onGround = false;
+                if (c.actor) onGround = c.actor->isOnGround();
+                out = onGround ? "true" : "false";
+            }
+        ),
+        owner
+    );
+
+    // {actor_is_alive}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_alive}",
+            +[](const ActorContext& c, std::string& out) {
+                bool alive = false;
+                if (c.actor) alive = c.actor->isAlive();
+                out = alive ? "true" : "false";
+            }
+        ),
+        owner
+    );
+
+    // {actor_is_invisible}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_invisible}",
+            +[](const ActorContext& c, std::string& out) {
+                bool invisible = false;
+                if (c.actor) invisible = c.actor->isInvisible();
+                out = invisible ? "true" : "false";
+            }
+        ),
+        owner
+    );
+
+    // {actor_dimension_id}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_dimension_id}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(static_cast<int>(c.actor->getDimensionId()));
+            }
+        ),
+        owner
+    );
+
+    // {actor_type_id}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_type_id}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(static_cast<int>(c.actor->getEntityTypeId()));
+            }
+        ),
+        owner
+    );
+    // {actor_type_name}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_type_name}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = (c.actor->getTypeName());
+            }
+        ),
+        owner
+    );
+    // {actor_pos}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_pos}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = (c.actor->getPosition().toString());
+            }
+        ),
+        owner
+    );
+    // {actor_pos}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_pos_x}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getPosition().x);
+            }
+        ),
+        owner
+    );
+    // {actor_pos_y}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_pos_y}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getPosition().y);
+            }
+        ),
+        owner
+    );
+    // {actor_pos_z}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_pos_z}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getPosition().z);
+            }
+        ),
+        owner
+    );
+    // {actor_unique_id}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_unique_id}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getOrCreateUniqueID().rawID);
+            }
+        ),
+        owner
+    );
+
+    // {actor_is_baby}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_baby}",
+            +[](const ActorContext& c, std::string& out) {
+                bool isBaby = false;
+                if (c.actor) isBaby = c.actor->isBaby();
+                out = isBaby ? "true" : "false";
+            }
+        ),
+        owner
+    );
+
+    // {actor_is_riding}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_riding}",
+            +[](const ActorContext& c, std::string& out) {
+                bool isRiding = false;
+                if (c.actor) isRiding = c.actor->isRiding();
+                out = isRiding ? "true" : "false";
+            }
+        ),
+        owner
+    );
+
+    // {actor_is_tame}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_tame}",
+            +[](const ActorContext& c, std::string& out) {
+                bool isTame = false;
+                if (c.actor) isTame = c.actor->isTame();
+                out = isTame ? "true" : "false";
             }
         ),
         owner

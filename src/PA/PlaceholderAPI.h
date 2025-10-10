@@ -19,6 +19,7 @@
 
 class Player;
 class Mob;
+class Actor; // Add Actor forward declaration
 
 namespace PA {
 
@@ -51,23 +52,37 @@ inline constexpr uint64_t kServerContextId = 0;
 
 // 预定义的一些上下文（如需更多上下文，请扩展此处并保持 ID 字符串常量不变）
 
+// Actor 上下文
+struct PA_API ActorContext : public IContext { // 移除 final
+    static constexpr uint64_t kTypeId = TypeId("ctx:Actor");
+    Actor*                    actor{};
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+        return {kTypeId}; // Actor 不继承其他上下文
+    }
+};
+
 // 生物上下文
-struct PA_API MobContext final : public IContext {
+struct PA_API MobContext : public ActorContext { // 移除 final, Mob 继承自 Actor
     static constexpr uint64_t kTypeId = TypeId("ctx:Mob");
     Mob*                      mob{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
     std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
-        return {kTypeId}; // Mob 不继承其他上下文
+        std::vector<uint64_t> inherited = ActorContext::getInheritedTypeIds();
+        inherited.push_back(kTypeId);
+        return inherited;
     }
 };
 
 // 玩家上下文
-struct PA_API PlayerContext final : public IContext {
+struct PA_API PlayerContext : public MobContext { // 移除 final, Player 继承自 Mob
     static constexpr uint64_t kTypeId = TypeId("ctx:Player");
     Player*                   player{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
     std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
-        return {kTypeId, MobContext::kTypeId}; // Player 继承自 Mob
+        std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
+        inherited.push_back(kTypeId);
+        return inherited;
     }
 };
 
