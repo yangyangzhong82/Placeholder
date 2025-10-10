@@ -88,7 +88,7 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 bool              first_f = true;
 
                 for (const auto& p : paramSegments) {
-                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0) {
+                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0) {
                         if (!first_f) f_param_ss << ",";
                         f_param_ss << p;
                         first_f = false;
@@ -120,6 +120,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 logger.debug("4. After formatNumericValue: evaluatedValue='{}'", evaluatedValue);
                 ParameterParser::applyConditionalOutput(evaluatedValue, params.conditional);
                 logger.debug("5. After applyConditionalOutput: evaluatedValue='{}'", evaluatedValue);
+                ParameterParser::applyBooleanMap(evaluatedValue, params.booleanMap); // 应用布尔值映射
+                logger.debug("5.5. After applyBooleanMap: evaluatedValue='{}'", evaluatedValue);
 
                 std::string_view colorFormat   = "{color}{value}";
                 auto             colorFormatIt = params.otherParams.find("color_format");

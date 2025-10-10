@@ -92,7 +92,29 @@ PlaceholderParams parse(std::string_view paramPart) {
                 params.conditional.hasElse    = true;
                 params.conditional.elseOutput = "";
             }
-        } else if (p.find('=') != std::string::npos) {
+        } else if (p.rfind("bool_map=", 0) == 0) {
+            params.booleanMap.enabled = true;
+            std::string_view rules_sv = std::string_view(p).substr(9); // "bool_map=".length()
+
+            size_t start = 0;
+            size_t end   = 0;
+            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
+                std::string_view rule = rules_sv.substr(start, end - start);
+                size_t colon_pos = rule.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.booleanMap.mappings[std::string(rule.substr(0, colon_pos))] = std::string(rule.substr(colon_pos + 1));
+                }
+                start = end + 1;
+            }
+            std::string_view last_part = rules_sv.substr(start);
+            if (!last_part.empty()) {
+                size_t colon_pos = last_part.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.booleanMap.mappings[std::string(last_part.substr(0, colon_pos))] = std::string(last_part.substr(colon_pos + 1));
+                }
+            }
+        }
+        else if (p.find('=') != std::string::npos) {
             size_t separatorPos               = p.find('=');
             params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
         } else {
@@ -187,6 +209,16 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
     }
 }
 
+// 辅助函数：修剪字符串两端的空白字符
+static std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(" \t\n\r\f\v");
+    if (std::string::npos == first) {
+        return str;
+    }
+    size_t last = str.find_last_not_of(" \t\n\r\f\v");
+    return str.substr(first, (last - first + 1));
+}
+
 void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput& conditional) {
     if (!conditional.enabled) {
         return;
@@ -233,6 +265,18 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
         } else {
             evaluatedValue = output + originalValue;
         }
+    }
+}
+
+void applyBooleanMap(std::string& evaluatedValue, const BooleanMap& booleanMap) {
+    if (!booleanMap.enabled) {
+        return;
+    }
+
+    std::string trimmedValue = trim(evaluatedValue); // 修剪 evaluatedValue
+    auto it = booleanMap.mappings.find(trimmedValue);
+    if (it != booleanMap.mappings.end()) {
+        evaluatedValue = it->second;
     }
 }
 

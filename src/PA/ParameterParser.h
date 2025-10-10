@@ -26,12 +26,19 @@ struct ConditionalOutput {
     std::string            elseOutput;
 };
 
+// 表示布尔值映射规则
+struct BooleanMap {
+    bool                   enabled = false;
+    std::map<std::string, std::string> mappings;
+};
+
 // 表示从占位符解析的参数
 struct PlaceholderParams {
     int                                precision = -1;
     std::string                        colorParamPart;
     std::map<std::string, std::string> otherParams;
     ConditionalOutput                  conditional;
+    BooleanMap                         booleanMap; // 新增的布尔值映射参数
 };
 
 // 解析占位符的参数部分
@@ -45,6 +52,9 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
 
 // 将条件输出规则应用于评估值
 void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput& conditional);
+
+// 将布尔值映射规则应用于评估值
+void applyBooleanMap(std::string& evaluatedValue, const BooleanMap& booleanMap);
 
 } // namespace ParameterParser
 } // namespace PA

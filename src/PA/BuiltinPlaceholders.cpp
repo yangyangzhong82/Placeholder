@@ -148,7 +148,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {max_players}（示例中仍返回当前激活数，如有真实上限 API 可替换）
+    // {max_players}
     svc->registerPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
