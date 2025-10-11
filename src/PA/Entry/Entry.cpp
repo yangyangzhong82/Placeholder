@@ -21,14 +21,14 @@ bool Entry::load() {
     ConfigManager::getInstance().load((getSelf().getConfigDir() / "config.json").string());
 
     registerBuiltinPlaceholders(PA_GetPlaceholderService());
-
+    ScriptExports::install();
     return true;
 }
 
 bool Entry::enable() {
     getSelf().getLogger().debug("Enabling...");
     // Code for enabling the mod goes here.
-    ScriptExports::install();
+
     return true;
 }
 

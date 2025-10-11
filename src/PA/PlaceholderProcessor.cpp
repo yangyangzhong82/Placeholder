@@ -42,29 +42,41 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
 
         std::string token;
         std::string param_part;
+        std::shared_ptr<const IPlaceholder> ph;
 
-        size_t comma_pos = content.find(',');
-        if (comma_pos != std::string::npos) {
-            token      = content.substr(0, comma_pos);
-            param_part = content.substr(comma_pos + 1);
-        } else {
-            size_t last_colon = content.rfind(':');
-            if (last_colon != std::string::npos) {
-                std::string after_colon = content.substr(last_colon + 1);
-                if (after_colon.find('=') != std::string::npos || after_colon.find(',') != std::string::npos
-                    || (!after_colon.empty() && isdigit(static_cast<unsigned char>(after_colon[0])))) {
-                    token      = content.substr(0, last_colon);
-                    param_part = after_colon;
-                } else {
-                    token = content;
+        // Find the longest registered placeholder that is a prefix of `content`.
+        for (size_t split_pos = content.length();;) {
+            std::string potential_token = content.substr(0, split_pos);
+            ph = registry.findPlaceholder(potential_token, ctx);
+
+            if (ph) {
+                token = potential_token;
+                if (split_pos < content.length()) {
+                    if (content[split_pos] == ':') {
+                        param_part = content.substr(split_pos + 1);
+                    } else {
+                        // The character after the potential token is not a parameter separator,
+                        // so this is not a valid match.
+                        ph.reset();
+                        token.clear();
+                    }
                 }
-            } else {
-                token = content;
+                if (ph) {
+                    break; // Found the longest valid match
+                }
             }
-        }
-        logger.debug("1. Initial Parse: token='{}', param_part='{}'", token, param_part);
 
-        auto ph = registry.findPlaceholder(token, ctx);
+            if (split_pos == 0) {
+                break; // Reached the beginning of the string
+            }
+            size_t prev_colon = content.rfind(':', split_pos - 1);
+            if (prev_colon == std::string::npos) {
+                break; // No more colons to check for shorter prefixes
+            }
+            split_pos = prev_colon;
+        }
+
+        logger.debug("1. Initial Parse: token='{}', param_part='{}'", token, param_part);
         if (ph) {
             std::string evaluatedValue;
             std::string placeholder_param_part;
