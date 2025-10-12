@@ -1,0 +1,71 @@
+// 插件名称：PlaceholderAPI JS 示例（含注册自定义占位符）
+// 插件版本：1.1.0
+// 插件描述：演示如何在 JS 中注册自定义占位符，并与 PlaceholderAPI 配合使用
+
+// 1) 导入 PlaceholderAPI 暴露的函数
+const PA = {
+    replaceForPlayer: ll.import("PA", "replaceForPlayer"),
+
+
+    registerPlayerPlaceholder: ll.import("PA", "registerPlayerPlaceholder"),
+    //registerMobPlaceholder: ll.import("PA", "registerMobPlaceholder"), lse没有Mob这个对象，不要用
+    registerActorPlaceholder: ll.import("PA", "registerActorPlaceholder"),
+    registerServerPlaceholder: ll.import("PA", "registerServerPlaceholder"),
+    registerPlaceholderByKind: ll.import("PA", "registerPlaceholderByKind"),
+    registerPlaceholderByContextId: ll.import("PA", "registerPlaceholderByContextId"),
+    unregisterByCallbackNamespace: ll.import("PA", "unregisterByCallbackNamespace"),
+    contextTypeIds: ll.import("PA", "contextTypeIds"),
+};
+
+// 2) 在 JS 中导出一个回调函数，供 C++ 在占位符求值时调用
+// 回调命名空间
+const JS_CB_NS = "JSPH";
+
+// 玩家上下文占位符回调签名：std::string(std::string token, std::string param, Player* player)
+ll.export((token, param, player) => {
+    // token 是注册时传入的 tokenName（不带花括号），例如 "hello"
+    // param 是占位符参数（如果用户写了 {js:hello:xxx}，param 为 "xxx"，否则为空字符串）
+    const extra = param ? `（${param}）` : "";
+    const name = player ? player.name : "未知玩家";
+    return `你好，${name}${extra}`;
+}, JS_CB_NS, "helloPlayer");
+
+// 服务器级占位符回调签名：std::string(std::string token, std::string param)
+ll.export((token, param) => {
+    const now = new Date();
+    return `服务器时间：${now.toLocaleString()}`;
+}, JS_CB_NS, "serverTime");
+
+// Actor 上下文占位符回调签名：std::string(std::string token, std::string param, Actor* actor)
+ll.export((token, param, actor) => {
+    if (!actor) return "无实体";
+    const pos = actor.pos;
+    return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
+}, JS_CB_NS, "actorPos");
+
+// 3) 向 PlaceholderAPI 注册这些占位符
+// 最终占位符形如：{js:hello}、{js:server_time}、{js:actor_pos}
+const ok1 = PA.registerPlayerPlaceholder("js", "hello", JS_CB_NS, "helloPlayer");
+const ok2 = PA.registerServerPlaceholder("js", "server_time", JS_CB_NS, "serverTime");
+const ok3 = PA.registerActorPlaceholder("js", "actor_pos", JS_CB_NS, "actorPos");
+
+if (!ok1 || !ok2 || !ok3) {
+    logger.error("注册 JS 占位符失败，请检查前面的日志。");
+} else {
+    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos}");
+}
+
+mc.listen("onJoin", (player) => {
+    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}";
+    const processedMessage = PA.replaceForPlayer(msg, player);
+    player.tell(processedMessage);
+    logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);
+});
+
+// 5) 插件卸载时，清理由本 JS 命名空间注册的占位符
+ll.registerPluginUnload && ll.registerPluginUnload(() => {
+    const ok = PA.unregisterByCallbackNamespace(JS_CB_NS);
+    logger.info(`已卸载 '${JS_CB_NS}' 名下的占位符：${ok}`);
+});
+
+logger.info("PlaceholderAPI JS 示例插件已加载，正在监听 onJoin 事件并注册 JS 占位符。");

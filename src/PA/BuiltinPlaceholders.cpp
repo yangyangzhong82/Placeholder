@@ -1,5 +1,14 @@
+
+
+
 #include "PlaceholderAPI.h"
 #include "ll/api/service/Bedrock.h"
+#include "mc/deps/core/platform/BuildPlatform.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h" // 提供 EntityRegistry 的完整定义
+#include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h" // 确保 EntityContext 尽早被完全定义
+#include "mc/deps/game_refs/GameRefs.h"
+#include "mc/deps/game_refs/OwnerPtr.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
 #include "mc/server/commands/CommandUtils.h"
@@ -8,6 +17,7 @@
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
+#include "mc/world/level/dimension/Dimension.h"
 
 
 #include <chrono>
@@ -16,7 +26,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
-
+#include <vector>
 
 namespace {
 
@@ -89,11 +99,11 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {ping}
+    // {player_average_ping}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{ping}",
+            "{player_average_ping}",
             +[](const PlayerContext& c, std::string& out) {
                 out = "0";
                 if (c.player) {
@@ -105,14 +115,112 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
+    // {player_ping}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_ping}",
+            +[](const PlayerContext& c, std::string& out) {
+                out = "0";
+                if (c.player) {
+                    if (auto ns = c.player->getNetworkStatus()) {
+                        out = std::to_string(ns->mCurrentPing);
+                    }
+                }
+            }
+        ),
+        owner
+    );
+    // {player_avgpacketloss}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_avgpacketloss}",
+            +[](const PlayerContext& c, std::string& out) {
+                out = "0";
+                if (c.player) {
+                    if (auto ns = c.player->getNetworkStatus()) {
+                        out = std::to_string(ns->mCurrentPacketLoss);
+                    }
+                }
+            }
+        ),
+        owner
+    );
+    // {player_averagepacketloss}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_averagepacketloss}",
+            +[](const PlayerContext& c, std::string& out) {
+                out = "0";
+                if (c.player) {
+                    if (auto ns = c.player->getNetworkStatus()) {
+                        out = std::to_string(ns->mAveragePacketLoss);
+                    }
+                }
+            }
+        ),
+        owner
+    );
+
+    // {player_os}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_os}",
+            +[](const PlayerContext& c, std::string& out) {
+                out = "Unknown";
+                if (c.player) {
+                    switch (c.player->mBuildPlatform) {
+                    case BuildPlatform::Google:
+                        out = "Android";
+                        break;
+                    case BuildPlatform::IOS:
+                        out = "iOS";
+                        break;
+                    case BuildPlatform::Osx:
+                        out = "macOS";
+                        break;
+                    case BuildPlatform::Amazon:
+                        out = "Amazon";
+                        break;
+                    case BuildPlatform::Uwp:
+                        out = "UWP";
+                        break;
+                    case BuildPlatform::Win32:
+                        out = "Windows";
+                        break;
+                    case BuildPlatform::Dedicated:
+                        out = "Dedicated";
+                        break;
+                    case BuildPlatform::Sony:
+                        out = "PlayStation";
+                        break;
+                    case BuildPlatform::Nx:
+                        out = "Nintendo Switch";
+                        break;
+                    case BuildPlatform::Xbox:
+                        out = "Xbox";
+                        break;
+                    case BuildPlatform::Linux:
+                        out = "Linux";
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+        ),
+        owner
+    );
 
 
-
-    // {can_fly}
+    // {mob_can_fly}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)>>(
-            "{can_fly}",
+            "{mob_can_fly}",
             +[](const MobContext& c, std::string& out) {
                 bool can = false;
                 if (c.mob) can = c.mob->canFly();
@@ -122,11 +230,11 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {health}
+    // {mob_health}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)>>(
-            "{health}",
+            "{mob_health}",
             +[](const MobContext& c, std::string& out) {
                 out = "0";
                 if (c.mob) {
@@ -137,6 +245,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
+
     // {actor_is_on_ground}
     svc->registerPlaceholder(
         "",
@@ -179,18 +288,6 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {actor_dimension_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
-            "{actor_dimension_id}",
-            +[](const ActorContext& c, std::string& out) {
-                out = "0";
-                if (c.actor) out = std::to_string(static_cast<int>(c.actor->getDimensionId()));
-            }
-        ),
-        owner
-    );
 
     // {actor_type_id}
     svc->registerPlaceholder(
@@ -228,7 +325,7 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
-    // {actor_pos}
+    // {actor_pos_x}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
@@ -260,6 +357,42 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             +[](const ActorContext& c, std::string& out) {
                 out = "0";
                 if (c.actor) out = std::to_string(c.actor->getPosition().z);
+            }
+        ),
+        owner
+    );
+    // {actor_rotation}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_rotation}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = c.actor->getRotation().toString();
+            }
+        ),
+        owner
+    );
+    // {actor_rotation_x}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_rotation_x}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getRotation().x);
+            }
+        ),
+        owner
+    );
+    // {actor_rotation_y}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_rotation_y}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getRotation().y);
             }
         ),
         owner
@@ -318,7 +451,19 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
-
+    // {actor_is_tame}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_is_tame}",
+            +[](const ActorContext& c, std::string& out) {
+                bool isTame = false;
+                if (c.actor) isTame = c.actor->isTame();
+                out = isTame ? "true" : "false";
+            }
+        ),
+        owner
+    );
     // {online_players}
     svc->registerPlaceholder(
         "",
@@ -340,6 +485,19 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
             +[](std::string& out) {
                 auto server = ll::service::getServerNetworkHandler();
                 out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
+            }
+        ),
+        owner
+    );
+
+    // {total_entities}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{total_entities}",
+            +[](std::string& out) {
+                auto level = ll::service::getLevel();
+                out        = level ? std::to_string(level->getEntities().size()) : "0";
             }
         ),
         owner
