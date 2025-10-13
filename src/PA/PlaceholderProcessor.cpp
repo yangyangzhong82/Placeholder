@@ -120,7 +120,17 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
             );
 
             if (!placeholder_param_part.empty()) {
-                ph->evaluateWithParam(ctx, placeholder_param_part, evaluatedValue);
+                std::vector<std::string_view> args;
+                std::string_view              params_sv(placeholder_param_part);
+                size_t                        start = 0;
+                size_t                        end   = params_sv.find(',');
+                while (end != std::string_view::npos) {
+                    args.push_back(params_sv.substr(start, end - start));
+                    start = end + 1;
+                    end   = params_sv.find(',', start);
+                }
+                args.push_back(params_sv.substr(start));
+                ph->evaluateWithArgs(ctx, args, evaluatedValue);
             } else {
                 ph->evaluate(ctx, evaluatedValue);
             }

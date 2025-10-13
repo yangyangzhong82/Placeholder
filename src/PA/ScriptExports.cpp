@@ -103,47 +103,56 @@ public:
     std::string_view token() const noexcept override { return mTokenBraced; }
     uint64_t         contextTypeId() const noexcept override { return mCtxId; }
 
-    void evaluate(const IContext* ctx, std::string& out) const override { evaluateImpl(ctx, std::string_view{}, out); }
-
-    void evaluateWithParam(const IContext* ctx, std::string_view param, std::string& out) const override {
-        evaluateImpl(ctx, param, out);
+    void evaluate(const IContext* ctx, std::string& out) const override {
+        evaluateWithArgs(ctx, {}, out); // No args
     }
 
-private:
-    void evaluateImpl(const IContext* ctx, std::string_view param, std::string& out) const {
+    void evaluateWithArgs(
+        const IContext*                      ctx,
+        const std::vector<std::string_view>& args,
+        std::string&                         out
+    ) const override {
         try {
-            // 将 tokenName（不带花括号）与 param 传给 JS
+            // 将 tokenName（不带花括号）与 args 传给 JS
+            std::vector<std::string> args_str;
+            args_str.reserve(args.size());
+            for (const auto& sv : args) {
+                args_str.emplace_back(sv);
+            }
+
             if (mCtxId == kServerContextId) {
-                // JS 回调签名：std::string(std::string token, std::string param)
-                auto fn  = RemoteCall::importAs<std::string(std::string, std::string)>(mCbNS, mCbName);
-                auto res = fn(mTokenNoBraces, std::string(param));
+                // JS 回调签名：std::string(std::string token, std::vector<std::string> args)
+                auto fn  = RemoteCall::importAs<std::string(std::string, std::vector<std::string>)>(mCbNS, mCbName);
+                auto res = fn(mTokenNoBraces, args_str);
                 out.append(res);
             } else if (mCtxId == PlayerContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::string param, Player* player)
-                auto    fn   = RemoteCall::importAs<std::string(std::string, std::string, Player*)>(mCbNS, mCbName);
+                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
+                auto fn =
+                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Player*)>(mCbNS, mCbName);
                 auto    pctx = static_cast<PlayerContext const*>(ctx);
                 Player* p    = pctx ? pctx->player : nullptr;
-                auto    res  = fn(mTokenNoBraces, std::string(param), p);
+                auto    res  = fn(mTokenNoBraces, args_str, p);
                 out.append(res);
             } else if (mCtxId == MobContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::string param, Actor* actor)
-                // 注意：RemoteCall 支持 Actor*，Mob* 会被打包为 Actor* 传递，JS 侧可当作 Actor 使用
-                auto   fn   = RemoteCall::importAs<std::string(std::string, std::string, Actor*)>(mCbNS, mCbName);
+                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
+                auto fn =
+                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Actor*)>(mCbNS, mCbName);
                 auto   mctx = static_cast<MobContext const*>(ctx);
                 Actor* a    = mctx ? static_cast<Actor*>(mctx->mob) : nullptr;
-                auto   res  = fn(mTokenNoBraces, std::string(param), a);
+                auto   res  = fn(mTokenNoBraces, args_str, a);
                 out.append(res);
             } else if (mCtxId == ActorContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::string param, Actor* actor)
-                auto   fn   = RemoteCall::importAs<std::string(std::string, std::string, Actor*)>(mCbNS, mCbName);
+                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
+                auto fn =
+                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Actor*)>(mCbNS, mCbName);
                 auto   actx = static_cast<ActorContext const*>(ctx);
                 Actor* a    = actx ? actx->actor : nullptr;
-                auto   res  = fn(mTokenNoBraces, std::string(param), a);
+                auto   res  = fn(mTokenNoBraces, args_str, a);
                 out.append(res);
             } else {
                 // 未知上下文，回退为服务器级
-                auto fn  = RemoteCall::importAs<std::string(std::string, std::string)>(mCbNS, mCbName);
-                auto res = fn(mTokenNoBraces, std::string(param));
+                auto fn  = RemoteCall::importAs<std::string(std::string, std::vector<std::string>)>(mCbNS, mCbName);
+                auto res = fn(mTokenNoBraces, args_str);
                 out.append(res);
             }
         } catch (std::exception const& e) {

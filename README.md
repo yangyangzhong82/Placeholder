@@ -42,21 +42,21 @@ const PA = {
 // 回调命名空间
 const JS_CB_NS = "JSPH";
 
-// 玩家上下文占位符回调签名：std::string(std::string token, std::string param, Player* player)
-ll.export((token, param, player) => {
-    const extra = param ? `（${param}）` : "";
+// 玩家上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
+ll.export((token, args, player) => {
+    const extra = args.length > 0 ? `（${args[0]}）` : "";
     const name = player ? player.name : "未知玩家";
     return `你好，${name}${extra}`;
 }, JS_CB_NS, "helloPlayer");
 
-// 服务器级占位符回调签名：std::string(std::string token, std::string param)
-ll.export((token, param) => {
+// 服务器级占位符回调签名：std::string(std::string token, std::vector<std::string> args)
+ll.export((token, args) => {
     const now = new Date();
     return `服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, "serverTime");
 
-// Actor 上下文占位符回调签名：std::string(std::string token, std::string param, Actor* actor)
-ll.export((token, param, actor) => {
+// Actor 上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
+ll.export((token, args, actor) => {
     if (!actor) return "无实体";
     const pos = actor.pos;
     return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;

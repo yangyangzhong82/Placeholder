@@ -101,7 +101,11 @@ struct PA_API IPlaceholder {
     virtual void evaluate(const IContext* ctx, std::string& out) const = 0;
 
     // 新增带参数的 evaluate 方法
-    virtual void evaluateWithParam(const IContext* ctx, std::string_view param, std::string& out) const {
+    virtual void evaluateWithArgs(
+        const IContext*                           ctx,
+        const std::vector<std::string_view>&      args,
+        std::string&                              out
+    ) const {
         // 默认实现调用无参数的 evaluate
         evaluate(ctx, out);
     }
