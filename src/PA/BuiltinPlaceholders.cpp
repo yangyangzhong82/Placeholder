@@ -2,8 +2,8 @@
 
 
 #include "PlaceholderAPI.h"
-#include "ll/api/service/Bedrock.h"
 #include "ll/api/Versions.h" // 引入 Versions.h 以获取服务器版本信息
+#include "ll/api/service/Bedrock.h"
 #include "mc/deps/core/platform/BuildPlatform.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h" // 提供 EntityRegistry 的完整定义
@@ -19,7 +19,10 @@
 #include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/level/dimension/Dimension.h"
-
+#include "mc\world\scores\Objective.h"
+#include "mc\world\scores\Scoreboard.h"
+#include "mc\world\scores\ScoreboardId.h"
+#include "mc\world\scores\ScoreInfo.h"
 
 #include <chrono>
 #include <ctime>
@@ -395,27 +398,29 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
     static int kBuiltinOwnerTag = 0;
     void*      owner            = &kBuiltinOwnerTag;
 
-    // {player_money}
+    // {score}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<
-            PlayerContext,
-            void (*)(const PlayerContext&, const std::vector<std::string_view>&, std::string&)>>(
-            "{player_money}",
-            +[](const PlayerContext& c, const std::vector<std::string_view>& args, std::string& out) {
-                if (c.player && !args.empty()) {
-                    std::string money_type(args[0]);
-                    // Here you would typically call your economy API
-                    // For demonstration, we'll just return a dummy value
-                    if (money_type == "gold") {
-                        out = "100";
-                    } else if (money_type == "silver") {
-                        out = "500";
-                    } else {
-                        out = "0";
+            ActorContext,
+            void (*)(const ActorContext&, const std::vector<std::string_view>&, std::string&)>>(
+            "{score}",
+            +[](const ActorContext& c, const std::vector<std::string_view>& args, std::string& out) {
+                if (c.actor && !args.empty()) {
+                    std::string score_name (args[0]);
+                    Scoreboard& scoreboard = ll::service::getLevel()->getScoreboard();
+                    Objective*  obj        = scoreboard.getObjective(score_name);
+                    if (!obj) {
                     }
+                    const ScoreboardId& id         = scoreboard.getScoreboardId(*c.actor);
+                    if (id.mRawID == ScoreboardId::INVALID().mRawID) {
+                        // 如果玩家没有记分板ID，则分数默认为0
+                        out = "0";
+                        return;
+                    }
+                    out = std::to_string(obj->getPlayerScore(id).mValue);
                 } else {
-                    out = "0";
+                    out = PA_COLOR_RED "Usage: {score:objective_name}" PA_COLOR_RESET; // 如果没有提供参数，返回使用说明
                 }
             }
         ),
