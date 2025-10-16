@@ -1,5 +1,8 @@
 // src/PA/ParameterParser.cpp
 #include "PA/ParameterParser.h"
+#include "PA/logger.h" // 引入 logger 头文件
+#include <algorithm>   // For std::transform and ::tolower
+#include <cctype>      // For ::tolower
 #include <charconv>
 #include <iomanip>
 #include <regex> // 引入正则表达式头文件
@@ -151,9 +154,10 @@ PlaceholderParams parse(std::string_view paramPart) {
                 std::string_view rule      = rules_sv.substr(start, end - start);
                 size_t           colon_pos = rule.find(':');
                 if (colon_pos != std::string_view::npos) {
+                    std::string raw_replacement = std::string(rule.substr(colon_pos + 1));
                     params.regexReplaceMap.mappings.emplace_back(
                         std::string(rule.substr(0, colon_pos)),
-                        std::string(rule.substr(colon_pos + 1))
+                        raw_replacement
                     );
                 }
                 start = end + 1;
@@ -162,9 +166,10 @@ PlaceholderParams parse(std::string_view paramPart) {
             if (!last_part.empty()) {
                 size_t colon_pos = last_part.find(':');
                 if (colon_pos != std::string_view::npos) {
+                    std::string raw_replacement = std::string(last_part.substr(colon_pos + 1));
                     params.regexReplaceMap.mappings.emplace_back(
                         std::string(last_part.substr(0, colon_pos)),
-                        std::string(last_part.substr(colon_pos + 1))
+                        raw_replacement
                     );
                 }
             }
@@ -364,22 +369,121 @@ void applyCharReplaceMap(std::string& evaluatedValue, const CharReplaceMap& char
     }
 }
 
+// 辅助函数：尝试解析大小写转换指令，例如 "\l$1" 或 "\u$1"
+static bool
+tryParseCaseDirective(const std::string& replacement, char directive_char, bool& is_case_flag, int& case_group_num) {
+    // We are looking for replacement strings like "\l$1" or "\u$1"
+    // which means the actual string content is '\', 'l', '$', '1'
+    if (replacement.size() < 4 || replacement[0] != '\\' || replacement[1] != directive_char || replacement[2] != '$') {
+        return false;
+    }
+    // We expect something like \l$1, \u$12 etc.
+    std::string_view group_sv(replacement);
+    group_sv.remove_prefix(3); // Remove "\l$" or "\u$"
+
+    if (group_sv.empty() || !std::isdigit(static_cast<unsigned char>(group_sv[0]))) {
+        logger.debug("    Case directive parse failed: no group number after '$' in '{}'", replacement);
+        return false; // No number after '$'
+    }
+
+    size_t parsed_count = 0;
+    for (char c : group_sv) {
+        if (std::isdigit(static_cast<unsigned char>(c))) {
+            parsed_count++;
+        } else {
+            break; // Stop at the first non-digit
+        }
+    }
+
+    // The directive must cover the whole replacement string
+    if (parsed_count != group_sv.length()) {
+        logger.debug("    Case directive parse failed: extra chars after group number in '{}'", replacement);
+        return false;
+    }
+
+    try {
+        case_group_num = std::stoi(std::string(group_sv));
+        is_case_flag   = true;
+        logger.debug(
+            std::string("    Parsed case directive \\") + directive_char + "$" + std::to_string(case_group_num)
+            + ", group number is " + std::to_string(case_group_num)
+        );
+        return true;
+    } catch (...) {
+        logger.warn("    Failed to parse group number from '{}'", std::string(group_sv));
+        return false;
+    }
+}
+
 void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& regexReplaceMap) {
     if (!regexReplaceMap.enabled) {
         return;
     }
 
+    logger.debug("applyRegexReplaceMap: Initial evaluatedValue='{}'", evaluatedValue);
+
     for (const auto& pair : regexReplaceMap.mappings) {
         const std::string& regex_str   = pair.first;
         const std::string& replacement = pair.second;
+        logger.debug("  Applying regex_str='{}', raw replacement='{}'", regex_str, replacement);
+
         try {
-            std::regex re(regex_str);
-            evaluatedValue = std::regex_replace(evaluatedValue, re, replacement);
+            std::regex  re(regex_str);
+            std::string result_value;
+            auto        last_match_end = evaluatedValue.cbegin();
+
+            bool is_lowercase_replacement = false;
+            bool is_uppercase_replacement = false;
+            int  case_group_num           = -1;
+
+            if (!tryParseCaseDirective(replacement, 'l', is_lowercase_replacement, case_group_num)) {
+                tryParseCaseDirective(replacement, 'u', is_uppercase_replacement, case_group_num);
+            }
+
+            for (std::sregex_iterator it(evaluatedValue.cbegin(), evaluatedValue.cend(), re), end; it != end; ++it) {
+                result_value.append(last_match_end, it->prefix().second);
+
+                if ((is_lowercase_replacement || is_uppercase_replacement) && case_group_num >= 0
+                    && case_group_num < static_cast<int>(it->size())) {
+
+                    std::string captured = (*it)[case_group_num].str();
+                    if (is_lowercase_replacement) {
+                        std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
+                            return static_cast<char>(std::tolower(c));
+                        });
+                    } else { // is_uppercase_replacement
+                        std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
+                            return static_cast<char>(std::toupper(c));
+                        });
+                    }
+                    result_value.append(captured);
+
+                } else {
+                    // 通用 $N 处理
+                    // 检查 replacement 是否包含 $N 形式的捕获组引用
+                    std::string formatted_replacement = replacement;
+                    for (int i = 0; i < it->size(); ++i) {
+                        std::string group_placeholder = "$" + std::to_string(i);
+                        size_t      pos               = formatted_replacement.find(group_placeholder);
+                        while (pos != std::string::npos) {
+                            formatted_replacement.replace(pos, group_placeholder.length(), (*it)[i].str());
+                            pos = formatted_replacement.find(group_placeholder, pos + (*it)[i].str().length());
+                        }
+                    }
+                    result_value.append(formatted_replacement);
+                }
+
+                last_match_end = it->suffix().first;
+            }
+            result_value.append(last_match_end, evaluatedValue.cend());
+            evaluatedValue = result_value;
+            logger.debug("  After applying regex_str='{}', evaluatedValue='{}'", regex_str, evaluatedValue);
+
         } catch (const std::regex_error& e) {
-            // Handle regex error, e.g., log it
-            // For now, we'll just skip this rule
+            logger.error("Regex error for pattern '{}': {}", regex_str, e.what());
         }
     }
+    logger.debug("applyRegexReplaceMap: Final evaluatedValue='{}'", evaluatedValue);
 }
 
 } // namespace ParameterParser
