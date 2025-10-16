@@ -40,14 +40,14 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
         std::string_view content_sv       = text.substr(start_pos + 1, end_pos - start_pos - 1);
         std::string      content(content_sv);
 
-        std::string token;
-        std::string param_part;
+        std::string                         token;
+        std::string                         param_part;
         std::shared_ptr<const IPlaceholder> ph;
 
         // Find the longest registered placeholder that is a prefix of `content`.
         for (size_t split_pos = content.length();;) {
             std::string potential_token = content.substr(0, split_pos);
-            ph = registry.findPlaceholder(potential_token, ctx);
+            ph                          = registry.findPlaceholder(potential_token, ctx);
 
             if (ph) {
                 token = potential_token;
@@ -100,7 +100,9 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 bool              first_f = true;
 
                 for (const auto& p : paramSegments) {
-                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0) {
+                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0
+                        || p.rfind("bool_map=", 0) == 0 || p.rfind("char_map=", 0) == 0
+                        || p.rfind("regex_map=", 0) == 0) {
                         if (!first_f) f_param_ss << ",";
                         f_param_ss << p;
                         first_f = false;
@@ -144,6 +146,10 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 logger.debug("5. After applyConditionalOutput: evaluatedValue='{}'", evaluatedValue);
                 ParameterParser::applyBooleanMap(evaluatedValue, params.booleanMap); // 应用布尔值映射
                 logger.debug("5.5. After applyBooleanMap: evaluatedValue='{}'", evaluatedValue);
+                ParameterParser::applyCharReplaceMap(evaluatedValue, params.charReplaceMap); // 应用字符替换映射
+                logger.debug("5.6. After applyCharReplaceMap: evaluatedValue='{}'", evaluatedValue);
+                ParameterParser::applyRegexReplaceMap(evaluatedValue, params.regexReplaceMap); // 应用正则表达式替换映射
+                logger.debug("5.7. After applyRegexReplaceMap: evaluatedValue='{}'", evaluatedValue);
 
                 std::string_view colorFormat   = "{color}{value}";
                 auto             colorFormatIt = params.otherParams.find("color_format");

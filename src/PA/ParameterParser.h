@@ -32,13 +32,27 @@ struct BooleanMap {
     std::map<std::string, std::string> mappings;
 };
 
+// 表示字符替换映射规则
+struct CharReplaceMap {
+    bool                   enabled = false;
+    std::map<std::string, std::string> mappings;
+};
+
+// 表示正则表达式替换映射规则
+struct RegexReplaceMap {
+    bool                               enabled = false;
+    std::vector<std::pair<std::string, std::string>> mappings;
+};
+
 // 表示从占位符解析的参数
 struct PlaceholderParams {
     int                                precision = -1;
     std::string                        colorParamPart;
     std::map<std::string, std::string> otherParams;
     ConditionalOutput                  conditional;
-    BooleanMap                         booleanMap; // 新增的布尔值映射参数
+    BooleanMap                         booleanMap;
+    CharReplaceMap                     charReplaceMap;
+    RegexReplaceMap                    regexReplaceMap; // 新增的正则表达式替换映射参数
 };
 
 // 解析占位符的参数部分
@@ -55,6 +69,12 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
 
 // 将布尔值映射规则应用于评估值
 void applyBooleanMap(std::string& evaluatedValue, const BooleanMap& booleanMap);
+
+// 将字符替换映射规则应用于评估值
+void applyCharReplaceMap(std::string& evaluatedValue, const CharReplaceMap& charReplaceMap);
+
+// 将正则表达式替换映射规则应用于评估值
+void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& regexReplaceMap);
 
 } // namespace ParameterParser
 } // namespace PA

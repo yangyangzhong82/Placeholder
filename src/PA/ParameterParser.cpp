@@ -1,9 +1,11 @@
 // src/PA/ParameterParser.cpp
 #include "PA/ParameterParser.h"
-#include <vector>
 #include <charconv>
-#include <sstream>
 #include <iomanip>
+#include <regex> // 引入正则表达式头文件
+#include <sstream>
+#include <vector>
+
 
 namespace PA {
 
@@ -31,7 +33,8 @@ PlaceholderParams parse(std::string_view paramPart) {
         if (p.rfind("precision=", 0) == 0) {
             std::string_view precision_sv = std::string_view(p).substr(10); // "precision=".length()
             int              parsedPrecision;
-            auto [prec_ptr, prec_ec] = std::from_chars(precision_sv.data(), precision_sv.data() + precision_sv.size(), parsedPrecision);
+            auto [prec_ptr, prec_ec] =
+                std::from_chars(precision_sv.data(), precision_sv.data() + precision_sv.size(), parsedPrecision);
             if (prec_ec == std::errc()) {
                 params.precision = parsedPrecision;
             }
@@ -99,10 +102,11 @@ PlaceholderParams parse(std::string_view paramPart) {
             size_t start = 0;
             size_t end   = 0;
             while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                std::string_view rule = rules_sv.substr(start, end - start);
-                size_t colon_pos = rule.find(':');
+                std::string_view rule      = rules_sv.substr(start, end - start);
+                size_t           colon_pos = rule.find(':');
                 if (colon_pos != std::string_view::npos) {
-                    params.booleanMap.mappings[std::string(rule.substr(0, colon_pos))] = std::string(rule.substr(colon_pos + 1));
+                    params.booleanMap.mappings[std::string(rule.substr(0, colon_pos))] =
+                        std::string(rule.substr(colon_pos + 1));
                 }
                 start = end + 1;
             }
@@ -110,12 +114,62 @@ PlaceholderParams parse(std::string_view paramPart) {
             if (!last_part.empty()) {
                 size_t colon_pos = last_part.find(':');
                 if (colon_pos != std::string_view::npos) {
-                    params.booleanMap.mappings[std::string(last_part.substr(0, colon_pos))] = std::string(last_part.substr(colon_pos + 1));
+                    params.booleanMap.mappings[std::string(last_part.substr(0, colon_pos))] =
+                        std::string(last_part.substr(colon_pos + 1));
                 }
             }
-        }
-        else if (p.find('=') != std::string::npos) {
-            size_t separatorPos               = p.find('=');
+        } else if (p.rfind("char_map=", 0) == 0) {
+            params.charReplaceMap.enabled = true;
+            std::string_view rules_sv     = std::string_view(p).substr(9); // "char_map=".length()
+
+            size_t start = 0;
+            size_t end   = 0;
+            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
+                std::string_view rule      = rules_sv.substr(start, end - start);
+                size_t           colon_pos = rule.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.charReplaceMap.mappings[std::string(rule.substr(0, colon_pos))] =
+                        std::string(rule.substr(colon_pos + 1));
+                }
+                start = end + 1;
+            }
+            std::string_view last_part = rules_sv.substr(start);
+            if (!last_part.empty()) {
+                size_t colon_pos = last_part.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.charReplaceMap.mappings[std::string(last_part.substr(0, colon_pos))] =
+                        std::string(last_part.substr(colon_pos + 1));
+                }
+            }
+        } else if (p.rfind("regex_map=", 0) == 0) {
+            params.regexReplaceMap.enabled = true;
+            std::string_view rules_sv      = std::string_view(p).substr(10); // "regex_map=".length()
+
+            size_t start = 0;
+            size_t end   = 0;
+            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
+                std::string_view rule      = rules_sv.substr(start, end - start);
+                size_t           colon_pos = rule.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.regexReplaceMap.mappings.emplace_back(
+                        std::string(rule.substr(0, colon_pos)),
+                        std::string(rule.substr(colon_pos + 1))
+                    );
+                }
+                start = end + 1;
+            }
+            std::string_view last_part = rules_sv.substr(start);
+            if (!last_part.empty()) {
+                size_t colon_pos = last_part.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    params.regexReplaceMap.mappings.emplace_back(
+                        std::string(last_part.substr(0, colon_pos)),
+                        std::string(last_part.substr(colon_pos + 1))
+                    );
+                }
+            }
+        } else if (p.find('=') != std::string::npos) {
+            size_t separatorPos                           = p.find('=');
             params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
         } else {
             remainingParams.push_back(p);
@@ -197,7 +251,8 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
         for (size_t i = 0; i < params.size() - 1; i += 2) {
             double           threshold;
             std::string_view threshold_sv = params[i];
-            auto [t_ptr, t_ec]            = std::from_chars(threshold_sv.data(), threshold_sv.data() + threshold_sv.size(), threshold);
+            auto [t_ptr, t_ec] =
+                std::from_chars(threshold_sv.data(), threshold_sv.data() + threshold_sv.size(), threshold);
             if (t_ec == std::errc()) {
                 if (value < threshold) {
                     appliedColor = params[i + 1];
@@ -238,12 +293,24 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
     for (const auto& condition : conditional.conditions) {
         bool result = false;
         switch (condition.op) {
-            case Condition::Operator::GT:  result = value >  condition.threshold; break;
-            case Condition::Operator::LT:  result = value <  condition.threshold; break;
-            case Condition::Operator::EQ:  result = value == condition.threshold; break;
-            case Condition::Operator::GTE: result = value >= condition.threshold; break;
-            case Condition::Operator::LTE: result = value <= condition.threshold; break;
-            case Condition::Operator::NEQ: result = value != condition.threshold; break;
+        case Condition::Operator::GT:
+            result = value > condition.threshold;
+            break;
+        case Condition::Operator::LT:
+            result = value < condition.threshold;
+            break;
+        case Condition::Operator::EQ:
+            result = value == condition.threshold;
+            break;
+        case Condition::Operator::GTE:
+            result = value >= condition.threshold;
+            break;
+        case Condition::Operator::LTE:
+            result = value <= condition.threshold;
+            break;
+        case Condition::Operator::NEQ:
+            result = value != condition.threshold;
+            break;
         }
         if (result) {
             output  = condition.output;
@@ -274,9 +341,44 @@ void applyBooleanMap(std::string& evaluatedValue, const BooleanMap& booleanMap) 
     }
 
     std::string trimmedValue = trim(evaluatedValue); // 修剪 evaluatedValue
-    auto it = booleanMap.mappings.find(trimmedValue);
+    auto        it           = booleanMap.mappings.find(trimmedValue);
     if (it != booleanMap.mappings.end()) {
         evaluatedValue = it->second;
+    }
+}
+
+void applyCharReplaceMap(std::string& evaluatedValue, const CharReplaceMap& charReplaceMap) {
+    if (!charReplaceMap.enabled) {
+        return;
+    }
+
+    for (const auto& pair : charReplaceMap.mappings) {
+        const std::string& from = pair.first;
+        const std::string& to   = pair.second;
+
+        size_t pos = evaluatedValue.find(from, 0);
+        while (pos != std::string::npos) {
+            evaluatedValue.replace(pos, from.length(), to);
+            pos = evaluatedValue.find(from, pos + to.length());
+        }
+    }
+}
+
+void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& regexReplaceMap) {
+    if (!regexReplaceMap.enabled) {
+        return;
+    }
+
+    for (const auto& pair : regexReplaceMap.mappings) {
+        const std::string& regex_str   = pair.first;
+        const std::string& replacement = pair.second;
+        try {
+            std::regex re(regex_str);
+            evaluatedValue = std::regex_replace(evaluatedValue, re, replacement);
+        } catch (const std::regex_error& e) {
+            // Handle regex error, e.g., log it
+            // For now, we'll just skip this rule
+        }
     }
 }
 
