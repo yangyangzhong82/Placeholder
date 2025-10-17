@@ -125,6 +125,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
 
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
     std::vector<uint64_t>                                                inheritedTypeIds = ctx->getInheritedTypeIds();
+    std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end()); // 反转顺序，派生类在前
 
     for (uint64_t id : inheritedTypeIds) {
         auto tit = snapshot->typed.find(id);
@@ -138,7 +139,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
     uint64_t mainCtxId = ctx->typeId();
     auto     mainIt    = snapshot->relational.find(mainCtxId);
     if (mainIt != snapshot->relational.end()) {
-        for (uint64_t relId : inheritedTypeIds) {
+        for (uint64_t relId : inheritedTypeIds) { // 这里也需要反转，因为 relId 也是继承类型
             auto relIt = mainIt->second.find(relId);
             if (relIt != mainIt->second.end()) {
                 for (auto& kv : relIt->second) {
@@ -180,6 +181,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
     if (ctx) {
         // 2. Check typed placeholders
         auto inheritedTypeIds = ctx->getInheritedTypeIds();
+        std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end()); // 反转顺序，派生类在前
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->typed.find(id);
             if (it != snapshot->typed.end()) {
@@ -194,7 +196,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
         uint64_t mainCtxId = ctx->typeId();
         auto     mainIt    = snapshot->relational.find(mainCtxId);
         if (mainIt != snapshot->relational.end()) {
-            for (uint64_t relId : inheritedTypeIds) {
+            for (uint64_t relId : inheritedTypeIds) { // 这里也需要反转，因为 relId 也是继承类型
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {
                     auto placeholderIt = relIt->second.find(token);
