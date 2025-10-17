@@ -4,6 +4,6 @@ namespace PA {
 
 struct IPlaceholderService;
 
-void registerBuiltinPlaceholders(IPlaceholderService* service);
+void registerAllBuiltinPlaceholders(IPlaceholderService* service);
 
 } // namespace PA

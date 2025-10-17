@@ -20,7 +20,7 @@ bool Entry::load() {
     getSelf().getLogger().debug("Loading...");
     ConfigManager::getInstance().load((getSelf().getConfigDir() / "config.json").string());
 
-    registerBuiltinPlaceholders(PA_GetPlaceholderService());
+    registerAllBuiltinPlaceholders(PA_GetPlaceholderService());
     ScriptExports::install();
     return true;
 }
