@@ -109,7 +109,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                     for (const auto& p : paramSegments) {
                         if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0
                             || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0
-                            || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0) {
+                            || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0
+                            || p.rfind("json_map=", 0) == 0) {
                             if (!first_f) f_param_ss << ",";
                             f_param_ss << p;
                             first_f = false;
@@ -162,6 +163,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 logger.debug("5.6. After applyCharReplaceMap: evaluatedValue='{}'", evaluatedValue);
                 ParameterParser::applyRegexReplaceMap(evaluatedValue, params.regexReplaceMap); // 应用正则表达式替换映射
                 logger.debug("5.7. After applyRegexReplaceMap: evaluatedValue='{}'", evaluatedValue);
+                ParameterParser::applyJsonMap(evaluatedValue, params.jsonMap); // 应用JSON映射
+                logger.debug("5.8. After applyJsonMap: evaluatedValue='{}'", evaluatedValue);
 
                 std::string_view colorFormat   = "{color}{value}";
                 auto             colorFormatIt = params.otherParams.find("color_format");

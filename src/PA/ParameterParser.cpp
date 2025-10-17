@@ -144,6 +144,15 @@ PlaceholderParams parse(std::string_view paramPart) {
                         std::string(last_part.substr(colon_pos + 1));
                 }
             }
+        } else if (p.rfind("json_map=", 0) == 0) {
+            params.jsonMap.enabled    = true;
+            std::string_view json_sv = std::string_view(p).substr(9); // "json_map=".length()
+            try {
+                params.jsonMap.mappings = nlohmann::json::parse(json_sv);
+            } catch (const nlohmann::json::exception& e) {
+                logger.error("Failed to parse json_map: {}", e.what());
+                params.jsonMap.enabled = false; // Disable if parsing fails
+            }
         } else if (p.rfind("regex_map=", 0) == 0) {
             params.regexReplaceMap.enabled = true;
             std::string_view rules_sv      = std::string_view(p).substr(10); // "regex_map=".length()
@@ -484,6 +493,28 @@ void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& re
         }
     }
     logger.debug("applyRegexReplaceMap: Final evaluatedValue='{}'", evaluatedValue);
+}
+
+void applyJsonMap(std::string& evaluatedValue, const JsonMap& jsonMap) {
+    if (!jsonMap.enabled) {
+        return;
+    }
+
+    if (!jsonMap.mappings.is_object()) {
+        // The JSON map must be an object (key-value pairs).
+        return;
+    }
+
+    auto it = jsonMap.mappings.find(evaluatedValue);
+    if (it != jsonMap.mappings.end()) {
+        const auto& mappedValue = *it;
+        if (mappedValue.is_string()) {
+            evaluatedValue = mappedValue.get<std::string>();
+        } else {
+            // For other types (number, boolean, array, object), dump() provides a string representation.
+            evaluatedValue = mappedValue.dump();
+        }
+    }
 }
 
 } // namespace ParameterParser

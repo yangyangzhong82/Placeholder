@@ -5,6 +5,7 @@
 #include <string_view>
 #include <map>
 #include <vector>
+#include <nlohmann/json.hpp>
 #include "PA/PlaceholderAPI.h"
 
 namespace PA {
@@ -44,6 +45,12 @@ struct RegexReplaceMap {
     std::vector<std::pair<std::string, std::string>> mappings;
 };
 
+// 表示JSON映射规则
+struct JsonMap {
+    bool           enabled = false;
+    nlohmann::json mappings;
+};
+
 // 表示从占位符解析的参数
 struct PlaceholderParams {
     int                                precision = -1;
@@ -53,6 +60,7 @@ struct PlaceholderParams {
     BooleanMap                         booleanMap;
     CharReplaceMap                     charReplaceMap;
     RegexReplaceMap                    regexReplaceMap; // 新增的正则表达式替换映射参数
+    JsonMap                            jsonMap;
 };
 
 // 解析占位符的参数部分
@@ -75,6 +83,9 @@ void applyCharReplaceMap(std::string& evaluatedValue, const CharReplaceMap& char
 
 // 将正则表达式替换映射规则应用于评估值
 void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& regexReplaceMap);
+
+// 将JSON映射规则应用于评估值
+void applyJsonMap(std::string& evaluatedValue, const JsonMap& jsonMap);
 
 } // namespace ParameterParser
 } // namespace PA
