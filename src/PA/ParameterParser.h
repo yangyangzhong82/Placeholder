@@ -5,6 +5,7 @@
 #include <string_view>
 #include <map>
 #include <vector>
+#include <regex>
 #include <nlohmann/json.hpp>
 #include "PA/PlaceholderAPI.h"
 
@@ -41,8 +42,8 @@ struct CharReplaceMap {
 
 // 表示正则表达式替换映射规则
 struct RegexReplaceMap {
-    bool                               enabled = false;
-    std::vector<std::pair<std::string, std::string>> mappings;
+    bool                                           enabled = false;
+    std::vector<std::pair<std::regex, std::string>> mappings;
 };
 
 // 表示JSON映射规则

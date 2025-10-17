@@ -157,31 +157,29 @@ PlaceholderParams parse(std::string_view paramPart) {
             params.regexReplaceMap.enabled = true;
             std::string_view rules_sv      = std::string_view(p).substr(10); // "regex_map=".length()
 
+            auto add_mapping = [&](std::string_view rule) {
+                size_t colon_pos = rule.find(':');
+                if (colon_pos != std::string_view::npos) {
+                    std::string regex_str = std::string(rule.substr(0, colon_pos));
+                    std::string replacement = std::string(rule.substr(colon_pos + 1));
+                    try {
+                        params.regexReplaceMap.mappings.emplace_back(
+                            std::regex(regex_str, std::regex_constants::optimize),
+                            replacement
+                        );
+                    } catch (const std::regex_error& e) {
+                        logger.error("Invalid regex pattern '{}': {}", regex_str, e.what());
+                    }
+                }
+            };
+
             size_t start = 0;
             size_t end   = 0;
             while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                std::string_view rule      = rules_sv.substr(start, end - start);
-                size_t           colon_pos = rule.find(':');
-                if (colon_pos != std::string_view::npos) {
-                    std::string raw_replacement = std::string(rule.substr(colon_pos + 1));
-                    params.regexReplaceMap.mappings.emplace_back(
-                        std::string(rule.substr(0, colon_pos)),
-                        raw_replacement
-                    );
-                }
+                add_mapping(rules_sv.substr(start, end - start));
                 start = end + 1;
             }
-            std::string_view last_part = rules_sv.substr(start);
-            if (!last_part.empty()) {
-                size_t colon_pos = last_part.find(':');
-                if (colon_pos != std::string_view::npos) {
-                    std::string raw_replacement = std::string(last_part.substr(colon_pos + 1));
-                    params.regexReplaceMap.mappings.emplace_back(
-                        std::string(last_part.substr(0, colon_pos)),
-                        raw_replacement
-                    );
-                }
-            }
+            add_mapping(rules_sv.substr(start));
         } else if (p.find('=') != std::string::npos) {
             size_t separatorPos                           = p.find('=');
             params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
@@ -432,65 +430,58 @@ void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& re
     logger.debug("applyRegexReplaceMap: Initial evaluatedValue='{}'", evaluatedValue);
 
     for (const auto& pair : regexReplaceMap.mappings) {
-        const std::string& regex_str   = pair.first;
+        const std::regex&  re          = pair.first;
         const std::string& replacement = pair.second;
-        logger.debug("  Applying regex_str='{}', raw replacement='{}'", regex_str, replacement);
+        logger.debug("  Applying regex, raw replacement='{}'", replacement);
 
-        try {
-            std::regex  re(regex_str);
-            std::string result_value;
-            auto        last_match_end = evaluatedValue.cbegin();
+        std::string result_value;
+        auto        last_match_end = evaluatedValue.cbegin();
 
-            bool is_lowercase_replacement = false;
-            bool is_uppercase_replacement = false;
-            int  case_group_num           = -1;
+        bool is_lowercase_replacement = false;
+        bool is_uppercase_replacement = false;
+        int  case_group_num           = -1;
 
-            if (!tryParseCaseDirective(replacement, 'l', is_lowercase_replacement, case_group_num)) {
-                tryParseCaseDirective(replacement, 'u', is_uppercase_replacement, case_group_num);
-            }
-
-            for (std::sregex_iterator it(evaluatedValue.cbegin(), evaluatedValue.cend(), re), end; it != end; ++it) {
-                result_value.append(last_match_end, it->prefix().second);
-
-                if ((is_lowercase_replacement || is_uppercase_replacement) && case_group_num >= 0
-                    && case_group_num < static_cast<int>(it->size())) {
-
-                    std::string captured = (*it)[case_group_num].str();
-                    if (is_lowercase_replacement) {
-                        std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
-                            return static_cast<char>(std::tolower(c));
-                        });
-                    } else { // is_uppercase_replacement
-                        std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
-                            return static_cast<char>(std::toupper(c));
-                        });
-                    }
-                    result_value.append(captured);
-
-                } else {
-                    // 通用 $N 处理
-                    // 检查 replacement 是否包含 $N 形式的捕获组引用
-                    std::string formatted_replacement = replacement;
-                    for (int i = 0; i < it->size(); ++i) {
-                        std::string group_placeholder = "$" + std::to_string(i);
-                        size_t      pos               = formatted_replacement.find(group_placeholder);
-                        while (pos != std::string::npos) {
-                            formatted_replacement.replace(pos, group_placeholder.length(), (*it)[i].str());
-                            pos = formatted_replacement.find(group_placeholder, pos + (*it)[i].str().length());
-                        }
-                    }
-                    result_value.append(formatted_replacement);
-                }
-
-                last_match_end = it->suffix().first;
-            }
-            result_value.append(last_match_end, evaluatedValue.cend());
-            evaluatedValue = result_value;
-            logger.debug("  After applying regex_str='{}', evaluatedValue='{}'", regex_str, evaluatedValue);
-
-        } catch (const std::regex_error& e) {
-            logger.error("Regex error for pattern '{}': {}", regex_str, e.what());
+        if (!tryParseCaseDirective(replacement, 'l', is_lowercase_replacement, case_group_num)) {
+            tryParseCaseDirective(replacement, 'u', is_uppercase_replacement, case_group_num);
         }
+
+        for (std::sregex_iterator it(evaluatedValue.cbegin(), evaluatedValue.cend(), re), end; it != end; ++it) {
+            result_value.append(last_match_end, it->prefix().second);
+
+            if ((is_lowercase_replacement || is_uppercase_replacement) && case_group_num >= 0
+                && case_group_num < static_cast<int>(it->size())) {
+
+                std::string captured = (*it)[case_group_num].str();
+                if (is_lowercase_replacement) {
+                    std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
+                        return static_cast<char>(std::tolower(c));
+                    });
+                } else { // is_uppercase_replacement
+                    std::transform(captured.begin(), captured.end(), captured.begin(), [](unsigned char c) {
+                        return static_cast<char>(std::toupper(c));
+                    });
+                }
+                result_value.append(captured);
+
+            } else {
+                // 通用 $N 处理
+                std::string formatted_replacement = replacement;
+                for (size_t i = 0; i < it->size(); ++i) {
+                    std::string group_placeholder = "$" + std::to_string(i);
+                    size_t      pos               = formatted_replacement.find(group_placeholder);
+                    while (pos != std::string::npos) {
+                        formatted_replacement.replace(pos, group_placeholder.length(), (*it)[i].str());
+                        pos = formatted_replacement.find(group_placeholder, pos + (*it)[i].str().length());
+                    }
+                }
+                result_value.append(formatted_replacement);
+            }
+
+            last_match_end = it->suffix().first;
+        }
+        result_value.append(last_match_end, evaluatedValue.cend());
+        evaluatedValue = result_value;
+        logger.debug("  After applying regex, evaluatedValue='{}'", evaluatedValue);
     }
     logger.debug("applyRegexReplaceMap: Final evaluatedValue='{}'", evaluatedValue);
 }
