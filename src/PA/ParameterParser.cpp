@@ -464,13 +464,14 @@ void applyRegexReplaceMap(std::string& evaluatedValue, const RegexReplaceMap& re
                 result_value.append(captured);
 
             } else {
-                // 通用 $N 处理
+                // 通用 $N 处理：逆序替换，避免 $1 替换 $10 中的 $1 部分
                 std::string formatted_replacement = replacement;
-                for (size_t i = 0; i < it->size(); ++i) {
+                for (int i = static_cast<int>(it->size()) - 1; i >= 0; --i) {
                     std::string group_placeholder = "$" + std::to_string(i);
                     size_t      pos               = formatted_replacement.find(group_placeholder);
                     while (pos != std::string::npos) {
                         formatted_replacement.replace(pos, group_placeholder.length(), (*it)[i].str());
+                        // 替换后，从新的位置继续查找，避免重复替换
                         pos = formatted_replacement.find(group_placeholder, pos + (*it)[i].str().length());
                     }
                 }
