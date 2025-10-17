@@ -32,49 +32,69 @@
 // 1) 导入 PlaceholderAPI 暴露的函数
 const PA = {
     replaceForPlayer: ll.import("PA", "replaceForPlayer"),
-    registerPlayerPlaceholder: ll.import("PA", "registerPlayerPlaceholder"),
     registerActorPlaceholder: ll.import("PA", "registerActorPlaceholder"),
     registerServerPlaceholder: ll.import("PA", "registerServerPlaceholder"),
+    registerPlaceholderByKind: ll.import("PA", "registerPlaceholderByKind"),
+    registerPlaceholderByContextId: ll.import("PA", "registerPlaceholderByContextId"),
+
+    // 新增：缓存占位符注册
+    registerCachedServerPlaceholder: ll.import("PA", "registerCachedServerPlaceholder"),
+    registerCachedPlayerPlaceholder: ll.import("PA", "registerCachedPlayerPlaceholder"),
+    registerCachedActorPlaceholder: ll.import("PA", "registerCachedActorPlaceholder"),
+    registerCachedPlaceholderByKind: ll.import("PA", "registerCachedPlaceholderByKind"),
+    registerCachedPlaceholderByContextId: ll.import("PA", "registerCachedPlaceholderByContextId"),
+
     unregisterByCallbackNamespace: ll.import("PA", "unregisterByCallbackNamespace"),
+    contextTypeIds: ll.import("PA", "contextTypeIds"),
 };
 
 // 2) 在 JS 中导出一个回调函数，供 C++ 在占位符求值时调用
 // 回调命名空间
 const JS_CB_NS = "JSPH";
 
-// 玩家上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
-ll.export((token, args, player) => {
-    const extra = args.length > 0 ? `（${args[0]}）` : "";
+// 玩家上下文占位符回调签名：std::string(std::string token, std::string param, Player* player)
+ll.export((token, param, player) => {
+    // token 是注册时传入的 tokenName（不带花括号），例如 "hello"
+    // param 是占位符参数（如果用户写了 {js:hello:xxx}，param 为 "xxx"，否则为空字符串）
+    const extra = param ? `（${param}）` : "";
     const name = player ? player.name : "未知玩家";
     return `你好，${name}${extra}`;
 }, JS_CB_NS, "helloPlayer");
 
-// 服务器级占位符回调签名：std::string(std::string token, std::vector<std::string> args)
-ll.export((token, args) => {
+// 服务器级占位符回调签名：std::string(std::string token, std::string param)
+ll.export((token, param) => {
     const now = new Date();
     return `服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, "serverTime");
 
-// Actor 上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
-ll.export((token, args, actor) => {
+// Actor 上下文占位符回调签名：std::string(std::string token, std::string param, Actor* actor)
+ll.export((token, param, actor) => {
     if (!actor) return "无实体";
     const pos = actor.pos;
     return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
 }, JS_CB_NS, "actorPos");
 
+// 注册一个缓存的服务器级占位符，缓存时间为 5 秒
+ll.export((token, param) => {
+    const now = new Date();
+    return `缓存服务器时间：${now.toLocaleString()}`;
+}, JS_CB_NS, "cachedServerTime");
+
 // 3) 向 PlaceholderAPI 注册这些占位符
+// 最终占位符形如：{js:hello}、{js:server_time}、{js:actor_pos}、{js:cached_server_time}
 const ok1 = PA.registerPlayerPlaceholder("js", "hello", JS_CB_NS, "helloPlayer");
 const ok2 = PA.registerServerPlaceholder("js", "server_time", JS_CB_NS, "serverTime");
 const ok3 = PA.registerActorPlaceholder("js", "actor_pos", JS_CB_NS, "actorPos");
+const ok4 = PA.registerCachedServerPlaceholder("js", "cached_server_time", JS_CB_NS, "cachedServerTime", 5);
 
-if (!ok1 || !ok2 || !ok3) {
+if (!ok1 || !ok2 || !ok3 || !ok4) {
     logger.error("注册 JS 占位符失败，请检查前面的日志。");
 } else {
-    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos}");
+    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos} / {js:cached_server_time}");
 }
 
 mc.listen("onJoin", (player) => {
-    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}";
+    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}";
     const processedMessage = PA.replaceForPlayer(msg, player);
     player.tell(processedMessage);
     logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);

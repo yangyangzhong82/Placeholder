@@ -34,6 +34,11 @@ Placeholder API 允许开发者在文本中定义可替换的占位符，这些�
 *   **`contextTypeId()`**：返回此占位符绑定的上下文类型 ID。
 *   **`evaluate(const IContext* ctx, std::string& out)`**：根据上下文计算并返回替换文本。
 *   **`evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& args, std::string& out)`**：带参数的求值方法，用于处理原生参数。
+*   **`getCacheDuration()`**：返回占位符的缓存持续时间（秒）。返回 `0` 表示不缓存。
+
+#### 缓存占位符 (Cached Placeholder)
+
+对于一些不频繁变更的变量，例如服务器版本等信息，可以使用缓存来提升性能。实现 `PA::ICachedPlaceholder` 接口的占位符必须强制实现 `getCacheDuration()` 方法，并返回一个大于 `0` 的值来启用缓存。
 
 ### 3. 占位符服务 (Placeholder Service)
 
@@ -200,6 +205,21 @@ public:
 // 在插件初始化时注册
 void registerMyPlaceholder(PA::IPlaceholderService* svc, void* owner) {
     svc->registerPlaceholder("", std::make_shared<MyCustomPlaceholderWithArgs>(), owner);
+}
+
+// 注册一个缓存占位符 (例如，缓存 60 秒)
+void registerMyCachedPlaceholder(PA::IPlaceholderService* svc, void* owner) {
+    class MyCachedPlaceholder final : public PA::ICachedPlaceholder {
+    public:
+        std::string_view token() const noexcept override { return "{cached_greet}"; }
+        uint64_t         contextTypeId() const noexcept override { return PA::kServerContextId; }
+        unsigned int     getCacheDuration() const noexcept override { return 60; } // 缓存 60 秒
+
+        void evaluate(const PA::IContext* ctx, std::string& out) const override {
+            out = "Hello from cache!";
+        }
+    };
+    svc->registerCachedPlaceholder("", std::make_shared<MyCachedPlaceholder>(), owner, 60);
 }
 
 // 在插件卸载时反注册

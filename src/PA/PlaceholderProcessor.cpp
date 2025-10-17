@@ -6,7 +6,6 @@
 #include <sstream>
 #include <vector>
 
-
 namespace PA {
 
 std::string
@@ -40,17 +39,20 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
         std::string_view content_sv       = text.substr(start_pos + 1, end_pos - start_pos - 1);
         std::string      content(content_sv);
 
-        std::string                         token;
-        std::string                         param_part;
-        std::shared_ptr<const IPlaceholder> ph;
+        std::string                                  token;
+        std::string                                  param_part;
+        std::shared_ptr<const IPlaceholder>          ph;
+        const ::PA::CachedEntry*                     cachedEntry = nullptr; // 指向缓存条目，如果找到的话
 
         // Find the longest registered placeholder that is a prefix of `content`.
         for (size_t split_pos = content.length();;) {
             std::string potential_token = content.substr(0, split_pos);
-            ph                          = registry.findPlaceholder(potential_token, ctx);
+            auto [found_ph, found_cached_entry] = registry.findPlaceholder(potential_token, ctx);
 
-            if (ph) {
-                token = potential_token;
+            if (found_ph) {
+                ph          = found_ph;
+                cachedEntry = found_cached_entry;
+                token       = potential_token;
                 if (split_pos < content.length()) {
                     if (content[split_pos] == ':') {
                         param_part = content.substr(split_pos + 1);
@@ -59,6 +61,7 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                         // so this is not a valid match.
                         ph.reset();
                         token.clear();
+                        cachedEntry = nullptr;
                     }
                 }
                 if (ph) {
@@ -82,60 +85,80 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
             std::string placeholder_param_part;
             std::string formatting_param_part;
 
-            if (!param_part.empty()) {
-                size_t pipe_pos = param_part.find('|');
-                if (pipe_pos != std::string::npos) {
-                    // Split by '|': left for placeholder, right for formatting
-                    placeholder_param_part = param_part.substr(0, pipe_pos);
-                    formatting_param_part  = param_part.substr(pipe_pos + 1);
-                } else {
-                    // No '|' found, use new logic to separate by key= using splitParamString
-                    std::vector<std::string> paramSegments = ParameterParser::splitParamString(param_part, ',');
+            bool useCachedValue = false;
+            if (cachedEntry) {
+                auto now = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::seconds>(now - cachedEntry->lastEvaluated).count() < cachedEntry->cacheDuration) {
+                    // 缓存命中且未过期
+                    evaluatedValue = cachedEntry->cachedValue;
+                    useCachedValue = true;
+                    logger.debug("3. Cache Hit: evaluatedValue='{}'", evaluatedValue);
+                }
+            }
 
-                    std::stringstream p_param_ss;
-                    std::stringstream f_param_ss;
-                    bool              first_p = true;
-                    bool              first_f = true;
+            if (!useCachedValue) {
+                if (!param_part.empty()) {
+                    size_t pipe_pos = param_part.find('|');
+                    if (pipe_pos != std::string::npos) {
+                        // Split by '|': left for placeholder, right for formatting
+                        placeholder_param_part = param_part.substr(0, pipe_pos);
+                        formatting_param_part  = param_part.substr(pipe_pos + 1);
+                    } else {
+                        // No '|' found, use new logic to separate by key= using splitParamString
+                        std::vector<std::string> paramSegments = ParameterParser::splitParamString(param_part, ',');
 
-                    for (const auto& p : paramSegments) {
-                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0
-                            || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0
-                            || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0
-                            || p.rfind("json_map=", 0) == 0) {
-                            if (!first_f) f_param_ss << ",";
-                            f_param_ss << p;
-                            first_f = false;
-                        } else {
-                            // If it doesn't have a key=, it's considered a placeholder param (or color threshold)
-                            // For now, we put it in placeholder_param_part.
-                            // If it doesn't have a key=, it's considered a placeholder param (positional argument)
-                            if (!first_p) p_param_ss << ",";
-                            p_param_ss << p;
-                            first_p = false;
+                        std::stringstream p_param_ss;
+                        std::stringstream f_param_ss;
+                        bool              first_p = true;
+                        bool              first_f = true;
+
+                        for (const auto& p : paramSegments) {
+                            if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0
+                                || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0
+                                || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0
+                                || p.rfind("json_map=", 0) == 0) {
+                                if (!first_f) f_param_ss << ",";
+                                f_param_ss << p;
+                                first_f = false;
+                            } else {
+                                // If it doesn't have a key=, it's considered a placeholder param (or color threshold)
+                                // For now, we put it in placeholder_param_part.
+                                // If it doesn't have a key=, it's considered a placeholder param (positional argument)
+                                if (!first_p) p_param_ss << ",";
+                                p_param_ss << p;
+                                first_p = false;
+                            }
                         }
+                        placeholder_param_part = p_param_ss.str();
+                        formatting_param_part  = f_param_ss.str();
                     }
-                    placeholder_param_part = p_param_ss.str();
-                    formatting_param_part  = f_param_ss.str();
                 }
-            }
-            logger.debug(
-                "2. Separated Params: placeholder_param='{}', formatting_param='{}'",
-                placeholder_param_part,
-                formatting_param_part
-            );
+                logger.debug(
+                    "2. Separated Params: placeholder_param='{}', formatting_param='{}'",
+                    placeholder_param_part,
+                    formatting_param_part
+                );
 
-            if (!placeholder_param_part.empty()) {
-                std::vector<std::string_view> args;
-                // Use splitParamString for placeholder_param_part as well, as it might contain commas
-                std::vector<std::string> placeholderArgs = ParameterParser::splitParamString(placeholder_param_part, ',');
-                for (const auto& arg_str : placeholderArgs) {
-                    args.push_back(arg_str);
+                if (!placeholder_param_part.empty()) {
+                    std::vector<std::string_view> args;
+                    // Use splitParamString for placeholder_param_part as well, as it might contain commas
+                    std::vector<std::string> placeholderArgs = ParameterParser::splitParamString(placeholder_param_part, ',');
+                    for (const auto& arg_str : placeholderArgs) {
+                        args.push_back(arg_str);
+                    }
+                    ph->evaluateWithArgs(ctx, args, evaluatedValue);
+                } else {
+                    ph->evaluate(ctx, evaluatedValue);
                 }
-                ph->evaluateWithArgs(ctx, args, evaluatedValue);
-            } else {
-                ph->evaluate(ctx, evaluatedValue);
+                logger.debug("3. After Evaluate: evaluatedValue='{}'", evaluatedValue);
+
+                // 更新缓存
+                if (cachedEntry) {
+                    cachedEntry->cachedValue   = evaluatedValue;
+                    cachedEntry->lastEvaluated = std::chrono::steady_clock::now();
+                    logger.debug("3.5. Cache Updated: evaluatedValue='{}'", evaluatedValue);
+                }
             }
-            logger.debug("3. After Evaluate: evaluatedValue='{}'", evaluatedValue);
 
             if (!formatting_param_part.empty()) {
                 auto params = ParameterParser::parse(formatting_param_part);

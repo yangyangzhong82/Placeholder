@@ -207,6 +207,45 @@ static bool registerJsPlaceholder(
     return true;
 }
 
+static bool registerJsCachedPlaceholder(
+    std::string prefix,
+    std::string tokenNameNoBraces,
+    uint64_t    ctxId,
+    std::string cbNamespace,
+    std::string cbName,
+    unsigned int cacheDuration // 新增参数
+) {
+    auto* svc = PA_GetPlaceholderService();
+    if (!svc) {
+        logger.error("[PA::registerJsCachedPlaceholder] PlaceholderService is null");
+        return false;
+    }
+    if (tokenNameNoBraces.empty()) {
+        logger.warn("[PA::registerJsCachedPlaceholder] tokenName is empty");
+        return false;
+    }
+    if (cacheDuration == 0) {
+        logger.warn("[PA::registerJsCachedPlaceholder] cacheDuration is 0, use registerPlaceholder instead");
+        return false;
+    }
+
+    auto  p     = std::make_shared<JsPlaceholder>(tokenNameNoBraces, ctxId, cbNamespace, cbName);
+    void* owner = getOrCreateOwner(cbNamespace);
+
+    svc->registerCachedPlaceholder(prefix, p, owner, cacheDuration); // 调用缓存注册函数
+
+    logger.info(
+        "[PA] JS cached placeholder registered: prefix='{}', token='{}', ctxId={}, cb='{}::{}', cacheDuration={}",
+        prefix,
+        tokenNameNoBraces,
+        ctxId,
+        cbNamespace,
+        cbName,
+        cacheDuration
+    );
+    return true;
+}
+
 } // anonymous namespace
 
 // ========== 现有导出 ==========
@@ -509,6 +548,138 @@ void install() {
                          {"mob",    std::to_string(MobContext::kTypeId)   },
                          {"player", std::to_string(PlayerContext::kTypeId)}
                      };
+                 }
+          );
+
+        // ========== 新增导出：JS 注册缓存占位符 API ==========
+
+        // F) 直接按上下文 ID 注册缓存占位符
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedPlaceholderByContextId",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string ctxTypeIdStr, // Use string for JS compatibility
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     uint64_t ctxTypeId = 0;
+                     try {
+                         ctxTypeId = std::stoull(ctxTypeIdStr);
+                     } catch (...) {
+                         logger.error("[PA] Invalid ctxTypeId string: {}", ctxTypeIdStr);
+                         return false;
+                     }
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         ctxTypeId,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
+                 }
+          );
+
+        // G) 按上下文名字注册缓存占位符（"server" | "actor" | "mob" | "player"）
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedPlaceholderByKind",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string ctxKind,
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     uint64_t id = parseContextKind(ctxKind);
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         id,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
+                 }
+          );
+
+        // H) 便捷函数：固定上下文缓存占位符
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedServerPlaceholder",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         kServerContextId,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
+                 }
+          );
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedActorPlaceholder",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         ActorContext::kTypeId,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
+                 }
+          );
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedMobPlaceholder",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         MobContext::kTypeId,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
+                 }
+          );
+        ok = ok
+          && RemoteCall::exportAs(
+                 kNamespace,
+                 "registerCachedPlayerPlaceholder",
+                 [](std::string prefix,
+                    std::string tokenName,
+                    std::string cbNS,
+                    std::string cbName,
+                    unsigned int cacheDuration) -> bool {
+                     return registerJsCachedPlaceholder(
+                         std::move(prefix),
+                         std::move(tokenName),
+                         PlayerContext::kTypeId,
+                         std::move(cbNS),
+                         std::move(cbName),
+                         cacheDuration
+                     );
                  }
           );
 

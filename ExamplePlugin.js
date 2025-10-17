@@ -13,6 +13,14 @@ const PA = {
     registerServerPlaceholder: ll.import("PA", "registerServerPlaceholder"),
     registerPlaceholderByKind: ll.import("PA", "registerPlaceholderByKind"),
     registerPlaceholderByContextId: ll.import("PA", "registerPlaceholderByContextId"),
+
+    // 新增：缓存占位符注册
+    registerCachedServerPlaceholder: ll.import("PA", "registerCachedServerPlaceholder"),
+    registerCachedPlayerPlaceholder: ll.import("PA", "registerCachedPlayerPlaceholder"),
+    registerCachedActorPlaceholder: ll.import("PA", "registerCachedActorPlaceholder"),
+    registerCachedPlaceholderByKind: ll.import("PA", "registerCachedPlaceholderByKind"),
+    registerCachedPlaceholderByContextId: ll.import("PA", "registerCachedPlaceholderByContextId"),
+
     unregisterByCallbackNamespace: ll.import("PA", "unregisterByCallbackNamespace"),
     contextTypeIds: ll.import("PA", "contextTypeIds"),
 };
@@ -49,18 +57,27 @@ const ok1 = PA.registerPlayerPlaceholder("js", "hello", JS_CB_NS, "helloPlayer")
 const ok2 = PA.registerServerPlaceholder("js", "server_time", JS_CB_NS, "serverTime");
 const ok3 = PA.registerActorPlaceholder("js", "actor_pos", JS_CB_NS, "actorPos");
 
-if (!ok1 || !ok2 || !ok3) {
+// 注册一个缓存的服务器级占位符，缓存时间为 5 秒
+ll.export((token, param) => {
+    const now = new Date();
+    return `缓存服务器时间：${now.toLocaleString()}`;
+}, JS_CB_NS, "cachedServerTime");
+const ok4 = PA.registerCachedServerPlaceholder("js", "cached_server_time", JS_CB_NS, "cachedServerTime", 5);
+
+
+if (!ok1 || !ok2 || !ok3 || !ok4) {
     logger.error("注册 JS 占位符失败，请检查前面的日志。");
 } else {
-    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos}");
+    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos} / {js:cached_server_time}");
 }
 
 mc.listen("onJoin", (player) => {
-    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}";
+    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}";
     const processedMessage = PA.replaceForPlayer(msg, player);
     player.tell(processedMessage);
     logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);
 });
+
 
 // 5) 插件卸载时，清理由本 JS 命名空间注册的占位符
 ll.registerPluginUnload && ll.registerPluginUnload(() => {

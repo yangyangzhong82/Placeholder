@@ -14,6 +14,10 @@ public:
         mRegistry.registerPlaceholder(prefix, p, owner);
     }
 
+    void registerCachedPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, unsigned int cacheDuration) override {
+        mRegistry.registerCachedPlaceholder(prefix, p, owner, cacheDuration);
+    }
+
     void registerRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId) override {
         mRegistry.registerRelationalPlaceholder(prefix, p, owner, mainContextTypeId, relationalContextTypeId);
     }

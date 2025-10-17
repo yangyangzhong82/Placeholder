@@ -46,12 +46,14 @@ namespace {
 
 // 泛型占位符实现（上下文型）
 template <typename Ctx, typename Fn>
-class TypedLambdaPlaceholder final : public PA::IPlaceholder {
+class TypedLambdaPlaceholder final : public PA::ICachedPlaceholder { // 继承 ICachedPlaceholder
 public:
-    TypedLambdaPlaceholder(std::string token, Fn fn) : token_(std::move(token)), fn_(std::move(fn)) {}
+    TypedLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
+    : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}
 
     std::string_view token() const noexcept override { return token_; }
     uint64_t         contextTypeId() const noexcept override { return Ctx::kTypeId; }
+    unsigned int     getCacheDuration() const noexcept override { return cacheDuration_; }
 
     void evaluate(const PA::IContext* ctx, std::string& out) const override {
         const auto* c = static_cast<const Ctx*>(ctx);
@@ -79,18 +81,21 @@ public:
     }
 
 private:
-    std::string token_;
-    Fn          fn_;
+    std::string  token_;
+    Fn           fn_;
+    unsigned int cacheDuration_;
 };
 
 // 服务器占位符实现（无上下文）
 template <typename Fn>
-class ServerLambdaPlaceholder final : public PA::IPlaceholder {
+class ServerLambdaPlaceholder final : public PA::ICachedPlaceholder { // 继承 ICachedPlaceholder
 public:
-    ServerLambdaPlaceholder(std::string token, Fn fn) : token_(std::move(token)), fn_(std::move(fn)) {}
+    ServerLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
+    : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}
 
     std::string_view token() const noexcept override { return token_; }
     uint64_t         contextTypeId() const noexcept override { return PA::kServerContextId; }
+    unsigned int     getCacheDuration() const noexcept override { return cacheDuration_; }
 
     void evaluate(const PA::IContext*, std::string& out) const override {
         if constexpr (std::is_invocable_v<Fn, std::string&>) {
@@ -116,8 +121,9 @@ public:
     }
 
 private:
-    std::string token_;
-    Fn          fn_;
+    std::string  token_;
+    Fn           fn_;
+    unsigned int cacheDuration_;
 };
 
 // time 工具
@@ -844,33 +850,39 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // 服务器版本占位符
-    svc->registerPlaceholder(
+    // 服务器版本占位符 (缓存 1 小时)
+    svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{server_version}",
-            +[](std::string& out) { out = ll::getGameVersion().to_string(); }
+            +[](std::string& out) { out = ll::getGameVersion().to_string(); },
+            3600 // 缓存 1 小时
         ),
-        owner
+        owner,
+        3600 // 缓存 1 小时
     );
 
-    // 服务器协议版本占位符
-    svc->registerPlaceholder(
+    // 服务器协议版本占位符 (缓存 1 小时)
+    svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{server_protocol_version}",
-            +[](std::string& out) { out = std::to_string(ll::getNetworkProtocolVersion()); }
+            +[](std::string& out) { out = std::to_string(ll::getNetworkProtocolVersion()); },
+            3600 // 缓存 1 小时
         ),
-        owner
+        owner,
+        3600 // 缓存 1 小时
     );
-    // 加载器版本
-    svc->registerPlaceholder(
+    // 加载器版本 (缓存 1 小时)
+    svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_protocol_version}",
-            +[](std::string& out) { out = ll::getLoaderVersion().to_string(); }
+            "{loader_version}", // 修正 token 名称，避免与 server_protocol_version 冲突
+            +[](std::string& out) { out = ll::getLoaderVersion().to_string(); },
+            3600 // 缓存 1 小时
         ),
-        owner
+        owner,
+        3600 // 缓存 1 小时
     );
     // 时间类占位符
     svc->registerPlaceholder(

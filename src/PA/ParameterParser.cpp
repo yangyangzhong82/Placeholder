@@ -9,10 +9,7 @@
 #include <sstream>
 #include <vector>
 
-
-namespace PA {
-
-namespace ParameterParser {
+namespace PA::ParameterParser {
 
 // 辅助函数：根据逗号分割参数字符串，同时处理引号、转义和括号/花括号嵌套
 std::vector<std::string> splitParamString(std::string_view paramPart, char delimiter) {
@@ -544,5 +541,4 @@ void applyJsonMap(std::string& evaluatedValue, const JsonMap& jsonMap) {
     }
 }
 
-} // namespace ParameterParser
-} // namespace PA
+} // namespace PA::ParameterParser

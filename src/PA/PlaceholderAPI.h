@@ -109,6 +109,15 @@ struct PA_API IPlaceholder {
         // 默认实现调用无参数的 evaluate
         evaluate(ctx, out);
     }
+
+    // 新增方法：获取缓存持续时间（秒）。返回 0 表示不缓存。
+    virtual unsigned int getCacheDuration() const noexcept { return 0; }
+};
+
+// 缓存占位符抽象基类：继承自 IPlaceholder，并强制实现 getCacheDuration
+struct PA_API ICachedPlaceholder : public IPlaceholder {
+    // 强制实现 getCacheDuration，返回大于 0 的值表示启用缓存
+    virtual unsigned int getCacheDuration() const noexcept override = 0;
 };
 
 // 颜色代码定义
@@ -126,6 +135,13 @@ struct PA_API IPlaceholderService {
     // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
     // 若 prefix 为空，则 token 保持不变。
     virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) = 0;
+
+    // 注册缓存占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
+    // prefix 为占位符前缀，用于解决命名冲突。
+    // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
+    // 若 prefix 为空，则 token 保持不变。
+    // cacheDuration 为缓存持续时间（秒）。
+    virtual void registerCachedPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, unsigned int cacheDuration) = 0;
 
     // 注册关系型占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
     // prefix 为占位符前缀，用于解决命名冲突。
