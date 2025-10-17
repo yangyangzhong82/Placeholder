@@ -83,37 +83,49 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
             std::string formatting_param_part;
 
             if (!param_part.empty()) {
-                std::string              currentParam(param_part);
-                std::vector<std::string> paramSegments;
-                size_t                   start = 0;
-                size_t                   end   = currentParam.find(',');
-                while (end != std::string::npos) {
-                    paramSegments.push_back(currentParam.substr(start, end - start));
-                    start = end + 1;
-                    end   = currentParam.find(',', start);
-                }
-                paramSegments.push_back(currentParam.substr(start));
-
-                std::stringstream p_param_ss;
-                std::stringstream f_param_ss;
-                bool              first_p = true;
-                bool              first_f = true;
-
-                for (const auto& p : paramSegments) {
-                    if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0
-                        || p.rfind("bool_map=", 0) == 0 || p.rfind("char_map=", 0) == 0
-                        || p.rfind("regex_map=", 0) == 0) {
-                        if (!first_f) f_param_ss << ",";
-                        f_param_ss << p;
-                        first_f = false;
-                    } else {
-                        if (!first_p) p_param_ss << ",";
-                        p_param_ss << p;
-                        first_p = false;
+                size_t pipe_pos = param_part.find('|');
+                if (pipe_pos != std::string::npos) {
+                    // Split by '|': left for placeholder, right for formatting
+                    placeholder_param_part = param_part.substr(0, pipe_pos);
+                    formatting_param_part  = param_part.substr(pipe_pos + 1);
+                } else {
+                    // No '|' found, use existing logic to separate by key=
+                    std::string              currentParam(param_part);
+                    std::vector<std::string> paramSegments;
+                    size_t                   start = 0;
+                    size_t                   end   = currentParam.find(',');
+                    while (end != std::string::npos) {
+                        paramSegments.push_back(currentParam.substr(start, end - start));
+                        start = end + 1;
+                        end   = currentParam.find(',', start);
                     }
+                    paramSegments.push_back(currentParam.substr(start));
+
+                    std::stringstream p_param_ss;
+                    std::stringstream f_param_ss;
+                    bool              first_p = true;
+                    bool              first_f = true;
+
+                    for (const auto& p : paramSegments) {
+                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0
+                            || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0
+                            || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0) {
+                            if (!first_f) f_param_ss << ",";
+                            f_param_ss << p;
+                            first_f = false;
+                        } else {
+                            // If it doesn't have a key=, it's considered a placeholder param (or color threshold)
+                            // For now, we put it in placeholder_param_part.
+                            // ParameterParser::parse will handle color thresholds from formatting_param_part.
+                            // If it doesn't have a key=, it's considered a formatting param (like color thresholds)
+                            if (!first_f) f_param_ss << ",";
+                            f_param_ss << p;
+                            first_f = false;
+                        }
+                    }
+                    placeholder_param_part = p_param_ss.str();
+                    formatting_param_part  = f_param_ss.str();
                 }
-                placeholder_param_part = p_param_ss.str();
-                formatting_param_part  = f_param_ss.str();
             }
             logger.debug(
                 "2. Separated Params: placeholder_param='{}', formatting_param='{}'",
