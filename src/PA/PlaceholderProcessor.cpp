@@ -117,11 +117,10 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                         } else {
                             // If it doesn't have a key=, it's considered a placeholder param (or color threshold)
                             // For now, we put it in placeholder_param_part.
-                            // ParameterParser::parse will handle color thresholds from formatting_param_part.
-                            // If it doesn't have a key=, it's considered a formatting param (like color thresholds)
-                            if (!first_f) f_param_ss << ",";
-                            f_param_ss << p;
-                            first_f = false;
+                            // If it doesn't have a key=, it's considered a placeholder param (positional argument)
+                            if (!first_p) p_param_ss << ",";
+                            p_param_ss << p;
+                            first_p = false;
                         }
                     }
                     placeholder_param_part = p_param_ss.str();
