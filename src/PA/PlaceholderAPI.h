@@ -57,7 +57,7 @@ struct PA_API ActorContext : public IContext { // 移除 final
     static constexpr uint64_t kTypeId = TypeId("ctx:Actor");
     Actor*                    actor{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         return {kTypeId}; // Actor 不继承其他上下文
     }
 };
@@ -67,7 +67,7 @@ struct PA_API MobContext : public ActorContext { // 移除 final, Mob 继承自 
     static constexpr uint64_t kTypeId = TypeId("ctx:Mob");
     Mob*                      mob{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         std::vector<uint64_t> inherited = ActorContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
@@ -79,7 +79,7 @@ struct PA_API PlayerContext : public MobContext { // 移除 final, Player 继承
     static constexpr uint64_t kTypeId = TypeId("ctx:Player");
     Player*                   player{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t> getInheritedTypeIds() const noexcept override {
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
@@ -101,11 +101,8 @@ struct PA_API IPlaceholder {
     virtual void evaluate(const IContext* ctx, std::string& out) const = 0;
 
     // 新增带参数的 evaluate 方法
-    virtual void evaluateWithArgs(
-        const IContext*                           ctx,
-        const std::vector<std::string_view>&      args,
-        std::string&                              out
-    ) const {
+    virtual void
+    evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& args, std::string& out) const {
         // 默认实现调用无参数的 evaluate
         evaluate(ctx, out);
     }
@@ -126,6 +123,9 @@ struct PA_API ICachedPlaceholder : public IPlaceholder {
 #define PA_COLOR_GREEN  "§a"
 #define PA_COLOR_RESET  "§r" // 重置颜色
 
+// 别名适配器回调：把来源上下文转为目标上下文需要的“底层对象指针”（如 Actor* / Mob* / Player*）
+using ContextResolverFn = void* (*)(const IContext*);
+
 // 跨模块服务接口（稳定 ABI）
 struct PA_API IPlaceholderService {
     virtual ~IPlaceholderService() = default;
@@ -141,14 +141,25 @@ struct PA_API IPlaceholderService {
     // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
     // 若 prefix 为空，则 token 保持不变。
     // cacheDuration 为缓存持续时间（秒）。
-    virtual void registerCachedPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, unsigned int cacheDuration) = 0;
+    virtual void registerCachedPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        void*                               owner,
+        unsigned int                        cacheDuration
+    ) = 0;
 
     // 注册关系型占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
     // prefix 为占位符前缀，用于解决命名冲突。
     // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
     // 若 prefix 为空，则 token 保持不变。
     // mainContextTypeId 为主上下文类型 ID，relationalContextTypeId 为关系上下文类型 ID。
-    virtual void registerRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId) = 0;
+    virtual void registerRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        void*                               owner,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId
+    ) = 0;
 
     // 卸载 owner 名下的全部占位符（模块卸载时调用）
     virtual void unregisterByOwner(void* owner) = 0;
@@ -158,6 +169,17 @@ struct PA_API IPlaceholderService {
 
     // 仅替换服务器占位符
     virtual std::string replaceServer(std::string_view text) const = 0;
+
+    // 新增：注册“上下文别名适配器”
+    // 例如：alias="look", from=PlayerContext::kTypeId, to=ActorContext::kTypeId, resolver=[](ctx)->Actor*
+    // 用户就能写 {look:mob_health} 直接复用 {mob_health}（Actor/Mob类占位符）
+    virtual void registerContextAlias(
+        std::string_view  alias,
+        uint64_t          fromContextTypeId,
+        uint64_t          toContextTypeId,
+        ContextResolverFn resolver,
+        void*             owner
+    ) = 0;
 };
 
 // 跨模块获取占位符服务单例

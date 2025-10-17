@@ -1,5 +1,6 @@
 // src/PA/PlaceholderRegistry.cpp
 #include "PA/PlaceholderRegistry.h"
+#include "PA/PlaceholderProcessor.h" // 用于在别名占位符内部二次解析内层表达式
 
 namespace PA {
 
@@ -29,15 +30,17 @@ void PlaceholderRegistry::registerPlaceholder(
     }
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
-    auto newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
+    auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
     const uint64_t ctxId = p->contextTypeId();
     if (ctxId == kServerContextId) {
         newSnapshot->server[key] = {p, owner};
-        newSnapshot->ownerIndex[owner].push_back({true, false, false, 0, 0, 0, key}); // isServer, isRelational, isCached
+        newSnapshot->ownerIndex[owner].push_back({true, false, false, false, 0, 0, 0, key}
+        ); // isServer, isRelational, isCached, isAdapter
     } else {
         newSnapshot->typed[ctxId][key] = {p, owner};
-        newSnapshot->ownerIndex[owner].push_back({false, false, false, 0, 0, ctxId, key}); // isServer, isRelational, isCached
+        newSnapshot->ownerIndex[owner].push_back({false, false, false, false, 0, 0, ctxId, key}
+        ); // isServer, isRelational, isCached, isAdapter
     }
     mSnapshot.store(newSnapshot);
 }
@@ -67,15 +70,17 @@ void PlaceholderRegistry::registerCachedPlaceholder(
     }
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
-    auto newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
+    auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
     const uint64_t ctxId = p->contextTypeId();
     if (ctxId == kServerContextId) {
         newSnapshot->cached_server[key] = {p, owner, cacheDuration, "", std::chrono::steady_clock::time_point()};
-        newSnapshot->ownerIndex[owner].push_back({true, false, true, 0, 0, 0, key}); // isServer, isRelational, isCached
+        newSnapshot->ownerIndex[owner].push_back({true, false, true, false, 0, 0, 0, key}
+        ); // isServer, isRelational, isCached, isAdapter
     } else {
         newSnapshot->cached_typed[ctxId][key] = {p, owner, cacheDuration, "", std::chrono::steady_clock::time_point()};
-        newSnapshot->ownerIndex[owner].push_back({false, false, true, 0, 0, ctxId, key}); // isServer, isRelational, isCached
+        newSnapshot->ownerIndex[owner].push_back({false, false, true, false, 0, 0, ctxId, key}
+        ); // isServer, isRelational, isCached, isAdapter
     }
     mSnapshot.store(newSnapshot);
 }
@@ -107,23 +112,74 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
     }
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
-    auto newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
+    auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
     newSnapshot->relational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
-    newSnapshot->ownerIndex[owner].push_back({false, true, false, mainContextTypeId, relationalContextTypeId, 0, key}); // isServer, isRelational, isCached
+    newSnapshot->ownerIndex[owner].push_back(
+        {false, true, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
+    ); // isServer, isRelational, isCached, isAdapter
     mSnapshot.store(newSnapshot);
+}
+
+void PlaceholderRegistry::registerContextAlias(
+    std::string_view  alias,
+    uint64_t          fromContextTypeId,
+    uint64_t          toContextTypeId,
+    ContextResolverFn resolver,
+    void*             owner
+) {
+    if (alias.empty() || !resolver) return;
+
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto                        current = mSnapshot.load();
+    auto                        snap    = std::make_shared<Snapshot>(*current);
+
+    auto& vec = snap->adapters[std::string(alias)];
+    vec.push_back(Adapter{fromContextTypeId, toContextTypeId, resolver, owner});
+
+    // 记录 owner -> handle
+    snap->ownerIndex[owner].push_back(
+        {false, // isServer
+         false, // isRelational
+         false, // isCached
+         true,  // isAdapter
+         fromContextTypeId,
+         toContextTypeId,
+         0,
+         std::string(alias)}
+    );
+
+    mSnapshot.store(snap);
 }
 
 void PlaceholderRegistry::unregisterByOwner(void* owner) {
     std::lock_guard<std::mutex> lk(mWriteMutex);
-    auto currentSnapshot = mSnapshot.load();
-    auto it = currentSnapshot->ownerIndex.find(owner);
+    auto                        currentSnapshot = mSnapshot.load();
+    auto                        it              = currentSnapshot->ownerIndex.find(owner);
     if (it == currentSnapshot->ownerIndex.end()) return;
 
     auto newSnapshot = std::make_shared<Snapshot>(*currentSnapshot);
 
     for (const Handle& h : it->second) {
-        if (h.isCached) {
+        if (h.isAdapter) {
+            auto ait = newSnapshot->adapters.find(h.token);
+            if (ait != newSnapshot->adapters.end()) {
+                auto& vec = ait->second;
+                vec.erase(
+                    std::remove_if(
+                        vec.begin(),
+                        vec.end(),
+                        [&](const Adapter& a) {
+                            return a.owner == owner && a.fromCtxId == h.mainCtxId && a.toCtxId == h.relCtxId;
+                        }
+                    ),
+                    vec.end()
+                );
+                if (vec.empty()) {
+                    newSnapshot->adapters.erase(ait);
+                }
+            }
+        } else if (h.isCached) {
             if (h.isServer) {
                 auto sit = newSnapshot->cached_server.find(h.token);
                 if (sit != newSnapshot->cached_server.end() && sit->second.owner == owner) {
@@ -174,7 +230,7 @@ void PlaceholderRegistry::unregisterByOwner(void* owner) {
 
 std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
 PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
-    auto snapshot = mSnapshot.load();
+    auto                                                                     snapshot = mSnapshot.load();
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> typedList;
     if (!ctx) return typedList;
 
@@ -214,7 +270,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
 
 std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>>
 PlaceholderRegistry::getServerPlaceholders() const {
-    auto snapshot = mSnapshot.load();
+    auto                                                                     snapshot = mSnapshot.load();
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> serverList;
     serverList.reserve(snapshot->server.size());
     for (auto& kv : snapshot->server) {
@@ -222,6 +278,88 @@ PlaceholderRegistry::getServerPlaceholders() const {
     }
     return serverList;
 }
+
+// 动态“别名占位符”，把来源上下文适配为目标上下文，并在目标上下文下再次解析内层表达式
+class AdapterAliasPlaceholder final : public IPlaceholder {
+public:
+    AdapterAliasPlaceholder(
+        std::string                alias,
+        uint64_t                   fromId,
+        uint64_t                   toId,
+        ContextResolverFn          resolver,
+        const PlaceholderRegistry& reg
+    )
+    : mAlias(std::move(alias)),
+      mFrom(fromId),
+      mTo(toId),
+      mResolver(resolver),
+      mReg(reg) {}
+
+    std::string_view token() const noexcept override { return mAlias; }
+    uint64_t         contextTypeId() const noexcept override { return mFrom; }
+
+    void evaluate(const IContext* ctx, std::string& out) const override {
+        // 无参数时无法知道要复用哪个内层占位符
+        out.clear();
+    }
+
+    void
+    evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& args, std::string& out) const override {
+        out.clear();
+        if (!ctx || !mResolver) return;
+        if (args.empty()) {
+            // 提示：需要提供内层占位符表达式
+            out = PA_COLOR_RED "Usage: {" + mAlias + ":<inner_placeholder_spec>}" PA_COLOR_RESET;
+            return;
+        }
+
+        // 1) 解析来源上下文 -> 目标底层对象指针
+        void* raw = mResolver(ctx);
+        if (!raw) {
+            // 无目标对象（例如玩家没看着任何实体）
+            return;
+        }
+
+        // 2) 构造一个临时目标上下文对象（栈对象）
+        // 3) 在目标上下文下对“内层占位符表达式”做一次完整解析
+        std::string innerSpec(args[0]); // 支持用户用引号把包含逗号/竖线的表达式整体传入
+        std::string wrapped = "{" + innerSpec + "}";
+
+        switch (mTo) {
+        case ActorContext::kTypeId: {
+            ActorContext rc;
+            rc.actor = static_cast<Actor*>(raw);
+            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
+        case MobContext::kTypeId: {
+            MobContext rc;
+            rc.mob   = static_cast<Mob*>(raw);
+            rc.actor = static_cast<Actor*>(raw); // MobContext 继承自 ActorContext
+            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
+        case PlayerContext::kTypeId: {
+            PlayerContext rc;
+            rc.player = static_cast<Player*>(raw);
+            rc.mob    = static_cast<Mob*>(raw);
+            rc.actor  = static_cast<Actor*>(raw);
+            out       = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
+        default:
+            // 其他目标上下文类型：暂不支持
+            break;
+        }
+    }
+
+private:
+    std::string                mAlias;
+    uint64_t                   mFrom{};
+    uint64_t                   mTo{};
+    ContextResolverFn          mResolver{};
+    const PlaceholderRegistry& mReg;
+};
 
 std::pair<std::shared_ptr<const IPlaceholder>, const CachedEntry*>
 PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
@@ -242,6 +380,28 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
     if (ctx) {
         auto inheritedTypeIds = ctx->getInheritedTypeIds();
         std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end()); // 反转顺序，派生类在前
+
+        // 2.5 Check context alias (adapter) by token == alias
+        {
+            auto ait = snapshot->adapters.find(token);
+            if (ait != snapshot->adapters.end()) {
+                // 选择与当前上下文匹配的 fromCtxId（最派生优先）
+                for (uint64_t id : inheritedTypeIds) {
+                    for (const auto& ad : ait->second) {
+                        if (ad.fromCtxId == id) {
+                            auto aliasPh = std::make_shared<AdapterAliasPlaceholder>(
+                                token,
+                                ad.fromCtxId,
+                                ad.toCtxId,
+                                ad.resolver,
+                                *this
+                            );
+                            return {aliasPh, nullptr};
+                        }
+                    }
+                }
+            }
+        }
 
         // 3. Check cached typed placeholders
         for (uint64_t id : inheritedTypeIds) {

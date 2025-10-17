@@ -10,6 +10,7 @@
 #include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h" // 确保 EntityContext 尽早被完全定义
 #include "mc/deps/game_refs/GameRefs.h"
 #include "mc/deps/game_refs/OwnerPtr.h"
+#include "mc/legacy/ActorRuntimeID.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/server/ServerPlayer.h"
 #include "mc/server/commands/CommandUtils.h"
@@ -19,10 +20,12 @@
 #include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/level/dimension/Dimension.h"
+#include "mc/world/phys/HitResult.h"
 #include "mc\world\scores\Objective.h"
+#include "mc\world\scores\ScoreInfo.h"
 #include "mc\world\scores\Scoreboard.h"
 #include "mc\world\scores\ScoreboardId.h"
-#include "mc\world\scores\ScoreInfo.h"
+#include "PA/logger.h"
 
 #include <chrono>
 #include <ctime>
@@ -417,6 +420,8 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
                     Scoreboard& scoreboard = ll::service::getLevel()->getScoreboard();
                     Objective*  obj        = scoreboard.getObjective(score_name);
                     if (!obj) {
+                        out = "0";
+                        return;
                     }
                     const ScoreboardId& id         = scoreboard.getScoreboardId(*c.actor);
                     if (id.mRawID == ScoreboardId::INVALID().mRawID) {
@@ -798,16 +803,12 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
-    // {actor_is_tame}
+    // {actor_runtimeid}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
-            "{actor_is_tame}",
-            +[](const ActorContext& c, std::string& out) {
-                bool isTame = false;
-                if (c.actor) isTame = c.actor->isTame();
-                out = isTame ? "true" : "false";
-            }
+            "{actor_runtimeid}",
+            +[](const ActorContext& c, std::string& out) { out = std::to_string(c.actor->getRuntimeID().rawID); }
         ),
         owner
     );
@@ -850,39 +851,39 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // 服务器版本占位符 (缓存 1 小时)
+    // 服务器版本占位符 (缓存 5 分钟)
     svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{server_version}",
             +[](std::string& out) { out = ll::getGameVersion().to_string(); },
-            3600 // 缓存 1 小时
+            300 
         ),
         owner,
-        3600 // 缓存 1 小时
+        300
     );
 
-    // 服务器协议版本占位符 (缓存 1 小时)
+    // 服务器协议版本占位符 (缓存 5 分钟)
     svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{server_protocol_version}",
             +[](std::string& out) { out = std::to_string(ll::getNetworkProtocolVersion()); },
-            3600 // 缓存 1 小时
+            300
         ),
         owner,
-        3600 // 缓存 1 小时
-    );
-    // 加载器版本 (缓存 1 小时)
+        300
+    );    
+
     svc->registerCachedPlaceholder(
         "",
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{loader_version}", // 修正 token 名称，避免与 server_protocol_version 冲突
+            "{loader_version}",
             +[](std::string& out) { out = ll::getLoaderVersion().to_string(); },
-            3600 // 缓存 1 小时
+            300 
         ),
         owner,
-        3600 // 缓存 1 小时
+        300
     );
     // 时间类占位符
     svc->registerPlaceholder(
@@ -1046,6 +1047,31 @@ void registerBuiltinPlaceholders(IPlaceholderService* svc) {
                 out = ss.str();
             }
         ),
+        owner
+    );
+
+    // {player_look:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_look",
+        PlayerContext::kTypeId,
+        ActorContext::kTypeId,
+        +[](const PA::IContext* fromCtx) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // 默认 tMax = 5.5f, includeActor = true, includeBlock = false
+            HitResult result = playerCtx->player->traceRay(5.5f, true, false);
+            auto    actor =   result.getEntity();
+            if (actor) {
+            logger.info("Player {} is looking at entity type: {}", 
+                playerCtx->player->getRealName(), actor->getTypeName());
+            }
+            if (result.mType == HitResultType::Entity) {
+                return result.getEntity();
+            }
+            return nullptr;
+        },
         owner
     );
 }
