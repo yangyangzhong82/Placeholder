@@ -18,6 +18,7 @@ struct Condition {
     enum class Operator { GT, LT, EQ, GTE, LTE, NEQ } op;
     double      threshold;
     std::string output;
+    double      epsilon = 1e-9; // 浮点比较的容差
 };
 
 // 表示完整的条件输出规则
@@ -26,6 +27,7 @@ struct ConditionalOutput {
     bool                   hasElse = false;
     std::vector<Condition> conditions;
     std::string            elseOutput;
+    double                 default_epsilon = 1e-9; // 默认浮点比较容差
 };
 
 // 表示布尔值映射规则
@@ -63,6 +65,9 @@ struct PlaceholderParams {
     RegexReplaceMap                    regexReplaceMap; // 新增的正则表达式替换映射参数
     JsonMap                            jsonMap;
 };
+
+// 辅助函数：根据逗号分割参数字符串，同时处理引号、转义和括号/花括号嵌套
+std::vector<std::string> splitParamString(std::string_view paramPart, char delimiter);
 
 // 解析占位符的参数部分
 PlaceholderParams parse(std::string_view paramPart);

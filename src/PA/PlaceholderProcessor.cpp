@@ -89,17 +89,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                     placeholder_param_part = param_part.substr(0, pipe_pos);
                     formatting_param_part  = param_part.substr(pipe_pos + 1);
                 } else {
-                    // No '|' found, use existing logic to separate by key=
-                    std::string              currentParam(param_part);
-                    std::vector<std::string> paramSegments;
-                    size_t                   start = 0;
-                    size_t                   end   = currentParam.find(',');
-                    while (end != std::string::npos) {
-                        paramSegments.push_back(currentParam.substr(start, end - start));
-                        start = end + 1;
-                        end   = currentParam.find(',', start);
-                    }
-                    paramSegments.push_back(currentParam.substr(start));
+                    // No '|' found, use new logic to separate by key= using splitParamString
+                    std::vector<std::string> paramSegments = ParameterParser::splitParamString(param_part, ',');
 
                     std::stringstream p_param_ss;
                     std::stringstream f_param_ss;
@@ -135,15 +126,11 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
 
             if (!placeholder_param_part.empty()) {
                 std::vector<std::string_view> args;
-                std::string_view              params_sv(placeholder_param_part);
-                size_t                        start = 0;
-                size_t                        end   = params_sv.find(',');
-                while (end != std::string_view::npos) {
-                    args.push_back(params_sv.substr(start, end - start));
-                    start = end + 1;
-                    end   = params_sv.find(',', start);
+                // Use splitParamString for placeholder_param_part as well, as it might contain commas
+                std::vector<std::string> placeholderArgs = ParameterParser::splitParamString(placeholder_param_part, ',');
+                for (const auto& arg_str : placeholderArgs) {
+                    args.push_back(arg_str);
                 }
-                args.push_back(params_sv.substr(start));
                 ph->evaluateWithArgs(ctx, args, evaluatedValue);
             } else {
                 ph->evaluate(ctx, evaluatedValue);

@@ -14,22 +14,67 @@ namespace PA {
 
 namespace ParameterParser {
 
+// 辅助函数：根据逗号分割参数字符串，同时处理引号、转义和括号/花括号嵌套
+std::vector<std::string> splitParamString(std::string_view paramPart, char delimiter) {
+    std::vector<std::string> segments;
+    if (paramPart.empty()) {
+        return segments;
+    }
+
+    size_t       start_idx = 0;
+    int          quote_level = 0; // 0: none, 1: single, 2: double
+    int          paren_level = 0; // ()
+    int          brace_level = 0; // {}
+    bool         escaped     = false;
+
+    for (size_t i = 0; i < paramPart.length(); ++i) {
+        char c = paramPart[i];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+
+        if (quote_level == 0) {
+            if (c == '\'') {
+                quote_level = 1;
+            } else if (c == '"') {
+                quote_level = 2;
+            } else if (c == '(') {
+                paren_level++;
+            } else if (c == ')') {
+                paren_level--;
+            } else if (c == '{') {
+                brace_level++;
+            } else if (c == '}') {
+                brace_level--;
+            } else if (c == delimiter && paren_level == 0 && brace_level == 0) {
+                segments.push_back(std::string(paramPart.substr(start_idx, i - start_idx)));
+                start_idx = i + 1;
+            }
+        } else if (quote_level == 1 && c == '\'') {
+            quote_level = 0;
+        } else if (quote_level == 2 && c == '"') {
+            quote_level = 0;
+        }
+    }
+
+    segments.push_back(std::string(paramPart.substr(start_idx)));
+    return segments;
+}
+
 PlaceholderParams parse(std::string_view paramPart) {
     PlaceholderParams params;
     if (paramPart.empty()) {
         return params;
     }
 
-    std::string              currentParam(paramPart);
-    std::vector<std::string> paramSegments;
-    size_t                   start = 0;
-    size_t                   end   = currentParam.find(',');
-    while (end != std::string::npos) {
-        paramSegments.push_back(currentParam.substr(start, end - start));
-        start = end + 1;
-        end   = currentParam.find(',', start);
-    }
-    paramSegments.push_back(currentParam.substr(start));
+    std::vector<std::string> paramSegments = splitParamString(paramPart, ',');
 
     std::vector<std::string> remainingParams;
     for (const auto& p : paramSegments) {
@@ -74,74 +119,67 @@ PlaceholderParams parse(std::string_view paramPart) {
                 if (ec != std::errc()) return false;
 
                 c.output = rule.substr(colon_pos + 1);
+                c.epsilon = params.conditional.default_epsilon; // 使用默认 epsilon
                 params.conditional.conditions.push_back(c);
                 return true;
             };
 
-            size_t start = 0;
-            size_t end   = 0;
-            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                std::string_view rule = rules_sv.substr(start, end - start);
+            std::vector<std::string> ruleSegments = splitParamString(rules_sv, ';');
+            for (const auto& rule : ruleSegments) {
                 if (!rule.empty()) {
                     parse_condition(rule);
                 }
-                start = end + 1;
             }
 
-            std::string_view last_part = rules_sv.substr(start);
-            if (!last_part.empty()) {
-                if (!parse_condition(last_part)) {
+            // Check for else condition if the last segment was not a valid condition
+            // The original logic checked if the last character was a semicolon, implying an empty else.
+            // With splitParamString, an empty string in ruleSegments means an empty else.
+            if (!ruleSegments.empty()) {
+                std::string_view last_part = ruleSegments.back();
+                if (last_part.empty()) { // If the last segment is empty, it implies an empty else
+                    params.conditional.hasElse    = true;
+                    params.conditional.elseOutput = "";
+                } else if (!parse_condition(last_part)) {
                     params.conditional.hasElse    = true;
                     params.conditional.elseOutput = last_part;
                 }
-            } else if (start > 0 && rules_sv[start - 1] == ';') {
+            } else if (rules_sv.length() > 0 && rules_sv[rules_sv.length() - 1] == ';') {
+                // This case handles if the original rules_sv ended with a semicolon, implying an empty else.
+                // This might be redundant with the above check if splitParamString handles trailing delimiters
+                // by producing an empty last segment. Keeping it for robustness.
                 params.conditional.hasElse    = true;
                 params.conditional.elseOutput = "";
+            }
+        } else if (p.rfind("eq_eps=", 0) == 0) {
+            std::string_view epsilon_sv = std::string_view(p).substr(7); // "eq_eps=".length()
+            double           parsedEpsilon;
+            auto [eps_ptr, eps_ec] =
+                std::from_chars(epsilon_sv.data(), epsilon_sv.data() + epsilon_sv.size(), parsedEpsilon);
+            if (eps_ec == std::errc()) {
+                params.conditional.default_epsilon = parsedEpsilon;
             }
         } else if (p.rfind("bool_map=", 0) == 0) {
             params.booleanMap.enabled = true;
             std::string_view rules_sv = std::string_view(p).substr(9); // "bool_map=".length()
 
-            size_t start = 0;
-            size_t end   = 0;
-            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                std::string_view rule      = rules_sv.substr(start, end - start);
-                size_t           colon_pos = rule.find(':');
+            std::vector<std::string> ruleSegments = splitParamString(rules_sv, ';');
+            for (const auto& rule : ruleSegments) {
+                size_t colon_pos = rule.find(':');
                 if (colon_pos != std::string_view::npos) {
                     params.booleanMap.mappings[std::string(rule.substr(0, colon_pos))] =
                         std::string(rule.substr(colon_pos + 1));
-                }
-                start = end + 1;
-            }
-            std::string_view last_part = rules_sv.substr(start);
-            if (!last_part.empty()) {
-                size_t colon_pos = last_part.find(':');
-                if (colon_pos != std::string_view::npos) {
-                    params.booleanMap.mappings[std::string(last_part.substr(0, colon_pos))] =
-                        std::string(last_part.substr(colon_pos + 1));
                 }
             }
         } else if (p.rfind("char_map=", 0) == 0) {
             params.charReplaceMap.enabled = true;
             std::string_view rules_sv     = std::string_view(p).substr(9); // "char_map=".length()
 
-            size_t start = 0;
-            size_t end   = 0;
-            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                std::string_view rule      = rules_sv.substr(start, end - start);
-                size_t           colon_pos = rule.find(':');
+            std::vector<std::string> ruleSegments = splitParamString(rules_sv, ';');
+            for (const auto& rule : ruleSegments) {
+                size_t colon_pos = rule.find(':');
                 if (colon_pos != std::string_view::npos) {
                     params.charReplaceMap.mappings[std::string(rule.substr(0, colon_pos))] =
                         std::string(rule.substr(colon_pos + 1));
-                }
-                start = end + 1;
-            }
-            std::string_view last_part = rules_sv.substr(start);
-            if (!last_part.empty()) {
-                size_t colon_pos = last_part.find(':');
-                if (colon_pos != std::string_view::npos) {
-                    params.charReplaceMap.mappings[std::string(last_part.substr(0, colon_pos))] =
-                        std::string(last_part.substr(colon_pos + 1));
                 }
             }
         } else if (p.rfind("json_map=", 0) == 0) {
@@ -173,13 +211,10 @@ PlaceholderParams parse(std::string_view paramPart) {
                 }
             };
 
-            size_t start = 0;
-            size_t end   = 0;
-            while ((end = rules_sv.find(';', start)) != std::string_view::npos) {
-                add_mapping(rules_sv.substr(start, end - start));
-                start = end + 1;
+            std::vector<std::string> ruleSegments = splitParamString(rules_sv, ';');
+            for (const auto& rule : ruleSegments) {
+                add_mapping(rule);
             }
-            add_mapping(rules_sv.substr(start));
         } else if (p.find('=') != std::string::npos) {
             size_t separatorPos                           = p.find('=');
             params.otherParams[p.substr(0, separatorPos)] = p.substr(separatorPos + 1);
@@ -312,7 +347,7 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
             result = value < condition.threshold;
             break;
         case Condition::Operator::EQ:
-            result = value == condition.threshold;
+            result = std::fabs(value - condition.threshold) <= condition.epsilon;
             break;
         case Condition::Operator::GTE:
             result = value >= condition.threshold;
@@ -321,7 +356,7 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
             result = value <= condition.threshold;
             break;
         case Condition::Operator::NEQ:
-            result = value != condition.threshold;
+            result = std::fabs(value - condition.threshold) > condition.epsilon;
             break;
         }
         if (result) {
