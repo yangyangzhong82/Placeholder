@@ -4,3 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.3.0]
+
+### Added
+- 改进参数解析器以支持复杂参数值。
+- 添加占位符缓存机制以提升性能。
+- 引入上下文适配器，增强占位符系统扩展性。
+- 增加部分默认占位符。
+- 增加方块占位符。
+
+### Refactor
+- 将默认占位符拆分。
+
+### Fixed
+- 修复 `PlaceholderProcessor::process` 方法中的参数分流逻辑问题。
+- 修复派生上下文优先级反了的问题。
+- 修复 `regex_map $n` 替换次序错误。
