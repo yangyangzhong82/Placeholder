@@ -20,6 +20,7 @@
 class Player;
 class Mob;
 class Actor; // Add Actor forward declaration
+class Block; // Add Block forward declaration
 
 namespace PA {
 
@@ -83,6 +84,16 @@ struct PA_API PlayerContext : public MobContext { // 移除 final, Player 继承
         std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
+    }
+};
+
+// 方块上下文
+struct PA_API BlockContext : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:Block");
+    const Block*              block{}; // Changed to const Block*
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
+        return {kTypeId}; // Block 不继承其他上下文
     }
 };
 

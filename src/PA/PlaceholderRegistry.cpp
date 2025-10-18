@@ -347,6 +347,12 @@ public:
             out       = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
+        case BlockContext::kTypeId: {
+            BlockContext rc;
+            rc.block = static_cast<const Block*>(raw); // raw 是 void*，需要转换为 const Block*
+            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
         default:
             // 其他目标上下文类型：暂不支持
             break;

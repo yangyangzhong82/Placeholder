@@ -25,6 +25,7 @@
 | `{player_ip}`              | 玩家的 IP 地址和端口               | `127.0.0.1:19132` |
 | `{llmoney}`                | 玩家的 LegacyMoney 余额            | `1000`           |
 | `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:type_name}` | `minecraft:horse` |
+| `{player_block:<inner_placeholder_spec>}` | 玩家脚下的方块。可用于获取方块的属性，例如 `{player_block:block_type_name}` | `minecraft:air` |
 
 ### 生物上下文 (`MobContext`)
 
@@ -59,6 +60,16 @@
 | `{actor_effects}`      | Actor 的药水效果。无参数时列出所有效果名称；带一个参数时返回特定效果的详细信息；带两个参数时返回特定效果的指定属性 (level, duration, id, display_name)。 | `速度 (等级: 1, 持续时间: 30秒)` |
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
 | `{score:objective_name}`   | Actor 在指定记分板上的分数           | `123`            |
+
+### 方块上下文 (`BlockContext`)
+
+| 占位符                 | 描述                                       | 示例输出                     |
+| :--------------------- | :----------------------------------------- | :--------------------------- |
+| `{block_type_name}`    | 方块的类型名称                             | `minecraft:stone`            |
+| `{block_data}`         | 方块的数据值                               | `0`                          |
+| `{block_is_solid}`     | 方块是否是固体                             | `true`                       |
+| `{block_is_air}`       | 方块是否是空气方块                         | `false`                      |
+| `{block_description_id}` | 方块的描述 ID                              | `tile.stone`                 |
 
 ### 服务器上下文 (`kServerContextId`)
 
