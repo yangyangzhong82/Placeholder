@@ -40,6 +40,21 @@ void registerMobPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
+
+    // {mob_armor_value}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<MobContext, void (*)(const MobContext&, std::string&)>>(
+            "{mob_armor_value}",
+            +[](const MobContext& c, std::string& out) {
+                out = "0";
+                if (c.mob) {
+                    out = std::to_string(c.mob->getArmorValue());
+                }
+            }
+        ),
+        owner
+    );
 }
 
 } // namespace PA

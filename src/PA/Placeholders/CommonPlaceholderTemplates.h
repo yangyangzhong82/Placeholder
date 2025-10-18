@@ -72,7 +72,7 @@ public:
         } else {
             // This placeholder expects arguments, but none were provided.
             // Call it with an empty vector of arguments.
-            fn_({}, out);
+            fn_(out, {});
         }
     }
 
@@ -81,8 +81,8 @@ public:
         const std::vector<std::string_view>&          args,
         std::string&                                  out
     ) const override {
-        if constexpr (std::is_invocable_v<Fn, const std::vector<std::string_view>&, std::string&>) {
-            fn_(args, out);
+        if constexpr (std::is_invocable_v<Fn, std::string&, const std::vector<std::string_view>&>) {
+            fn_(out, args);
         } else {
             // This placeholder doesn't accept arguments, call the non-arg version.
             fn_(out);

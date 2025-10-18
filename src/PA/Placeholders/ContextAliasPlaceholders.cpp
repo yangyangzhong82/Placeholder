@@ -25,11 +25,29 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             HitResult result = playerCtx->player->traceRay(5.5f, true, false);
             auto    actor =   result.getEntity();
             if (actor) {
-            logger.info("Player {} is looking at entity type: {}", 
-                playerCtx->player->getRealName(), actor->getTypeName());
+                logger.info("Player {} is looking at entity type: {}", 
+                    playerCtx->player->getRealName(), actor->getTypeName());
             }
             if (result.mType == HitResultType::Entity) {
                 return result.getEntity();
+            }
+            return nullptr;
+        },
+        owner
+    );
+
+    // {player_riding:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_riding",
+        PlayerContext::kTypeId,
+        ActorContext::kTypeId,
+        +[](const PA::IContext* fromCtx) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            if (playerCtx->player->isRiding()) {
+                return playerCtx->player->getVehicle();
             }
             return nullptr;
         },

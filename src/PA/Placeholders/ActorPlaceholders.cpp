@@ -301,6 +301,19 @@ void registerActorPlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
+
+    // {actor_max_health}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_max_health}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "0";
+                if (c.actor) out = std::to_string(c.actor->getMaxHealth());
+            }
+        ),
+        owner
+    );
 }
 
 } // namespace PA

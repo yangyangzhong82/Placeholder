@@ -19,15 +19,15 @@ Entry& Entry::getInstance() {
 bool Entry::load() {
     getSelf().getLogger().debug("Loading...");
     ConfigManager::getInstance().load((getSelf().getConfigDir() / "config.json").string());
-
-    registerAllBuiltinPlaceholders(PA_GetPlaceholderService());
     ScriptExports::install();
+
     return true;
 }
 
 bool Entry::enable() {
     getSelf().getLogger().debug("Enabling...");
     // Code for enabling the mod goes here.
+    registerAllBuiltinPlaceholders(PA_GetPlaceholderService());
 
     return true;
 }
@@ -35,6 +35,7 @@ bool Entry::enable() {
 bool Entry::disable() {
     getSelf().getLogger().debug("Disabling...");
     // Code for disabling the mod goes here.
+
     return true;
 }
 
