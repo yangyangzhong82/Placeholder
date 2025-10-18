@@ -60,6 +60,7 @@
 | `{actor_effects}`      | Actor 的药水效果。无参数时列出所有效果名称；带一个参数时返回特定效果的详细信息；带两个参数时返回特定效果的指定属性 (level, duration, id, display_name)。 | `速度 (等级: 1, 持续时间: 30秒)` |
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
 | `{score:objective_name}`   | Actor 在指定记分板上的分数           | `123`            |
+| `{entity_look_block:<inner_placeholder_spec>}` | 实体正在看的方块。可用于获取所看方块的属性，例如 `{entity_look_block:block_type_name}` | `minecraft:stone` |
 
 ### 方块上下文 (`BlockContext`)
 
