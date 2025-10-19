@@ -52,6 +52,45 @@ struct CachedEntry {
     CachedEntry& operator=(const CachedEntry&) = delete;
 };
 
+class PlaceholderRegistry; // Forward declaration
+
+// ScopedPlaceholderRegistrar 的实现
+class ScopedPlaceholderRegistrar : public IScopedPlaceholderRegistrar {
+public:
+    ScopedPlaceholderRegistrar(PlaceholderRegistry* registry, void* owner) : mRegistry(registry), mOwner(owner) {}
+    ~ScopedPlaceholderRegistrar() override;
+
+    void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p) override;
+    void registerCachedPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        unsigned int                        cacheDuration
+    ) override;
+    void registerRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId
+    ) override;
+    void registerCachedRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId,
+        unsigned int                        cacheDuration
+    ) override;
+    void registerContextAlias(
+        std::string_view  alias,
+        uint64_t          fromContextTypeId,
+        uint64_t          toContextTypeId,
+        ContextResolverFn resolver
+    ) override;
+
+private:
+    PlaceholderRegistry* mRegistry;
+    void*                mOwner;
+};
+
 class PlaceholderRegistry {
 public:
     PlaceholderRegistry();
@@ -68,6 +107,14 @@ public:
         void*                               owner,
         uint64_t                            mainContextTypeId,
         uint64_t                            relationalContextTypeId
+    );
+    void registerCachedRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        void*                               owner,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId,
+        unsigned int                        cacheDuration
     );
     void unregisterByOwner(void* owner);
 
@@ -137,6 +184,10 @@ private:
         std::unordered_map<std::string, Entry, ci_hash, ci_equal> server;
         std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>
             cached_typed; // 新增：缓存的 Typed 占位符
+        std::unordered_map<
+            uint64_t,
+            std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>>
+            cached_relational; // 新增：缓存的关系型占位符
         std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal> cached_server; // 新增：缓存的 Server 占位符
 
         // 新增：alias -> adapters（大小写不敏感）
@@ -159,6 +210,17 @@ private:
                     new_entry.owner         = inner_pair.second.owner;
                     new_entry.cacheDuration = inner_pair.second.cacheDuration;
                     cached_typed[pair.first].emplace(inner_pair.first, std::move(new_entry));
+                }
+            }
+            for (const auto& pair : other.cached_relational) {
+                for (const auto& inner_pair : pair.second) {
+                    for (const auto& final_pair : inner_pair.second) {
+                        CachedEntry new_entry;
+                        new_entry.ptr           = final_pair.second.ptr;
+                        new_entry.owner         = final_pair.second.owner;
+                        new_entry.cacheDuration = final_pair.second.cacheDuration;
+                        cached_relational[pair.first][inner_pair.first].emplace(final_pair.first, std::move(new_entry));
+                    }
                 }
             }
             for (const auto& pair : other.cached_server) {

@@ -34,7 +34,29 @@ public:
         mRegistry.registerRelationalPlaceholder(prefix, p, owner, mainContextTypeId, relationalContextTypeId);
     }
 
+    void registerCachedRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        void*                               owner,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId,
+        unsigned int                        cacheDuration
+    ) override {
+        mRegistry.registerCachedRelationalPlaceholder(
+            prefix,
+            p,
+            owner,
+            mainContextTypeId,
+            relationalContextTypeId,
+            cacheDuration
+        );
+    }
+
     void unregisterByOwner(void* owner) override { mRegistry.unregisterByOwner(owner); }
+
+    std::unique_ptr<IScopedPlaceholderRegistrar> createScopedRegistrar(void* owner) override {
+        return std::make_unique<ScopedPlaceholderRegistrar>(&mRegistry, owner);
+    }
 
     std::string replace(std::string_view text, const IContext* ctx) const override {
         return PlaceholderProcessor::process(text, ctx, mRegistry);

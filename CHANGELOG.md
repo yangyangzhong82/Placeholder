@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增 `PA.replace` 函数，用于替换不依赖特定上下文的占位符。
 - 为 `entity_look_block` 占位符添加参数支持 (`maxDistance`, `includeLiquid`, `solidOnly`, `fullOnly`)。
 - 将 `player_look` 占位符重命名为 `actor_look`，并为其添加 `maxDistance` 参数支持，使其适用于所有 `Actor`。
+- 新增对带缓存的关系型占位符的支持。
+- 引入 `IScopedPlaceholderRegistrar` 接口和 `createScopedRegistrar` 方法，提供 RAII 作用域注册器，简化占位符的注册和自动注销。
 
 ### Changed
 - 统一 JavaScript 占位符注册 API：所有注册函数（`registerPlayerPlaceholder`, `registerActorPlaceholder`, `registerServerPlaceholder`, `registerPlaceholderByKind`, `registerPlaceholderByContextId`）现在都支持可选的 `cacheDuration` 参数，用于控制占位符的缓存行为。

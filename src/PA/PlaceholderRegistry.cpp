@@ -117,6 +117,47 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
     mSnapshot.store(newSnapshot);
 }
 
+void PlaceholderRegistry::registerCachedRelationalPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    void*                               owner,
+    uint64_t                            mainContextTypeId,
+    uint64_t                            relationalContextTypeId,
+    unsigned int                        cacheDuration
+) {
+    if (!p) return;
+
+    std::string      key;
+    std::string_view token_sv = p->token();
+
+    std::string inner_token_str;
+    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
+        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
+    } else {
+        inner_token_str = token_sv;
+    }
+
+    if (prefix.empty()) {
+        key = inner_token_str;
+    } else {
+        key = std::string(prefix) + ":" + inner_token_str;
+    }
+
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
+
+    CachedEntry entry;
+    entry.ptr           = p;
+    entry.owner         = owner;
+    entry.cacheDuration = cacheDuration;
+
+    newSnapshot->cached_relational[mainContextTypeId][relationalContextTypeId].emplace(key, std::move(entry));
+    newSnapshot->ownerIndex[owner].push_back(
+        {false, true, true, false, mainContextTypeId, relationalContextTypeId, 0, key}
+    ); // isServer, isRelational, isCached, isAdapter
+    mSnapshot.store(newSnapshot);
+}
+
 void PlaceholderRegistry::registerContextAlias(
     std::string_view  alias,
     uint64_t          fromContextTypeId,
@@ -180,6 +221,19 @@ void PlaceholderRegistry::unregisterByOwner(void* owner) {
                 auto sit = newSnapshot->cached_server.find(h.token);
                 if (sit != newSnapshot->cached_server.end() && sit->second.owner == owner) {
                     newSnapshot->cached_server.erase(sit);
+                }
+            } else if (h.isRelational) {
+                auto mainIt = newSnapshot->cached_relational.find(h.mainCtxId);
+                if (mainIt != newSnapshot->cached_relational.end()) {
+                    auto relIt = mainIt->second.find(h.relCtxId);
+                    if (relIt != mainIt->second.end()) {
+                        auto pit = relIt->second.find(h.token);
+                        if (pit != relIt->second.end() && pit->second.owner == owner) {
+                            relIt->second.erase(pit);
+                            if (relIt->second.empty()) mainIt->second.erase(relIt);
+                            if (mainIt->second.empty()) newSnapshot->cached_relational.erase(mainIt);
+                        }
+                    }
                 }
             } else {
                 auto tit = newSnapshot->cached_typed.find(h.ctxId);
@@ -457,13 +511,27 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
             }
         }
 
-        // 5. Check relational placeholders (relational placeholders are not cached in this design)
+        // 5. Check cached relational placeholders
         uint64_t mainCtxId = ctx->typeId();
-        auto     mainIt    = snapshot->relational.find(mainCtxId);
-        if (mainIt != snapshot->relational.end()) {
+        auto     mainIt    = snapshot->cached_relational.find(mainCtxId);
+        if (mainIt != snapshot->cached_relational.end()) {
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {
+                    auto placeholderIt = relIt->second.find(token);
+                    if (placeholderIt != relIt->second.end()) {
+                        return std::make_pair(placeholderIt->second.ptr, &placeholderIt->second);
+                    }
+                }
+            }
+        }
+
+        // 6. Check non-cached relational placeholders
+        auto mainItNonCached = snapshot->relational.find(mainCtxId);
+        if (mainItNonCached != snapshot->relational.end()) {
+            for (uint64_t relId : inheritedTypeIds) {
+                auto relIt = mainItNonCached->second.find(relId);
+                if (relIt != mainItNonCached->second.end()) {
                     auto placeholderIt = relIt->second.find(token);
                     if (placeholderIt != relIt->second.end()) {
                         return {placeholderIt->second.ptr, nullptr};
@@ -474,6 +542,72 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
     }
 
     return {nullptr, nullptr};
+}
+
+// ScopedPlaceholderRegistrar implementation
+ScopedPlaceholderRegistrar::~ScopedPlaceholderRegistrar() {
+    if (mRegistry && mOwner) {
+        mRegistry->unregisterByOwner(mOwner);
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerPlaceholder(
+    std::string_view prefix, std::shared_ptr<const IPlaceholder> p
+) {
+    if (mRegistry) {
+        mRegistry->registerPlaceholder(prefix, p, mOwner);
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerCachedPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    unsigned int                        cacheDuration
+) {
+    if (mRegistry) {
+        mRegistry->registerCachedPlaceholder(prefix, p, mOwner, cacheDuration);
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerRelationalPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    uint64_t                            mainContextTypeId,
+    uint64_t                            relationalContextTypeId
+) {
+    if (mRegistry) {
+        mRegistry->registerRelationalPlaceholder(prefix, p, mOwner, mainContextTypeId, relationalContextTypeId);
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerCachedRelationalPlaceholder(
+    std::string_view                    prefix,
+    std::shared_ptr<const IPlaceholder> p,
+    uint64_t                            mainContextTypeId,
+    uint64_t                            relationalContextTypeId,
+    unsigned int                        cacheDuration
+) {
+    if (mRegistry) {
+        mRegistry->registerCachedRelationalPlaceholder(
+            prefix,
+            p,
+            mOwner,
+            mainContextTypeId,
+            relationalContextTypeId,
+            cacheDuration
+        );
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerContextAlias(
+    std::string_view  alias,
+    uint64_t          fromContextTypeId,
+    uint64_t          toContextTypeId,
+    ContextResolverFn resolver
+) {
+    if (mRegistry) {
+        mRegistry->registerContextAlias(alias, fromContextTypeId, toContextTypeId, resolver, mOwner);
+    }
 }
 
 } // namespace PA

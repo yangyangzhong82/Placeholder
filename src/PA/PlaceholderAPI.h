@@ -147,6 +147,42 @@ struct PA_API IPlaceholder {
 // 新增了 args 参数，用于向 resolver 传递参数
 using ContextResolverFn = void* (*)(const IContext*, const std::vector<std::string_view>& args);
 
+// RAII 作用域注册器接口
+struct PA_API IScopedPlaceholderRegistrar {
+    virtual ~IScopedPlaceholderRegistrar() = default;
+
+    virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p) = 0;
+
+    virtual void registerCachedPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        unsigned int                        cacheDuration
+    ) = 0;
+
+    virtual void registerRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId
+    ) = 0;
+
+    // 新增：注册带缓存的关系型占位符
+    virtual void registerCachedRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId,
+        unsigned int                        cacheDuration
+    ) = 0;
+
+    virtual void registerContextAlias(
+        std::string_view  alias,
+        uint64_t          fromContextTypeId,
+        uint64_t          toContextTypeId,
+        ContextResolverFn resolver
+    ) = 0;
+};
+
 // 跨模块服务接口（稳定 ABI）
 struct PA_API IPlaceholderService {
     virtual ~IPlaceholderService() = default;
@@ -182,8 +218,21 @@ struct PA_API IPlaceholderService {
         uint64_t                            relationalContextTypeId
     ) = 0;
 
+    // 新增：注册带缓存的关系型占位符
+    virtual void registerCachedRelationalPlaceholder(
+        std::string_view                    prefix,
+        std::shared_ptr<const IPlaceholder> p,
+        void*                               owner,
+        uint64_t                            mainContextTypeId,
+        uint64_t                            relationalContextTypeId,
+        unsigned int                        cacheDuration
+    ) = 0;
+
     // 卸载 owner 名下的全部占位符（模块卸载时调用）
     virtual void unregisterByOwner(void* owner) = 0;
+
+    // 新增：创建一个作用域注册器，简化注册和自动卸载
+    virtual std::unique_ptr<IScopedPlaceholderRegistrar> createScopedRegistrar(void* owner) = 0;
 
     // 带上下文的替换：先替换特定上下文，再替换服务器占位符
     virtual std::string replace(std::string_view text, const IContext* ctx) const = 0;

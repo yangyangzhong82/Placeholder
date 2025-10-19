@@ -44,6 +44,11 @@ Placeholder API 允许开发者在文本中定义可替换的占位符，这些�
 
 `PA::IPlaceholderService` 是用于管理和替换占位符的核心接口。通过 `PA::PA_GetPlaceholderService()` 函数可以获取其单例。
 
+**新增方法：**
+
+*   **`registerCachedRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId, unsigned int cacheDuration)`**：注册一个带缓存的关系型占位符。它与 `registerRelationalPlaceholder` 类似，但会根据 `cacheDuration` 对占位符的求值结果进行缓存。
+*   **`std::unique_ptr<IScopedPlaceholderRegistrar> createScopedRegistrar(void* owner)`**：创建一个 RAII 作用域注册器。通过此注册器注册的占位符会在注册器对象离开作用域时自动注销，极大地简化了资源管理。
+
 ## 内置占位符
 
 Placeholder API 提供了丰富的内置占位符。详细列表请参阅 [内置占位符文档](BUILTIN_PLACEHOLDERS.md)。
@@ -226,6 +231,42 @@ void registerMyCachedPlaceholder(PA::IPlaceholderService* svc, void* owner) {
 // 在插件卸载时反注册
 void unregisterMyPlaceholder(PA::IPlaceholderService* svc, void* owner) {
     svc->unregisterByOwner(owner);
+}
+
+// 使用 IScopedPlaceholderRegistrar 简化注册和自动卸载
+void useScopedRegistrar(PA::IPlaceholderService* svc, void* owner) {
+    // 创建一个作用域注册器，当 registrar 离开作用域时，会自动注销其名下所有占位符
+    auto registrar = svc->createScopedRegistrar(owner);
+
+    // 通过 registrar 注册占位符，无需手动调用 unregisterByOwner
+    class MyScopedPlaceholder final : public PA::IPlaceholder {
+    public:
+        std::string_view token() const noexcept override { return "{scoped_greet}"; }
+        uint64_t         contextTypeId() const noexcept override { return PA::kServerContextId; }
+        void evaluate(const PA::IContext* ctx, std::string& out) const override {
+            out = "Hello from scoped registrar!";
+        }
+    };
+    registrar->registerPlaceholder("", std::make_shared<MyScopedPlaceholder>(), owner);
+
+    // 也可以注册带缓存的关系型占位符
+    class MyScopedCachedRelationalPlaceholder final : public PA::IPlaceholder {
+    public:
+        std::string_view token() const noexcept override { return "{scoped_cached_relational}"; }
+        uint64_t         contextTypeId() const noexcept override { return PA::TypeId("ctx:Player"); } // 示例：绑定到 Player
+        unsigned int     getCacheDuration() const noexcept override { return 30; } // 缓存 30 秒
+
+        void evaluate(const PA::IContext* ctx, std::string& out) const override {
+            out = "Scoped cached relational placeholder value.";
+        }
+    };
+    registrar->registerCachedRelationalPlaceholder(
+        "",
+        std::make_shared<MyScopedCachedRelationalPlaceholder>(),
+        PA::TypeId("ctx:Player"), // 主上下文类型
+        PA::TypeId("ctx:Mob"),    // 关系上下文类型
+        30                         // 缓存持续时间
+    );
 }
 ```
 **注意：** `owner` 指针用于标识占位符的归属模块，建议使用模块内唯一的地址作为 `owner`，以便在模块卸载时批量反注册。
