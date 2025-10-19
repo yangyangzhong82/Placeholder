@@ -26,13 +26,32 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         "player_look",
         PlayerContext::kTypeId,
         ActorContext::kTypeId,
-        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>& args) -> void* {
             const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
             if (!playerCtx || !playerCtx->player) {
                 return nullptr;
             }
-            // 默认 tMax = 5.5f, includeActor = true, includeBlock = false
-            HitResult result = playerCtx->player->traceRay(5.5f, true, false);
+
+            float maxDistance = 5.5f; // 默认值
+
+            // 解析参数
+            for (const auto& arg : args) {
+                size_t separatorPos = arg.find('=');
+                if (separatorPos != std::string_view::npos) {
+                    std::string_view key   = arg.substr(0, separatorPos);
+                    std::string_view value = arg.substr(separatorPos + 1);
+
+                    if (key == "maxDistance") {
+                        float parsedValue;
+                        if (auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsedValue);
+                            ec == std::errc()) {
+                            maxDistance = parsedValue;
+                        }
+                    }
+                }
+            }
+
+            HitResult result = playerCtx->player->traceRay(maxDistance, true, false);
             auto      actor  = result.getEntity();
             if (actor) {
                 logger.info(
