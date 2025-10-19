@@ -189,6 +189,22 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         },
         owner
     );
+
+    // {player_hand:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_hand",
+        PlayerContext::kTypeId,
+        ItemStackBaseContext::kTypeId, // 目标上下文类型为 ItemStackBaseContext
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // getSelectedItem() 返回 ItemStack const&，需要转换为 const ItemStackBase*
+            return (void*)&playerCtx->player->getSelectedItem();
+        },
+        owner
+    );
 }
 
 } // namespace PA

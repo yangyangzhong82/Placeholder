@@ -26,6 +26,7 @@
 | `{llmoney}`                | 玩家的 LegacyMoney 余额            | `1000`           |
 | `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:type_name}` | `minecraft:horse` |
 | `{player_block:<inner_placeholder_spec>}` | 玩家脚下的方块。可用于获取方块的属性，例如 `{player_block:block_type_name}` | `minecraft:air` |
+| `{player_hand:<inner_placeholder_spec>}` | 玩家手持的物品。可用于获取手持物品的属性，例如 `{player_hand:item_name}` | `minecraft:diamond_sword` |
 
 ### 生物上下文 (`MobContext`)
 
@@ -71,6 +72,20 @@
 | `{block_is_solid}`     | 方块是否是固体                             | `true`                       |
 | `{block_is_air}`       | 方块是否是空气方块                         | `false`                      |
 | `{block_description_id}` | 方块的描述 ID                              | `tile.stone`                 |
+
+### 物品堆上下文 (`ItemStackBaseContext`)
+
+| 占位符                 | 描述                                       | 示例输出                     |
+| :--------------------- | :----------------------------------------- | :--------------------------- |
+| `{item_name}`          | 物品的描述名称                             | `minecraft:stone`            |
+| `{item_count}`         | 物品堆中的物品数量                         | `64`                         |
+| `{item_aux_value}`     | 物品的辅助值 (数据值)                      | `0`                          |
+| `{item_max_stack_size}`| 物品的最大堆叠数量                         | `64`                         |
+| `{item_is_null}`       | 物品是否为空                               | `false`                      |
+| `{item_is_enchanted}`  | 物品是否附魔                               | `true`                       |
+| `{item_is_damaged}`    | 物品是否损坏                               | `false`                      |
+| `{item_damage_value}`  | 物品的当前损坏值                           | `0`                          |
+| `{item_max_damage}`    | 物品的最大损坏值                           | `100`                        |
 
 ### 服务器上下文 (`kServerContextId`)
 

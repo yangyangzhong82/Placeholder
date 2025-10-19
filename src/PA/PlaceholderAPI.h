@@ -21,6 +21,7 @@ class Player;
 class Mob;
 class Actor; // Add Actor forward declaration
 class Block; // Add Block forward declaration
+class ItemStackBase; // Add ItemStackBase forward declaration
 
 namespace PA {
 
@@ -108,6 +109,19 @@ struct PA_API BlockContext : public IContext {
     }
     std::string getContextInstanceKey() const noexcept override {
         return block ? std::to_string(reinterpret_cast<uintptr_t>(block)) : "";
+    }
+};
+
+// 物品堆上下文
+struct PA_API ItemStackBaseContext : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:ItemStackBase");
+    const ItemStackBase*      itemStackBase{};
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
+        return {kTypeId};
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return itemStackBase ? std::to_string(reinterpret_cast<uintptr_t>(itemStackBase)) : "";
     }
 };
 

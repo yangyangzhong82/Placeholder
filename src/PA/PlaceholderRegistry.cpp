@@ -433,6 +433,12 @@ public:
             out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
+        case ItemStackBaseContext::kTypeId: { // 新增 ItemStackBaseContext
+            ItemStackBaseContext rc;
+            rc.itemStackBase = static_cast<const ItemStackBase*>(raw);
+            out              = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
         default:
             // 其他目标上下文类型：暂不支持
             break;

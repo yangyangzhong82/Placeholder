@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0]
 
 ### Added
+- 新增 `ItemStackBase` 上下文及其相关占位符（`{item_name}`, `{item_count}`, `{item_aux_value}`, `{item_max_stack_size}`, `{item_is_null}`, `{item_is_enchanted}`, `{item_is_damaged}`, `{item_damage_value}`, `{item_max_damage}`）。
+- 新增 `player_hand` 别名占位符，用于获取玩家手持物品的信息。
 - 新增 `PA.replace` 函数，用于替换不依赖特定上下文的占位符。
 - 为 `entity_look_block` 占位符添加参数支持 (`maxDistance`, `includeLiquid`, `solidOnly`, `fullOnly`)。
 - 将 `player_look` 占位符重命名为 `actor_look`，并为其添加 `maxDistance` 参数支持，使其适用于所有 `Actor`。

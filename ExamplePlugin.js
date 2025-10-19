@@ -35,6 +35,8 @@ function update(player) {
   logger.info(`[JS Debug] 无掉落物实体数 ${moneyab}`);
   const pos = PA.replaceForPlayer('{js:actor_pos}', player);
   logger.info(`[JS Debug] 实体坐标 ${pos}`);
+  const itemcount = PA.replaceForPlayer('{player_hand:item_count}', player);
+  logger.info(`[JS Debug] 手持物品数量 ${itemcount}`);
 }
 
 // 定时更新所有在线玩家的侧边栏
