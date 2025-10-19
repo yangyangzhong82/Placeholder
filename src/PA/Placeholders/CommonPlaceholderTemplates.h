@@ -15,7 +15,7 @@ namespace PA {
 
 // 泛型占位符实现（上下文型）
 template <typename Ctx, typename Fn>
-class TypedLambdaPlaceholder final : public PA::ICachedPlaceholder { // 继承 ICachedPlaceholder
+class TypedLambdaPlaceholder final : public PA::IPlaceholder {
 public:
     TypedLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
     : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}
@@ -57,7 +57,7 @@ private:
 
 // 服务器占位符实现（无上下文）
 template <typename Fn>
-class ServerLambdaPlaceholder final : public PA::ICachedPlaceholder { // 继承 ICachedPlaceholder
+class ServerLambdaPlaceholder final : public PA::IPlaceholder {
 public:
     ServerLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
     : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}

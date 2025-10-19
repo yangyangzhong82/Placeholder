@@ -38,7 +38,7 @@ Placeholder API 允许开发者在文本中定义可替换的占位符，这些�
 
 #### 缓存占位符 (Cached Placeholder)
 
-对于一些不频繁变更的变量，例如服务器版本等信息，可以使用缓存来提升性能。实现 `PA::ICachedPlaceholder` 接口的占位符必须强制实现 `getCacheDuration()` 方法，并返回一个大于 `0` 的值来启用缓存。
+对于一些不频繁变更的变量，例如服务器版本等信息，可以使用缓存来提升性能。任何实现 `PA::IPlaceholder` 接口的占位符，如果其 `getCacheDuration()` 方法返回一个大于 `0` 的值，都将被自动缓存。缓存的键将根据上下文实例和占位符参数动态生成，以确保缓存的准确性和线程安全。
 
 ### 3. 占位符服务 (Placeholder Service)
 
@@ -209,7 +209,7 @@ void registerMyPlaceholder(PA::IPlaceholderService* svc, void* owner) {
 
 // 注册一个缓存占位符 (例如，缓存 60 秒)
 void registerMyCachedPlaceholder(PA::IPlaceholderService* svc, void* owner) {
-    class MyCachedPlaceholder final : public PA::ICachedPlaceholder {
+    class MyCachedPlaceholder final : public PA::IPlaceholder {
     public:
         std::string_view token() const noexcept override { return "{cached_greet}"; }
         uint64_t         contextTypeId() const noexcept override { return PA::kServerContextId; }
@@ -219,7 +219,8 @@ void registerMyCachedPlaceholder(PA::IPlaceholderService* svc, void* owner) {
             out = "Hello from cache!";
         }
     };
-    svc->registerCachedPlaceholder("", std::make_shared<MyCachedPlaceholder>(), owner, 60);
+    // 现在 registerPlaceholder 会根据 getCacheDuration() 自动处理缓存
+    svc->registerPlaceholder("", std::make_shared<MyCachedPlaceholder>(), owner);
 }
 
 // 在插件卸载时反注册

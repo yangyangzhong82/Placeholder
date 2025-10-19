@@ -18,11 +18,38 @@ namespace PA {
 
 // 将 CachedEntry 结构体移到类外部，使其在 findPlaceholder 声明时可见
 struct CachedEntry {
-    std::shared_ptr<const IPlaceholder>           ptr{};
-    void*                                         owner{};
-    unsigned int                                  cacheDuration{}; // 缓存持续时间（秒）
-    mutable std::string                           cachedValue;     // 缓存的值
-    mutable std::chrono::steady_clock::time_point lastEvaluated;   // 上次评估时间
+    std::shared_ptr<const IPlaceholder> ptr{};
+    void*                               owner{};
+    unsigned int                        cacheDuration{}; // 缓存持续时间（秒）
+
+    // 内部缓存值结构体
+    struct Value {
+        std::string                           value;
+        std::chrono::steady_clock::time_point lastEvaluated;
+    };
+
+    // 线程安全的缓存存储
+    // Key: context_instance_key + ":" + args_key
+    mutable std::mutex                                  cacheMutex;
+    mutable std::unordered_map<std::string, Value>      cachedValues;
+
+    CachedEntry() = default;
+    CachedEntry(CachedEntry&& other) noexcept
+        : ptr(std::move(other.ptr)), owner(other.owner), cacheDuration(other.cacheDuration),
+          cachedValues(std::move(other.cachedValues)) {}
+    CachedEntry& operator=(CachedEntry&& other) noexcept {
+        if (this != &other) {
+            ptr           = std::move(other.ptr);
+            owner         = other.owner;
+            cacheDuration = other.cacheDuration;
+            cachedValues  = std::move(other.cachedValues);
+        }
+        return *this;
+    }
+
+    // Delete copy constructor and copy assignment operator
+    CachedEntry(const CachedEntry&) = delete;
+    CachedEntry& operator=(const CachedEntry&) = delete;
 };
 
 class PlaceholderRegistry {
@@ -116,6 +143,32 @@ private:
         std::unordered_map<std::string, std::vector<Adapter>, ci_hash, ci_equal> adapters;
 
         std::unordered_map<void*, std::vector<Handle>> ownerIndex;
+
+        Snapshot() = default;
+
+        Snapshot(const Snapshot& other)
+        : typed(other.typed),
+          relational(other.relational),
+          server(other.server),
+          adapters(other.adapters),
+          ownerIndex(other.ownerIndex) {
+            for (const auto& pair : other.cached_typed) {
+                for (const auto& inner_pair : pair.second) {
+                    CachedEntry new_entry;
+                    new_entry.ptr           = inner_pair.second.ptr;
+                    new_entry.owner         = inner_pair.second.owner;
+                    new_entry.cacheDuration = inner_pair.second.cacheDuration;
+                    cached_typed[pair.first].emplace(inner_pair.first, std::move(new_entry));
+                }
+            }
+            for (const auto& pair : other.cached_server) {
+                CachedEntry new_entry;
+                new_entry.ptr           = pair.second.ptr;
+                new_entry.owner         = pair.second.owner;
+                new_entry.cacheDuration = pair.second.cacheDuration;
+                cached_server.emplace(pair.first, std::move(new_entry));
+            }
+        }
     };
 
     mutable std::mutex                           mWriteMutex;

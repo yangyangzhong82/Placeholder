@@ -14,6 +14,8 @@ void PlaceholderRegistry::registerPlaceholder(
 ) {
     if (!p) return;
 
+    unsigned int cacheDuration = p->getCacheDuration();
+
     std::string      key;
     std::string_view token_sv = p->token();
 
@@ -34,14 +36,26 @@ void PlaceholderRegistry::registerPlaceholder(
     auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
     const uint64_t ctxId = p->contextTypeId();
-    if (ctxId == kServerContextId) {
-        newSnapshot->server[key] = {p, owner};
-        newSnapshot->ownerIndex[owner].push_back({true, false, false, false, 0, 0, 0, key}
-        ); // isServer, isRelational, isCached, isAdapter
+    if (cacheDuration > 0) {
+        CachedEntry entry;
+        entry.ptr = p;
+        entry.owner = owner;
+        entry.cacheDuration = cacheDuration;
+        if (ctxId == kServerContextId) {
+            newSnapshot->cached_server.emplace(key, std::move(entry));
+            newSnapshot->ownerIndex[owner].push_back({true, false, true, false, 0, 0, 0, key});
+        } else {
+            newSnapshot->cached_typed[ctxId].emplace(key, std::move(entry));
+            newSnapshot->ownerIndex[owner].push_back({false, false, true, false, 0, 0, ctxId, key});
+        }
     } else {
-        newSnapshot->typed[ctxId][key] = {p, owner};
-        newSnapshot->ownerIndex[owner].push_back({false, false, false, false, 0, 0, ctxId, key}
-        ); // isServer, isRelational, isCached, isAdapter
+        if (ctxId == kServerContextId) {
+            newSnapshot->server[key] = {p, owner};
+            newSnapshot->ownerIndex[owner].push_back({true, false, false, false, 0, 0, 0, key});
+        } else {
+            newSnapshot->typed[ctxId][key] = {p, owner};
+            newSnapshot->ownerIndex[owner].push_back({false, false, false, false, 0, 0, ctxId, key});
+        }
     }
     mSnapshot.store(newSnapshot);
 }
@@ -50,40 +64,21 @@ void PlaceholderRegistry::registerCachedPlaceholder(
     std::string_view                    prefix,
     std::shared_ptr<const IPlaceholder> p,
     void*                               owner,
-    unsigned int                        cacheDuration
+    unsigned int /* cacheDuration */
 ) {
-    if (!p || cacheDuration == 0) return; // 缓存持续时间为0表示不缓存
-
-    std::string      key;
-    std::string_view token_sv = p->token();
-
-    std::string inner_token_str;
-    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
+    // This is now a convenience function that forwards to the main registration logic.
+    // Note: The `cacheDuration` parameter here is technically redundant if the placeholder
+    // itself returns a valid duration from `getCacheDuration()`. The primary mechanism
+    // should be the placeholder's own method. This API is kept for compatibility.
+    if (!p) return;
+    if (p->getCacheDuration() > 0) {
+        registerPlaceholder(prefix, p, owner);
     } else {
-        inner_token_str = token_sv;
+        // If the placeholder itself doesn't specify a cache duration, we can't treat it as cached.
+        // Forcing it into the cached map would be inconsistent.
+        // We will register it as a normal placeholder instead.
+        registerPlaceholder(prefix, p, owner);
     }
-
-    if (prefix.empty()) {
-        key = inner_token_str;
-    } else {
-        key = std::string(prefix) + ":" + inner_token_str;
-    }
-
-    std::lock_guard<std::mutex> lk(mWriteMutex);
-    auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
-
-    const uint64_t ctxId = p->contextTypeId();
-    if (ctxId == kServerContextId) {
-        newSnapshot->cached_server[key] = {p, owner, cacheDuration, "", std::chrono::steady_clock::time_point()};
-        newSnapshot->ownerIndex[owner].push_back({true, false, true, false, 0, 0, 0, key}
-        ); // isServer, isRelational, isCached, isAdapter
-    } else {
-        newSnapshot->cached_typed[ctxId][key] = {p, owner, cacheDuration, "", std::chrono::steady_clock::time_point()};
-        newSnapshot->ownerIndex[owner].push_back({false, false, true, false, 0, 0, ctxId, key}
-        ); // isServer, isRelational, isCached, isAdapter
-    }
-    mSnapshot.store(newSnapshot);
 }
 
 
@@ -299,7 +294,7 @@ public:
     std::string_view token() const noexcept override { return mAlias; }
     uint64_t         contextTypeId() const noexcept override { return mFrom; }
 
-    void evaluate(const IContext* ctx, std::string& out) const override {
+    void evaluate(const IContext* /* ctx */, std::string& out) const override {
         // 无参数时无法知道要复用哪个内层占位符
         out.clear();
     }

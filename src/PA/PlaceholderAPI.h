@@ -46,6 +46,8 @@ struct PA_API IContext {
     virtual std::vector<uint64_t> getInheritedTypeIds() const noexcept {
         return {typeId()}; // 默认只返回自己的 typeId
     }
+    // 新增方法：获取上下文实例的唯一键（例如，玩家UUID，方块位置哈希）
+    virtual std::string getContextInstanceKey() const noexcept { return ""; }
 };
 
 // 约定：服务器级（无上下文）占位符的上下文 ID = 0
@@ -61,6 +63,9 @@ struct PA_API ActorContext : public IContext { // 移除 final
     std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         return {kTypeId}; // Actor 不继承其他上下文
     }
+    std::string getContextInstanceKey() const noexcept override {
+        return actor ? std::to_string(reinterpret_cast<uintptr_t>(actor)) : "";
+    }
 };
 
 // 生物上下文
@@ -72,6 +77,9 @@ struct PA_API MobContext : public ActorContext { // 移除 final, Mob 继承自 
         std::vector<uint64_t> inherited = ActorContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return mob ? std::to_string(reinterpret_cast<uintptr_t>(mob)) : "";
     }
 };
 
@@ -85,6 +93,9 @@ struct PA_API PlayerContext : public MobContext { // 移除 final, Player 继承
         inherited.push_back(kTypeId);
         return inherited;
     }
+    std::string getContextInstanceKey() const noexcept override {
+        return player ? std::to_string(reinterpret_cast<uintptr_t>(player)) : "";
+    }
 };
 
 // 方块上下文
@@ -94,6 +105,9 @@ struct PA_API BlockContext : public IContext {
     uint64_t                  typeId() const noexcept override { return kTypeId; }
     std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         return {kTypeId}; // Block 不继承其他上下文
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return block ? std::to_string(reinterpret_cast<uintptr_t>(block)) : "";
     }
 };
 
@@ -113,7 +127,7 @@ struct PA_API IPlaceholder {
 
     // 新增带参数的 evaluate 方法
     virtual void
-    evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& args, std::string& out) const {
+    evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& /* args */, std::string& out) const {
         // 默认实现调用无参数的 evaluate
         evaluate(ctx, out);
     }
@@ -122,11 +136,6 @@ struct PA_API IPlaceholder {
     virtual unsigned int getCacheDuration() const noexcept { return 0; }
 };
 
-// 缓存占位符抽象基类：继承自 IPlaceholder，并强制实现 getCacheDuration
-struct PA_API ICachedPlaceholder : public IPlaceholder {
-    // 强制实现 getCacheDuration，返回大于 0 的值表示启用缓存
-    virtual unsigned int getCacheDuration() const noexcept override = 0;
-};
 
 // 颜色代码定义
 #define PA_COLOR_RED    "§c"

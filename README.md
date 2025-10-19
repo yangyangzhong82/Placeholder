@@ -37,13 +37,6 @@ const PA = {
     registerPlaceholderByKind: ll.import("PA", "registerPlaceholderByKind"),
     registerPlaceholderByContextId: ll.import("PA", "registerPlaceholderByContextId"),
 
-    // 新增：缓存占位符注册
-    registerCachedServerPlaceholder: ll.import("PA", "registerCachedServerPlaceholder"),
-    registerCachedPlayerPlaceholder: ll.import("PA", "registerCachedPlayerPlaceholder"),
-    registerCachedActorPlaceholder: ll.import("PA", "registerCachedActorPlaceholder"),
-    registerCachedPlaceholderByKind: ll.import("PA", "registerCachedPlaceholderByKind"),
-    registerCachedPlaceholderByContextId: ll.import("PA", "registerCachedPlaceholderByContextId"),
-
     unregisterByCallbackNamespace: ll.import("PA", "unregisterByCallbackNamespace"),
     contextTypeIds: ll.import("PA", "contextTypeIds"),
 };
@@ -85,12 +78,13 @@ ll.export((token, param) => {
 const ok1 = PA.registerPlayerPlaceholder("js", "hello", JS_CB_NS, "helloPlayer");
 const ok2 = PA.registerServerPlaceholder("js", "server_time", JS_CB_NS, "serverTime");
 const ok3 = PA.registerActorPlaceholder("js", "actor_pos", JS_CB_NS, "actorPos");
-const ok4 = PA.registerCachedServerPlaceholder("js", "cached_server_time", JS_CB_NS, "cachedServerTime", 5);
+// 现在 registerServerPlaceholder 会根据传入的 cacheDuration 自动处理缓存
+const ok4 = PA.registerServerPlaceholder("js", "cached_server_time", JS_CB_NS, "cachedServerTime", 5);
 
 if (!ok1 || !ok2 || !ok3 || !ok4) {
     logger.error("注册 JS 占位符失败，请检查前面的日志。");
 } else {
-    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos} / {js:cached_server_time}");
+    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos} / {js:cached_server_time} (缓存)");
 }
 
 mc.listen("onJoin", (player) => {
@@ -162,4 +156,4 @@ mc.listen("onJoin", (player) => {
     }
     ```
 
-**请注意**: 您可以使用的内置占位符取决于 `PlaceholderAPI` C++ 插件中注册了哪些。请参考其文档以获取所有可用的内置占位符列表。对于自定义 JS 占位符，您需要确保 `ll.export` 的回调函数签名与 `PA.register*Placeholder` 函数所期望的上下文类型相匹配。
+**请注意**: 您可以使用的内置占位符取决于 `PlaceholderAPI` C++ 插件中注册了哪些。请参考其文档以获取所有可用的内置占位符列表。对于自定义 JS 占位符，您需要确保 `ll.export` 的回调函数签名与 `PA.register*Placeholder` 函数所期望的上下文类型相匹配。如果需要注册缓存占位符，只需在注册时为 `register*Placeholder` 函数的 `cacheDuration` 参数传入一个大于 0 的值即可。
