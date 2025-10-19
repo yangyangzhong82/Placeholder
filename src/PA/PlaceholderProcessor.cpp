@@ -27,7 +27,26 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
         char open_delim  = text[start_pos];
         char close_delim = (open_delim == '{') ? '}' : '%';
 
-        size_t end_pos = text.find(close_delim, start_pos + 1);
+        size_t end_pos       = std::string_view::npos;
+        int    nesting_level = 1;
+        size_t scan_pos      = start_pos + 1;
+
+        while (scan_pos < text.length()) {
+            char current_char = text[scan_pos];
+            if (current_char == '\\' && scan_pos + 1 < text.length()) {
+                // Skip escaped character
+                scan_pos++;
+            } else if (current_char == open_delim) {
+                nesting_level++;
+            } else if (current_char == close_delim) {
+                nesting_level--;
+                if (nesting_level == 0) {
+                    end_pos = scan_pos;
+                    break;
+                }
+            }
+            scan_pos++;
+        }
 
         if (end_pos == std::string_view::npos) {
             result.push_back(open_delim);
