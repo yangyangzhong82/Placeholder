@@ -347,6 +347,7 @@ public:
 
     std::string_view token() const noexcept override { return mAlias; }
     uint64_t         contextTypeId() const noexcept override { return mFrom; }
+    bool             isContextAliasPlaceholder() const noexcept override { return true; }
 
     void evaluate(const IContext* /* ctx */, std::string& out) const override {
         // 无参数时无法知道要复用哪个内层占位符
@@ -437,6 +438,12 @@ public:
             ItemStackBaseContext rc;
             rc.itemStackBase = static_cast<const ItemStackBase*>(raw);
             out              = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
+        case ContainerContext::kTypeId: { // 新增 ContainerContext
+            ContainerContext rc;
+            rc.container = static_cast<Container*>(raw);
+            out          = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
         default:
@@ -547,7 +554,28 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
         }
     }
 
+    // 7. Check for ContainerContext (if applicable)
+    if (ctx && ctx->typeId() == ContainerContext::kTypeId) {
+        auto containerCtx = static_cast<const ContainerContext*>(ctx);
+        // Add specific logic for ContainerContext if needed, e.g., looking up placeholders
+        // related to the container's properties or contents.
+        // For now, we'll just let it fall through to the default.
+    }
+
     return {nullptr, nullptr};
+}
+
+const Adapter* PlaceholderRegistry::findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const {
+    auto snapshot = mSnapshot.load();
+    auto it       = snapshot->adapters.find(std::string(alias)); // adapters 使用 std::string 作为 key
+    if (it != snapshot->adapters.end()) {
+        for (const auto& adapter : it->second) {
+            if (adapter.fromCtxId == fromContextTypeId) {
+                return &adapter;
+            }
+        }
+    }
+    return nullptr;
 }
 
 // ScopedPlaceholderRegistrar implementation

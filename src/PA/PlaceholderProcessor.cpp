@@ -195,7 +195,14 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                     formatting_param_part
                 );
 
-                if (!cache_param_part.empty()) { // 使用 cache_param_part
+                if (ph->isContextAliasPlaceholder()) {
+                    // 对于上下文别名占位符，将完整的 param_part 作为参数传递，由其内部逻辑处理分割
+                    std::vector<std::string_view> args;
+                    if (!param_part.empty()) {
+                        args.push_back(param_part);
+                    }
+                    ph->evaluateWithArgs(ctx, args, evaluatedValue);
+                } else if (!cache_param_part.empty()) { // 使用 cache_param_part
                     std::vector<std::string_view> args;
                     // Use splitParamString for cache_param_part as well, as it might contain commas
                     std::vector<std::string> placeholderArgs = ParameterParser::splitParamString(cache_param_part, ',');

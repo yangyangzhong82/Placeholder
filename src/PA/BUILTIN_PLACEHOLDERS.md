@@ -27,6 +27,23 @@
 | `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:type_name}` | `minecraft:horse` |
 | `{player_block:<inner_placeholder_spec>}` | 玩家脚下的方块。可用于获取方块的属性，例如 `{player_block:block_type_name}` | `minecraft:air` |
 | `{player_hand:<inner_placeholder_spec>}` | 玩家手持的物品。可用于获取手持物品的属性，例如 `{player_hand:item_name}` | `minecraft:diamond_sword` |
+| `{player_inventory:<inner_placeholder_spec>}` | 玩家背包容器。可用于获取背包容器的属性，例如 `{player_inventory:container_size}` | `36` |
+| `{player_enderchest:<inner_placeholder_spec>}` | 玩家末影箱容器。可用于获取末影箱容器的属性，例如 `{player_enderchest:container_size}` | `27` |
+
+### 容器上下文 (`ContainerContext`)
+
+| 占位符                                   | 描述                                       | 示例输出                     |
+| :--------------------------------------- | :----------------------------------------- | :--------------------------- |
+| `{container_size}`                       | 容器的总槽位数量                           | `36`                         |
+| `{container_empty_slots}`                | 容器的空槽数量                             | `10`                         |
+| `{container_type_name}`                  | 容器的类型名称                             | `inventory`                  |
+| `{container_has_custom_name}`            | 容器是否有自定义名称                       | `true`                       |
+| `{container_custom_name}`                | 容器的自定义名称                           | `我的箱子`                   |
+| `{container_is_empty}`                   | 容器是否为空                               | `false`                      |
+| `{container_item_count}`                 | 容器内所有物品的总数量                     | `128`                        |
+| `{container_remaining_capacity}`         | 容器剩余的空位数量                         | `10`                         |
+| `{container_item_count_type:<type1>,<type2>}` | 容器内指定类型物品的总数量。支持多个物品类型 | `64`                         |
+| `{container_slot:<index>:<inner_placeholder_spec>}` | 容器内指定槽位的物品。可用于获取物品属性，例如 `{container_slot:0:item_name}` | `minecraft:diamond`          |
 
 ### 生物上下文 (`MobContext`)
 

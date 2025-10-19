@@ -16,6 +16,14 @@
 
 namespace PA {
 
+// 别名适配器条目
+struct Adapter {
+    uint64_t          fromCtxId{};
+    uint64_t          toCtxId{};
+    ContextResolverFn resolver{};
+    void*             owner{};
+};
+
 // 将 CachedEntry 结构体移到类外部，使其在 findPlaceholder 声明时可见
 struct CachedEntry {
     std::shared_ptr<const IPlaceholder> ptr{};
@@ -135,18 +143,13 @@ public:
     std::pair<std::shared_ptr<const IPlaceholder>, const CachedEntry*>
     findPlaceholder(const std::string& token, const IContext* ctx) const;
 
+    // 新增：查找上下文别名
+    const Adapter* findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;
+
 private:
     struct Entry {
         std::shared_ptr<const IPlaceholder> ptr{};
         void*                               owner{};
-    };
-
-    // 别名适配器条目
-    struct Adapter {
-        uint64_t          fromCtxId{};
-        uint64_t          toCtxId{};
-        ContextResolverFn resolver{};
-        void*             owner{};
     };
 
     struct Handle {

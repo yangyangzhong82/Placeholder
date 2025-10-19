@@ -10,6 +10,7 @@
 #include "PA/Placeholders/TimePlaceholders.h"
 #include "PA/Placeholders/BlockPlaceholders.h" // Add BlockPlaceholders header
 #include "PA/Placeholders/ItemStackBasePlaceholders.h" // Add ItemStackBasePlaceholders header
+#include "PA/Placeholders/ContainerPlaceholders.h" // Add ContainerPlaceholders header
 
 namespace PA {
 
@@ -25,6 +26,7 @@ void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
     registerTimePlaceholders(svc);
     registerBlockPlaceholders(svc); // Register BlockPlaceholders
     registerItemStackBasePlaceholders(svc); // Register ItemStackBasePlaceholders
+    registerContainerPlaceholders(svc); // Register ContainerPlaceholders
 }
 
 } // namespace PA

@@ -13,6 +13,8 @@
 #include "mc/util/BlockUtils.h" // For BlockUtils::isLiquidSource
 #include "mc/world/actor/Actor.h" // For Actor::traceRay
 #include "PA/ParameterParser.h" // For parsing arguments
+#include "mc/world/actor/player/PlayerInventory.h" // Add PlayerInventory header
+#include "mc/world/actor/player/Inventory.h" // Add Inventory header
 
 
 namespace PA {
@@ -202,6 +204,70 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             }
             // getSelectedItem() 返回 ItemStack const&，需要转换为 const ItemStackBase*
             return (void*)&playerCtx->player->getSelectedItem();
+        },
+        owner
+    );
+
+    // {container_slot:<slot_index>:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "container_slot",
+        ContainerContext::kTypeId,
+        ItemStackBaseContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>& args) -> void* {
+            const auto* containerCtx = static_cast<const ContainerContext*>(fromCtx);
+            if (!containerCtx || !containerCtx->container) {
+                return nullptr;
+            }
+
+            int slotIndex = 0; // 默认槽位为 0
+
+            if (!args.empty()) {
+                std::string_view slot_arg = args[0];
+                int parsedValue;
+                if (auto [ptr, ec] = std::from_chars(slot_arg.data(), slot_arg.data() + slot_arg.size(), parsedValue);
+                    ec == std::errc()) {
+                    slotIndex = parsedValue;
+                }
+            }
+
+            if (slotIndex >= 0 && slotIndex < containerCtx->container->getContainerSize()) {
+                // getItemNonConst 返回 ItemStack&，需要转换为 const ItemStackBase*
+                return (void*)&containerCtx->container->getItemNonConst(slotIndex).get();
+            }
+            return nullptr;
+        },
+        owner
+    );
+
+    // {player_inventory:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_inventory",
+        PlayerContext::kTypeId,
+        ContainerContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // 获取玩家背包容器
+            auto *inventory = playerCtx->player->mInventory->mInventory.get();
+            return (void*)&inventory;
+        },
+        owner
+    );
+
+    // {player_enderchest:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_enderchest",
+        PlayerContext::kTypeId,
+        ContainerContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // 获取玩家末影箱容器
+            return (void*)playerCtx->player->getEnderChestContainer();
         },
         owner
     );

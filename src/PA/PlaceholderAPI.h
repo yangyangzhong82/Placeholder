@@ -22,6 +22,7 @@ class Mob;
 class Actor; // Add Actor forward declaration
 class Block; // Add Block forward declaration
 class ItemStackBase; // Add ItemStackBase forward declaration
+class Container; // Add Container forward declaration
 
 namespace PA {
 
@@ -125,6 +126,19 @@ struct PA_API ItemStackBaseContext : public IContext {
     }
 };
 
+// 容器上下文
+struct PA_API ContainerContext : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:Container");
+    Container*                container{};
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
+        return {kTypeId};
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return container ? std::to_string(reinterpret_cast<uintptr_t>(container)) : "";
+    }
+};
+
 // 占位符抽象基类：通过继承来定义不同占位符
 struct PA_API IPlaceholder {
     virtual ~IPlaceholder() = default;
@@ -148,6 +162,9 @@ struct PA_API IPlaceholder {
 
     // 新增方法：获取缓存持续时间（秒）。返回 0 表示不缓存。
     virtual unsigned int getCacheDuration() const noexcept { return 0; }
+
+    // 新增方法：判断是否为上下文别名占位符
+    virtual bool isContextAliasPlaceholder() const noexcept { return false; }
 };
 
 
