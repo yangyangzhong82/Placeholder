@@ -21,16 +21,18 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
     static int kBuiltinOwnerTag = 0;
     void*      owner            = &kBuiltinOwnerTag;
 
-    // {player_look:<inner_placeholder_spec>}
+    // {actor_look:<inner_placeholder_spec>}
     svc->registerContextAlias(
-        "player_look",
-        PlayerContext::kTypeId,
+        "actor_look",
+        ActorContext::kTypeId, // 更改为 ActorContext::kTypeId
         ActorContext::kTypeId,
         +[](const PA::IContext* fromCtx, const std::vector<std::string_view>& args) -> void* {
-            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
-            if (!playerCtx || !playerCtx->player) {
+            const auto* actorCtx = static_cast<const ActorContext*>(fromCtx);
+            if (!actorCtx || !actorCtx->actor) {
                 return nullptr;
             }
+
+            Actor* actor = actorCtx->actor; // 使用 actorCtx->actor
 
             float maxDistance = 5.5f; // 默认值
 
@@ -51,13 +53,13 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                 }
             }
 
-            HitResult result = playerCtx->player->traceRay(maxDistance, true, false);
-            auto      actor  = result.getEntity();
-            if (actor) {
+            HitResult result = actor->traceRay(maxDistance, true, false); // 使用 actor->traceRay
+            auto      targetActor  = result.getEntity();
+            if (targetActor) {
                 logger.info(
-                    "Player {} is looking at entity type: {}",
-                    playerCtx->player->getRealName(),
-                    actor->getTypeName()
+                    "Actor {} is looking at entity type: {}",
+                    actor->getTypeName(), // 使用 actor->getTypeName()
+                    targetActor->getTypeName()
                 );
             }
             if (result.mType == HitResultType::Entity) {
