@@ -1,5 +1,6 @@
 // src/PA/PlaceholderRegistry.cpp
 #include "PA/PlaceholderRegistry.h"
+#include "PA/ParameterParser.h"      // For splitParamString
 #include "PA/PlaceholderProcessor.h" // 用于在别名占位符内部二次解析内层表达式
 
 namespace PA {
@@ -308,21 +309,51 @@ public:
         out.clear();
         if (!ctx || !mResolver) return;
         if (args.empty()) {
-            // 提示：需要提供内层占位符表达式
             out = PA_COLOR_RED "Usage: {" + mAlias + ":<inner_placeholder_spec>}" PA_COLOR_RESET;
             return;
         }
 
+        // 合并所有参数为一个字符串，因为原始参数部分可能包含逗号
+        std::string full_param_part;
+        for (size_t i = 0; i < args.size(); ++i) {
+            full_param_part.append(args[i]);
+            if (i < args.size() - 1) {
+                full_param_part.push_back(',');
+            }
+        }
+
+        std::string_view              innerSpec_sv;
+        std::vector<std::string_view> resolver_args;
+
+        size_t last_colon_pos = full_param_part.rfind(':');
+        if (last_colon_pos != std::string::npos) {
+            std::string_view resolver_param_part = std::string_view(full_param_part).substr(0, last_colon_pos);
+            innerSpec_sv                         = std::string_view(full_param_part).substr(last_colon_pos + 1);
+
+            // 使用 splitParamString 来解析 resolver 的参数
+            std::vector<std::string> resolver_params_str =
+                ParameterParser::splitParamString(resolver_param_part, ',');
+            // 注意：这里需要一个临时的 vector 来存储 string_view，因为 splitParamString 返回 vector<string>
+            // 这是一个简化的处理，理想情况下需要避免 string 拷贝
+            static thread_local std::vector<std::string> arg_storage;
+            arg_storage = std::move(resolver_params_str);
+            for (const auto& s : arg_storage) {
+                resolver_args.push_back(s);
+            }
+
+        } else {
+            innerSpec_sv = full_param_part;
+        }
+
         // 1) 解析来源上下文 -> 目标底层对象指针
-        void* raw = mResolver(ctx);
+        void* raw = mResolver(ctx, resolver_args);
         if (!raw) {
-            // 无目标对象（例如玩家没看着任何实体）
             return;
         }
 
         // 2) 构造一个临时目标上下文对象（栈对象）
         // 3) 在目标上下文下对“内层占位符表达式”做一次完整解析
-        std::string innerSpec(args[0]); // 支持用户用引号把包含逗号/竖线的表达式整体传入
+        std::string innerSpec(innerSpec_sv);
         std::string wrapped = "{" + innerSpec + "}";
 
         switch (mTo) {

@@ -135,7 +135,8 @@ struct PA_API ICachedPlaceholder : public IPlaceholder {
 #define PA_COLOR_RESET  "§r" // 重置颜色
 
 // 别名适配器回调：把来源上下文转为目标上下文需要的“底层对象指针”（如 Actor* / Mob* / Player*）
-using ContextResolverFn = void* (*)(const IContext*);
+// 新增了 args 参数，用于向 resolver 传递参数
+using ContextResolverFn = void* (*)(const IContext*, const std::vector<std::string_view>& args);
 
 // 跨模块服务接口（稳定 ABI）
 struct PA_API IPlaceholderService {

@@ -26,7 +26,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         "player_look",
         PlayerContext::kTypeId,
         ActorContext::kTypeId,
-        +[](const PA::IContext* fromCtx) -> void* {
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
             const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
             if (!playerCtx || !playerCtx->player) {
                 return nullptr;
@@ -54,7 +54,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         "player_riding",
         PlayerContext::kTypeId,
         ActorContext::kTypeId,
-        +[](const PA::IContext* fromCtx) -> void* {
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
             const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
             if (!playerCtx || !playerCtx->player) {
                 return nullptr;
@@ -72,7 +72,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         "player_block",
         PlayerContext::kTypeId,
         BlockContext::kTypeId,
-        +[](const PA::IContext* fromCtx) -> void* {
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
             const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
             if (!playerCtx || !playerCtx->player) {
                 return nullptr;
@@ -92,7 +92,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         "entity_look_block",
         ActorContext::kTypeId,
         BlockContext::kTypeId,
-        +[](const PA::IContext* fromCtx) -> void* {
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>& args) -> void* {
             const auto* actorCtx = static_cast<const ActorContext*>(fromCtx);
             if (!actorCtx || !actorCtx->actor) {
                 return nullptr;
@@ -105,6 +105,29 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             bool  includeLiquid = false;
             bool  solidOnly     = false;
             bool  fullOnly      = false;
+
+            // 解析参数
+            for (const auto& arg : args) {
+                size_t separatorPos = arg.find('=');
+                if (separatorPos != std::string_view::npos) {
+                    std::string_view key   = arg.substr(0, separatorPos);
+                    std::string_view value = arg.substr(separatorPos + 1);
+
+                    if (key == "maxDistance") {
+                        float parsedValue;
+                        if (auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsedValue);
+                            ec == std::errc()) {
+                            maxDistance = parsedValue;
+                        }
+                    } else if (key == "includeLiquid") {
+                        includeLiquid = (value == "true");
+                    } else if (key == "solidOnly") {
+                        solidOnly = (value == "true");
+                    } else if (key == "fullOnly") {
+                        fullOnly = (value == "true");
+                    }
+                }
+            }
 
             HitResult res = actor->traceRay(
                 maxDistance,
