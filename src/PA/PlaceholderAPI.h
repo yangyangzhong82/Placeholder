@@ -45,11 +45,11 @@ constexpr uint64_t TypeId(const char (&str)[N]) {
 struct PA_API IContext {
     virtual ~IContext()                      = default;
     virtual uint64_t typeId() const noexcept = 0;
-    // 新增方法：获取所有继承的上下文类型 ID 列表，包括自身
+    // 方法：获取所有继承的上下文类型 ID 列表，包括自身
     virtual std::vector<uint64_t> getInheritedTypeIds() const noexcept {
         return {typeId()}; // 默认只返回自己的 typeId
     }
-    // 新增方法：获取上下文实例的唯一键（例如，玩家UUID，方块位置哈希）
+    // 方法：获取上下文实例的唯一键（例如，玩家UUID，方块位置哈希）
     virtual std::string getContextInstanceKey() const noexcept { return ""; }
 };
 
@@ -59,7 +59,7 @@ inline constexpr uint64_t kServerContextId = 0;
 // 预定义的一些上下文（如需更多上下文，请扩展此处并保持 ID 字符串常量不变）
 
 // Actor 上下文
-struct PA_API ActorContext : public IContext { // 移除 final
+struct PA_API ActorContext : public IContext { 
     static constexpr uint64_t kTypeId = TypeId("ctx:Actor");
     Actor*                    actor{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
@@ -72,7 +72,7 @@ struct PA_API ActorContext : public IContext { // 移除 final
 };
 
 // 生物上下文
-struct PA_API MobContext : public ActorContext { // 移除 final, Mob 继承自 Actor
+struct PA_API MobContext : public ActorContext { // Mob 继承自 Actor
     static constexpr uint64_t kTypeId = TypeId("ctx:Mob");
     Mob*                      mob{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
@@ -87,7 +87,7 @@ struct PA_API MobContext : public ActorContext { // 移除 final, Mob 继承自 
 };
 
 // 玩家上下文
-struct PA_API PlayerContext : public MobContext { // 移除 final, Player 继承自 Mob
+struct PA_API PlayerContext : public MobContext { //  Player 继承自 Mob
     static constexpr uint64_t kTypeId = TypeId("ctx:Player");
     Player*                   player{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
@@ -167,17 +167,17 @@ struct PA_API IPlaceholder {
     // 输出写入 out，由调用方持有，不跨模块传递分配权
     virtual void evaluate(const IContext* ctx, std::string& out) const = 0;
 
-    // 新增带参数的 evaluate 方法
+    // 带参数的 evaluate 方法
     virtual void
     evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& /* args */, std::string& out) const {
         // 默认实现调用无参数的 evaluate
         evaluate(ctx, out);
     }
 
-    // 新增方法：获取缓存持续时间（秒）。返回 0 表示不缓存。
+    // 方法：获取缓存持续时间（秒）。返回 0 表示不缓存。
     virtual unsigned int getCacheDuration() const noexcept { return 0; }
 
-    // 新增方法：判断是否为上下文别名占位符
+    // 方法：判断是否为上下文别名占位符
     virtual bool isContextAliasPlaceholder() const noexcept { return false; }
 };
 
@@ -188,8 +188,8 @@ struct PA_API IPlaceholder {
 #define PA_COLOR_GREEN  "§a"
 #define PA_COLOR_RESET  "§r" // 重置颜色
 
-// 别名适配器回调：把来源上下文转为目标上下文需要的“底层对象指针”（如 Actor* / Mob* / Player*）
-// 新增了 args 参数，用于向 resolver 传递参数
+// 把来源上下文转为目标上下文需要的“底层对象指针”（如 Actor* / Mob* / Player*）
+//  args 参数，用于向 resolver 传递参数
 using ContextResolverFn = void* (*)(const IContext*, const std::vector<std::string_view>& args);
 
 // RAII 作用域注册器接口
@@ -211,7 +211,7 @@ struct PA_API IScopedPlaceholderRegistrar {
         uint64_t                            relationalContextTypeId
     ) = 0;
 
-    // 新增：注册带缓存的关系型占位符
+    // 注册带缓存的关系型占位符
     virtual void registerCachedRelationalPlaceholder(
         std::string_view                    prefix,
         std::shared_ptr<const IPlaceholder> p,
@@ -263,7 +263,7 @@ struct PA_API IPlaceholderService {
         uint64_t                            relationalContextTypeId
     ) = 0;
 
-    // 新增：注册带缓存的关系型占位符
+    // 注册带缓存的关系型占位符
     virtual void registerCachedRelationalPlaceholder(
         std::string_view                    prefix,
         std::shared_ptr<const IPlaceholder> p,
@@ -276,7 +276,7 @@ struct PA_API IPlaceholderService {
     // 卸载 owner 名下的全部占位符（模块卸载时调用）
     virtual void unregisterByOwner(void* owner) = 0;
 
-    // 新增：创建一个作用域注册器，简化注册和自动卸载
+    // 创建一个作用域注册器，简化注册和自动卸载
     virtual std::unique_ptr<IScopedPlaceholderRegistrar> createScopedRegistrar(void* owner) = 0;
 
     // 带上下文的替换：先替换特定上下文，再替换服务器占位符
@@ -285,7 +285,7 @@ struct PA_API IPlaceholderService {
     // 仅替换服务器占位符
     virtual std::string replaceServer(std::string_view text) const = 0;
 
-    // 新增：注册“上下文别名适配器”
+    // 注册“上下文别名适配器”
     // 例如：alias="look", from=PlayerContext::kTypeId, to=ActorContext::kTypeId, resolver=[](ctx)->Actor*
     // 用户就能写 {look:mob_health} 直接复用 {mob_health}（Actor/Mob类占位符）
     virtual void registerContextAlias(

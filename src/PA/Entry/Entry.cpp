@@ -4,7 +4,7 @@
 #include "PA/Config/ConfigManager.h" // 引入 ConfigManager
 #include "PA/PlaceholderAPI.h"
 
-#include "PA/ScriptExports.h" // 新增：脚本导出
+#include "PA/ScriptExports.h" // 脚本导出
 #include "ll/api/mod/RegisterHelper.h"
 
 

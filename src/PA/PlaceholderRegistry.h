@@ -126,7 +126,7 @@ public:
     );
     void unregisterByOwner(void* owner);
 
-    // 新增：注册上下文别名适配器（例如 look/last_hit 等）
+    // 注册上下文别名适配器（例如 look/last_hit 等）
     void registerContextAlias(
         std::string_view  alias,
         uint64_t          fromContextTypeId,
@@ -143,7 +143,7 @@ public:
     std::pair<std::shared_ptr<const IPlaceholder>, const CachedEntry*>
     findPlaceholder(const std::string& token, const IContext* ctx) const;
 
-    // 新增：查找上下文别名
+    // 查找上下文别名
     const Adapter* findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;
 
 private:
@@ -155,8 +155,8 @@ private:
     struct Handle {
         bool        isServer{};
         bool        isRelational{};
-        bool        isCached{};  // 新增：是否为缓存占位符
-        bool        isAdapter{}; // 新增：是否为别名适配器
+        bool        isCached{};  // 是否为缓存占位符
+        bool        isAdapter{}; // 是否为别名适配器
         uint64_t    mainCtxId{};
         uint64_t    relCtxId{};
         uint64_t    ctxId{};
@@ -186,14 +186,14 @@ private:
                                                                   relational;
         std::unordered_map<std::string, Entry, ci_hash, ci_equal> server;
         std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>
-            cached_typed; // 新增：缓存的 Typed 占位符
+            cached_typed; // 缓存的 Typed 占位符
         std::unordered_map<
             uint64_t,
             std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>>
-            cached_relational; // 新增：缓存的关系型占位符
-        std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal> cached_server; // 新增：缓存的 Server 占位符
+            cached_relational; // 缓存的关系型占位符
+        std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal> cached_server; // 缓存的 Server 占位符
 
-        // 新增：alias -> adapters（大小写不敏感）
+        // alias -> adapters（大小写不敏感）
         std::unordered_map<std::string, std::vector<Adapter>, ci_hash, ci_equal> adapters;
 
         std::unordered_map<void*, std::vector<Handle>> ownerIndex;

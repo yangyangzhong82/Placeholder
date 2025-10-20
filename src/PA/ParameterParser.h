@@ -62,7 +62,7 @@ struct PlaceholderParams {
     ConditionalOutput                  conditional;
     BooleanMap                         booleanMap;
     CharReplaceMap                     charReplaceMap;
-    RegexReplaceMap                    regexReplaceMap; // 新增的正则表达式替换映射参数
+    RegexReplaceMap                    regexReplaceMap; // 正则表达式替换映射参数
     JsonMap                            jsonMap;
 };
 

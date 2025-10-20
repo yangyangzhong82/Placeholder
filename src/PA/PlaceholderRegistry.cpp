@@ -441,19 +441,19 @@ public:
             out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
-        case ItemStackBaseContext::kTypeId: { // 新增 ItemStackBaseContext
+        case ItemStackBaseContext::kTypeId: { //  ItemStackBaseContext
             ItemStackBaseContext rc;
             rc.itemStackBase = static_cast<const ItemStackBase*>(raw);
             out              = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
-        case ContainerContext::kTypeId: { // 新增 ContainerContext
+        case ContainerContext::kTypeId: { //  ContainerContext
             ContainerContext rc;
             rc.container = static_cast<Container*>(raw);
             out          = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
-        case BlockActorContext::kTypeId: { // 新增 BlockActorContext
+        case BlockActorContext::kTypeId: { //  BlockActorContext
             BlockActorContext rc;
             rc.blockActor = static_cast<BlockActor*>(raw);
             out           = PlaceholderProcessor::process(wrapped, &rc, mReg);

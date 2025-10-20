@@ -36,7 +36,7 @@ static std::string safeNullPtr(void const* p) {
     return p ? fmt::format("0x{:X}", reinterpret_cast<uintptr_t>(p)) : "null";
 }
 
-// ========== 新增：JS 占位符适配 ==========
+// ========== JS 占位符适配 ==========
 
 namespace {
 
@@ -189,7 +189,7 @@ static bool registerJsPlaceholder(
     uint64_t     ctxId,
     std::string  cbNamespace,
     std::string  cbName,
-    unsigned int cacheDuration = 0 // 新增参数
+    unsigned int cacheDuration = 0 // 参数
 ) {
     auto* svc = PA_GetPlaceholderService();
     if (!svc) {
@@ -418,7 +418,7 @@ void install() {
                  return s;
              });
 
-        // ========== 新增导出：JS 注册占位符 API ==========
+        // ========== 导出：JS 注册占位符 API ==========
 
         // A) 直接按上下文 ID 注册
         ok = RemoteCall::exportAs(
