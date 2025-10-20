@@ -15,6 +15,7 @@
 #include "PA/ParameterParser.h" // For parsing arguments
 #include "mc/world/actor/player/PlayerInventory.h" // Add PlayerInventory header
 #include "mc/world/actor/player/Inventory.h" // Add Inventory header
+#include "mc/world/level/block/actor/BlockActor.h" // Add BlockActor header
 
 
 namespace PA {
@@ -275,6 +276,100 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             }
             // 获取玩家末影箱容器
             return (void*)playerCtx->player->getEnderChestContainer();
+        },
+        owner
+    );
+
+    // {player_block_entity:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_block_entity",
+        PlayerContext::kTypeId,
+        BlockActorContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            BlockPos blockPos = BlockPos(playerCtx->player->getPosition());
+            BlockSource& bs = playerCtx->player->getDimensionBlockSource();
+            return (void*)bs.getBlockEntity(blockPos);
+        },
+        owner
+    );
+
+    // {player_look_block_actor:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_look_block_actor",
+        PlayerContext::kTypeId,
+        BlockActorContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>& args) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+
+            Player* player = playerCtx->player;
+
+            // 默认射线检测参数
+            float maxDistance   = 5.25f;
+            bool  includeLiquid = false;
+            bool  solidOnly     = false;
+            bool  fullOnly      = false;
+
+            // 解析参数
+            for (const auto& arg : args) {
+                size_t separatorPos = arg.find('=');
+                if (separatorPos != std::string_view::npos) {
+                    std::string_view key   = arg.substr(0, separatorPos);
+                    std::string_view value = arg.substr(separatorPos + 1);
+
+                    if (key == "maxDistance") {
+                        float parsedValue;
+                        if (auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsedValue);
+                            ec == std::errc()) {
+                            maxDistance = parsedValue;
+                        }
+                    } else if (key == "includeLiquid") {
+                        includeLiquid = (value == "true");
+                    } else if (key == "solidOnly") {
+                        solidOnly = (value == "true");
+                    } else if (key == "fullOnly") {
+                        fullOnly = (value == "true");
+                    }
+                }
+            }
+
+            HitResult res = player->traceRay(
+                maxDistance,
+                false, // includeEntities
+                true,  // includeBlocks
+                [&solidOnly, &fullOnly, &includeLiquid](BlockSource const&, Block const& block, bool) {
+                    if (solidOnly && !block.mCachedComponentData->mIsSolid) {
+                        return false;
+                    }
+                    if (fullOnly && !block.isSlabBlock()) {
+                        return false;
+                    }
+                    if (!includeLiquid && BlockUtils::isLiquidSource(block)) {
+                        return false;
+                    }
+                    return true;
+                }
+            );
+
+            if (res.mType == HitResultType::NoHit || res.mType != HitResultType::Tile) {
+                return nullptr;
+            }
+
+            BlockPos bp;
+            if (includeLiquid && res.mIsHitLiquid) {
+                bp = res.mLiquid;
+            } else {
+                bp = res.mBlock;
+            }
+
+            BlockSource& bs = player->getDimensionBlockSource();
+            return (void*)bs.getBlockEntity(bp);
         },
         owner
     );

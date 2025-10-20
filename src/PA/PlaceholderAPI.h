@@ -23,6 +23,7 @@ class Actor; // Add Actor forward declaration
 class Block; // Add Block forward declaration
 class ItemStackBase; // Add ItemStackBase forward declaration
 class Container; // Add Container forward declaration
+class BlockActor; // Add BlockActor forward declaration
 
 namespace PA {
 
@@ -136,6 +137,19 @@ struct PA_API ContainerContext : public IContext {
     }
     std::string getContextInstanceKey() const noexcept override {
         return container ? std::to_string(reinterpret_cast<uintptr_t>(container)) : "";
+    }
+};
+
+// 方块实体上下文
+struct PA_API BlockActorContext : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:BlockActor");
+    BlockActor*               blockActor{};
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
+        return {kTypeId};
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return blockActor ? std::to_string(reinterpret_cast<uintptr_t>(blockActor)) : "";
     }
 };
 

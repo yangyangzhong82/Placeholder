@@ -453,6 +453,12 @@ public:
             out          = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }
+        case BlockActorContext::kTypeId: { // 新增 BlockActorContext
+            BlockActorContext rc;
+            rc.blockActor = static_cast<BlockActor*>(raw);
+            out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
         default:
             // 其他目标上下文类型：暂不支持
             break;

@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+
 ## [0.4.1]
 
 ### Fixed
 - 修复了 `AdapterAliasPlaceholder::evaluateWithArgs` 中无参数上下文别名（如 `player_inventory`）的参数分割逻辑错误，导致嵌套占位符解析失败的问题。
 - 修复了 `player_inventory` 别名解析器中返回局部指针的 use-after-return 错误。
 - 修复了 `container_slot` 别名解析器中对 `ItemStack` API 的误用，并增加了空槽位检查以避免崩溃。
+### Added
+- 新增 `BlockActor` 上下文及其相关占位符（`{block_actor_pos}`, `{block_actor_pos_x}`, `{block_actor_pos_y}`, `{block_actor_pos_z}`, `{block_actor_type_name}`, `{block_actor_custom_name}`, `{block_actor_is_movable}`, `{block_actor_repair_cost}`, `{block_actor_has_container}`）。
+- 新增 `player_look_block_actor` 别名占位符，用于获取玩家视线所指向的方块实体信息。
 
 ## [0.4.0]
 

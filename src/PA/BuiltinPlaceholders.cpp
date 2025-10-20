@@ -11,6 +11,7 @@
 #include "PA/Placeholders/BlockPlaceholders.h" // Add BlockPlaceholders header
 #include "PA/Placeholders/ItemStackBasePlaceholders.h" // Add ItemStackBasePlaceholders header
 #include "PA/Placeholders/ContainerPlaceholders.h" // Add ContainerPlaceholders header
+#include "PA/Placeholders/BlockActorPlaceholders.h" // Add BlockActorPlaceholders header
 
 namespace PA {
 
@@ -27,6 +28,7 @@ void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
     registerBlockPlaceholders(svc); // Register BlockPlaceholders
     registerItemStackBasePlaceholders(svc); // Register ItemStackBasePlaceholders
     registerContainerPlaceholders(svc); // Register ContainerPlaceholders
+    registerBlockActorPlaceholders(svc); // Register BlockActorPlaceholders
 }
 
 } // namespace PA

@@ -29,6 +29,7 @@
 | `{player_hand:<inner_placeholder_spec>}` | 玩家手持的物品。可用于获取手持物品的属性，例如 `{player_hand:item_name}` | `minecraft:diamond_sword` |
 | `{player_inventory:<inner_placeholder_spec>}` | 玩家背包容器。可用于获取背包容器的属性，例如 `{player_inventory:container_size}` | `36` |
 | `{player_enderchest:<inner_placeholder_spec>}` | 玩家末影箱容器。可用于获取末影箱容器的属性，例如 `{player_enderchest:container_size}` | `27` |
+| `{player_look_block_actor:<params>:<inner_placeholder_spec>}` | 玩家视线所指向的方块实体。可用于获取方块实体的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{player_look_block_actor:maxDistance=10,includeLiquid=true:block_actor_type_name}` | `minecraft:chest` |
 
 ### 容器上下文 (`ContainerContext`)
 
@@ -79,6 +80,20 @@
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
 | `{score:objective_name}`   | Actor 在指定记分板上的分数           | `123`            |
 | `{entity_look_block:<params>:<inner_placeholder_spec>}` | 实体正在看的方块。可用于获取所看方块的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{entity_look_block:maxDistance=10,includeLiquid=true:block_type_name}` | `minecraft:stone` |
+
+### 方块实体上下文 (`BlockActorContext`)
+
+| 占位符                 | 描述                                       | 示例输出                     |
+| :--------------------- | :----------------------------------------- | :--------------------------- |
+| `{block_actor_pos}`    | 方块实体的位置 (BlockPos.toString())       | `(100, 64, 200)`             |
+| `{block_actor_pos_x}`  | 方块实体的 X 坐标                          | `100`                        |
+| `{block_actor_pos_y}`  | 方块实体的 Y 坐标                          | `64`                         |
+| `{block_actor_pos_z}`  | 方块实体的 Z 坐标                          | `200`                        |
+| `{block_actor_type_name}` | 方块实体的类型名称                       | `ChestBlockActor`            |
+| `{block_actor_custom_name}` | 方块实体的自定义名称                     | `我的箱子`                   |
+| `{block_actor_is_movable}` | 方块实体是否可移动                       | `true`                       |
+| `{block_actor_repair_cost}` | 方块实体的修复成本                       | `0`                          |
+| `{block_actor_has_container}` | 方块实体是否包含容器                     | `true`                       |
 
 ### 方块上下文 (`BlockContext`)
 
