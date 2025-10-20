@@ -375,24 +375,31 @@ public:
         std::string_view              innerSpec_sv;
         std::vector<std::string_view> resolver_args;
 
-        size_t last_colon_pos = full_param_part.rfind(':');
-        if (last_colon_pos != std::string::npos) {
-            std::string_view resolver_param_part = std::string_view(full_param_part).substr(0, last_colon_pos);
-            innerSpec_sv                         = std::string_view(full_param_part).substr(last_colon_pos + 1);
-
-            // 使用 splitParamString 来解析 resolver 的参数
-            std::vector<std::string> resolver_params_str =
-                ParameterParser::splitParamString(resolver_param_part, ',');
-            // 注意：这里需要一个临时的 vector 来存储 string_view，因为 splitParamString 返回 vector<string>
-            // 这是一个简化的处理，理想情况下需要避免 string 拷贝
-            static thread_local std::vector<std::string> arg_storage;
-            arg_storage = std::move(resolver_params_str);
-            for (const auto& s : arg_storage) {
-                resolver_args.push_back(s);
-            }
-
-        } else {
+        // Heuristic to distinguish parameter-less aliases from those with parameters.
+        // Parameter-less aliases pass the entire parameter string as the inner spec.
+        if (mAlias == "player_inventory" || mAlias == "player_enderchest" || mAlias == "player_hand"
+            || mAlias == "player_riding" || mAlias == "player_block") {
             innerSpec_sv = full_param_part;
+        } else {
+            size_t last_colon_pos = full_param_part.rfind(':');
+            if (last_colon_pos != std::string::npos) {
+                std::string_view resolver_param_part = std::string_view(full_param_part).substr(0, last_colon_pos);
+                innerSpec_sv                         = std::string_view(full_param_part).substr(last_colon_pos + 1);
+
+                // 使用 splitParamString 来解析 resolver 的参数
+                std::vector<std::string> resolver_params_str =
+                    ParameterParser::splitParamString(resolver_param_part, ',');
+                // 注意：这里需要一个临时的 vector 来存储 string_view，因为 splitParamString 返回 vector<string>
+                // 这是一个简化的处理，理想情况下需要避免 string 拷贝
+                static thread_local std::vector<std::string> arg_storage;
+                arg_storage = std::move(resolver_params_str);
+                for (const auto& s : arg_storage) {
+                    resolver_args.push_back(s);
+                }
+
+            } else {
+                innerSpec_sv = full_param_part;
+            }
         }
 
         // 1) 解析来源上下文 -> 目标底层对象指针

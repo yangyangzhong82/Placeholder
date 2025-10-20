@@ -222,7 +222,10 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             int slotIndex = 0; // 默认槽位为 0
 
             if (!args.empty()) {
-                std::string_view slot_arg = args[0];
+                std::string_view full_arg = args[0];
+                size_t           colon_pos = full_arg.find(':');
+                std::string_view slot_arg = (colon_pos != std::string_view::npos) ? full_arg.substr(0, colon_pos) : full_arg;
+
                 int parsedValue;
                 if (auto [ptr, ec] = std::from_chars(slot_arg.data(), slot_arg.data() + slot_arg.size(), parsedValue);
                     ec == std::errc()) {
@@ -231,8 +234,12 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             }
 
             if (slotIndex >= 0 && slotIndex < containerCtx->container->getContainerSize()) {
-                // getItemNonConst 返回 ItemStack&，需要转换为 const ItemStackBase*
-                return (void*)&containerCtx->container->getItemNonConst(slotIndex).get();
+                // getItemNonConst returns ItemStack&, we need to return ItemStackBase*
+                const ItemStack& item = containerCtx->container->getItemNonConst(slotIndex);
+                if (item.isNull()) { // Check if the item stack is empty
+                    return nullptr;
+                }
+                return (void*)&item;
             }
             return nullptr;
         },
@@ -250,8 +257,8 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                 return nullptr;
             }
             // 获取玩家背包容器
-            auto *inventory = playerCtx->player->mInventory->mInventory.get();
-            return (void*)&inventory;
+            auto* inventory = playerCtx->player->mInventory->mInventory.get();
+            return (void*)inventory;
         },
         owner
     );
