@@ -1,14 +1,17 @@
 #include "PA/Placeholders/ServerPlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
-#include "ll/api/Versions.h" // 引入 Versions.h 以获取服务器版本信息
+#include "ll/api/Versions.h"
 #include "ll/api/service/Bedrock.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
+#include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h"
 #include "mc/network/ServerNetworkHandler.h"
+#include "mc/world/actor/Actor.h"
+#include "mc/world/actor/ActorType.h"
 #include "mc/world/level/Level.h"
-#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h" // 提供 EntityRegistry 的完整定义
-#include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h" // 确保 EntityContext 尽早被完全定义
-#include "mc/world/actor/Actor.h"                       // 引入 Actor.h 以获取 Actor 类定义
-#include "mc/world/actor/ActorType.h"                   // 引入 ActorType.h 以获取 ActorType 枚举定义
+#include "mc/world/level/storage/LevelData.h"
+#include "mc/server/PropertiesSettings.h"
+
 
 namespace PA {
 
@@ -114,6 +117,96 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
         std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
             "{loader_version}",
             +[](std::string& out) { out = ll::getLoaderVersion().to_string(); },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {level_seed}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{level_seed}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? settings->mLevelSeed : "";
+            },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {level_name}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{level_name}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? settings->mLevelName : "";
+            },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {language}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{language}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? settings->mLanguage : "";
+            },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {server_name}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{server_name}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? settings->mServerName : "";
+            },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {server_port}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{server_port}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? std::to_string(settings->mServerPort) : "0";
+            },
+            300
+        ),
+        owner,
+        300
+    );
+
+    // {server_portv6}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{server_portv6}",
+            +[](std::string& out) {
+                auto settings = ll::service::getPropertiesSettings();
+                out           = settings ? std::to_string(settings->mServerPortv6) : "0";
+            },
             300
         ),
         owner,

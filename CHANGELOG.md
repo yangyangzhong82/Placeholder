@@ -13,9 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复了 `AdapterAliasPlaceholder::evaluateWithArgs` 中无参数上下文别名（如 `player_inventory`）的参数分割逻辑错误，导致嵌套占位符解析失败的问题。
 - 修复了 `player_inventory` 别名解析器中返回局部指针的 use-after-return 错误。
 - 修复了 `container_slot` 别名解析器中对 `ItemStack` API 的误用，并增加了空槽位检查以避免崩溃。
+
+### Changed
+- 修正了 `SystemPlaceholders.cpp` 中内存计算的浮点数除法，确保精确度。
+- 使用 `magic_enum` 库来简化代码。
 ### Added
 - 新增 `BlockActor` 上下文及其相关占位符（`{block_actor_pos}`, `{block_actor_pos_x}`, `{block_actor_pos_y}`, `{block_actor_pos_z}`, `{block_actor_type_name}`, `{block_actor_custom_name}`, `{block_actor_is_movable}`, `{block_actor_repair_cost}`, `{block_actor_has_container}`）。
 - 新增 `player_look_block_actor` 别名占位符，用于获取玩家视线所指向的方块实体信息。
+- **物品堆上下文 (`ItemStackBaseContext`) 占位符增强:**
+    - 新增 `{item_lore}`: 物品的 Lore。
+    - 新增 `{item_custom_name}`: 物品的自定义名称。
+    - 新增 `{item_id}`: 物品的数字 ID。
+    - 新增 `{item_raw_name_id}`: 物品的原始名称 ID。
+    - 新增 `{item_description_id}`: 物品的描述 ID。
+    - 新增 `{item_is_block}`: 物品是否是方块。
+    - 新增 `{item_is_armor}`: 物品是否是盔甲。
+    - 新增 `{item_is_potion}`: 物品是否是药水。
+    - 新增 `{item_block:<inner_placeholder_spec>}`: 物品的方块信息。
+- **服务器上下文 (`kServerContextId`) 占位符增强:**
+    - 新增 `{level_seed}`: 世界种子。
+    - 新增 `{level_name}`: 世界名称。
+    - 新增 `{language}`: 服务器语言。
+    - 新增 `{server_name}`: 服务器名称。
+    - 新增 `{server_port}`: 服务器端口。
+    - 新增 `{server_portv6}`: 服务器 IPv6 端口。
+- **系统上下文 (`SystemContext`) 占位符增强:**
+    - 新增 `{system_free_memory}`: 系统空闲内存 (MB)。
+    - 新增 `{system_memory_percent}`: 系统内存使用百分比 (%)。
+    - 新增 `{server_memory_percent}`: 服务器内存使用百分比 (%)。
+    - 新增 `{system_uptime}`: 系统运行时间。
+    - 新增 `{server_uptime}`: 服务器运行时间。
+- **时间上下文 (`TimeContext`) 占位符增强:**
+    - 新增 `{time_diff:<unix_timestamp>,<unit>}`: 计算从指定 Unix 时间戳到现在已经过去了多少时间。
 
 ## [0.4.0]
 

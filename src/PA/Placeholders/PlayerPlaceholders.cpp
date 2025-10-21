@@ -11,6 +11,7 @@
 #include "mc/world/level/GameType.h" // Added for Player GameType
 #include "mc/world/level/Level.h"
 #include "mc/world/scores/Objective.h"
+#include <magic_enum.hpp>
 #include "mc/world/scores/ScoreInfo.h"
 #include "mc/world/scores/Scoreboard.h"
 #include "mc/world/scores/ScoreboardId.h"
@@ -69,25 +70,6 @@ static void unloadLegacyMoneyDll() {
 #endif // _WIN32
 
 namespace PA {
-
-// Helper function to convert GameType to string
-static std::string gameTypeToString(GameType type) {
-    switch (type) {
-    case GameType::Survival:
-        return "Survival";
-    case GameType::Creative:
-        return "Creative";
-    case GameType::Adventure:
-        return "Adventure";
-    case GameType::Spectator:
-        return "Spectator";
-    case GameType::Default:
-        return "Default";
-    case GameType::Undefined:
-    default:
-        return "Undefined";
-    }
-}
 
 void registerPlayerPlaceholders(IPlaceholderService* svc) {
     static int kBuiltinOwnerTag = 0;
@@ -248,43 +230,7 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
             +[](const PlayerContext& c, std::string& out) {
                 out = "Unknown";
                 if (c.player) {
-                    switch (c.player->mBuildPlatform) {
-                    case BuildPlatform::Google:
-                        out = "Android";
-                        break;
-                    case BuildPlatform::IOS:
-                        out = "iOS";
-                        break;
-                    case BuildPlatform::Osx:
-                        out = "macOS";
-                        break;
-                    case BuildPlatform::Amazon:
-                        out = "Amazon";
-                        break;
-                    case BuildPlatform::Uwp:
-                        out = "UWP";
-                        break;
-                    case BuildPlatform::Win32:
-                        out = "Windows";
-                        break;
-                    case BuildPlatform::Dedicated:
-                        out = "Dedicated";
-                        break;
-                    case BuildPlatform::Sony:
-                        out = "PlayStation";
-                        break;
-                    case BuildPlatform::Nx:
-                        out = "Nintendo Switch";
-                        break;
-                    case BuildPlatform::Xbox:
-                        out = "Xbox";
-                        break;
-                    case BuildPlatform::Linux:
-                        out = "Linux";
-                        break;
-                    default:
-                        break;
-                    }
+                    out = magic_enum::enum_name(c.player->mBuildPlatform);
                 }
             }
         ),
@@ -371,7 +317,7 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
             "{player_gametype}",
             +[](const PlayerContext& c, std::string& out) {
                 out.clear();
-                if (c.player) out = gameTypeToString(c.player->getPlayerGameType());
+                if (c.player) out = magic_enum::enum_name(c.player->getPlayerGameType());
             }
         ),
         owner

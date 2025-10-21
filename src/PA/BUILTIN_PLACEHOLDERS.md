@@ -118,6 +118,15 @@
 | `{item_is_damaged}`    | 物品是否损坏                               | `false`                      |
 | `{item_damage_value}`  | 物品的当前损坏值                           | `0`                          |
 | `{item_max_damage}`    | 物品的最大损坏值                           | `100`                        |
+| `{item_lore}`          | 物品的 Lore (多行文本，每行以换行符分隔) | `第一行 Lore\n第二行 Lore` |
+| `{item_custom_name}`   | 物品的自定义名称                         | `我的钻石剑`                 |
+| `{item_id}`            | 物品的数字 ID                            | `276`                        |
+| `{item_raw_name_id}`   | 物品的原始名称 ID                        | `minecraft:diamond_sword`    |
+| `{item_description_id}`| 物品的描述 ID                            | `item.diamondSword`          |
+| `{item_is_block}`      | 物品是否是方块                           | `true`                       |
+| `{item_is_armor}`      | 物品是否是盔甲                           | `false`                      |
+| `{item_is_potion}`     | 物品是否是药水                           | `false`                      |
+| `{item_block:<inner_placeholder_spec>}` | 物品的方块信息。可用于获取物品作为方块时的属性，例如 `{item_block:block_type_name}` | `minecraft:stone` |
 
 ### 服务器上下文 (`kServerContextId`)
 
@@ -129,16 +138,27 @@
 | `{server_version}`        | 服务器版本           | `1.20.50.02`       |
 | `{server_protocol_version}` | 服务器协议版本       | `618`              |
 | `{loader_version}`        | 加载器版本           | `1.4.0`            |
+| `{level_seed}`            | 世界种子             | `12345`            |
+| `{level_name}`            | 世界名称             | `My World`         |
+| `{language}`              | 服务器语言           | `zh_CN`            |
+| `{server_name}`           | 服务器名称           | `My Minecraft Server` |
+| `{server_port}`           | 服务器端口           | `19132`            |
+| `{server_portv6}`         | 服务器 IPv6 端口     | `19133`            |
 
 ### 系统上下文 (`SystemContext`)
 
-| 占位符                  | 描述                   | 示例输出 |
-| :---------------------- | :--------------------- | :------- |
-| `{server_memory_usage}` | 服务器进程的内存使用量 (MB) | `512.34` |
-| `{server_cpu_usage}`    | 服务器进程的 CPU 使用率 (%) | `15.78`  |
-| `{system_total_memory}` | 系统总内存 (MB)        | `16384.00` |
-| `{system_used_memory}`  | 系统已用内存 (MB)      | `8192.50`  |
-| `{system_cpu_usage}`    | 系统总 CPU 使用率 (%)  | `30.25`  |
+| 占位符                    | 描述                   | 示例输出     |
+| :------------------------ | :--------------------- | :----------- |
+| `{server_memory_usage}`   | 服务器进程的内存使用量 (MB) | `512.34`     |
+| `{server_cpu_usage}`      | 服务器进程的 CPU 使用率 (%) | `15.78`      |
+| `{system_total_memory}`   | 系统总内存 (MB)        | `16384.00`   |
+| `{system_used_memory}`    | 系统已用内存 (MB)      | `8192.50`    |
+| `{system_free_memory}`    | 系统空闲内存 (MB)      | `8200.00`    |
+| `{system_memory_percent}` | 系统内存使用百分比 (%) | `50.00`      |
+| `{server_memory_percent}` | 服务器内存使用百分比 (%) | `3.13`       |
+| `{system_cpu_usage}`      | 系统总 CPU 使用率 (%)  | `30.25`      |
+| `{system_uptime}`         | 系统运行时间           | `1d 05:30:15` |
+| `{server_uptime}`         | 服务器运行时间           | `00:10:30`   |
 
 ### 时间上下文 (`TimeContext`)
 
@@ -151,3 +171,4 @@
 | `{hour}`  | 当前小时             | `22`               |
 | `{minute}` | 当前分钟             | `30`               |
 | `{second}` | 当前秒               | `00`               |
+| `{time_diff:<unix_timestamp>,<unit>}` | 计算从指定 Unix 时间戳到现在已经过去了多少时间。`<unit>` 可以是 `minutes` (默认)、`hours`、`days` 或 `seconds`。 | `120` (分钟)       |

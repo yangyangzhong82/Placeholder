@@ -2,6 +2,9 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "PA/Placeholders/BlockPlaceholders.h" // Added for BlockContext
+#include "mc/world/item/ItemStack.h" // Added for ItemStack
+#include "mc/world/item/ItemStackBase.h" // Added for ItemStackBase
+#include "mc/world/item/ItemStackBase.h" // Added for ItemStackBase
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/level/BlockPos.h"    // Added for BlockPos
 #include "mc/world/level/BlockSource.h" // Added for BlockSource
@@ -241,6 +244,58 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                     return nullptr;
                 }
                 return (void*)&item;
+            }
+            return nullptr;
+        },
+        owner
+    );
+
+    // {item_block:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "item_block",
+        ItemStackBaseContext::kTypeId,
+        BlockContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* itemStackBaseCtx = static_cast<const ItemStackBaseContext*>(fromCtx);
+            if (!itemStackBaseCtx || !itemStackBaseCtx->itemStackBase) {
+                return nullptr;
+            }
+
+            const ItemStackBase* itemStackBase = itemStackBaseCtx->itemStackBase;
+            if (!itemStackBase || itemStackBase->isNull()) {
+                return nullptr;
+            }
+
+            // 直接从 ItemStackBase 获取 Block
+            const Block* block = itemStackBase->mBlock;
+            if (block && !block->isAir()) { // 检查是否是有效的方块
+                return (void*)block;
+            }
+            return nullptr;
+        },
+        owner
+    );
+
+    // {item_block:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "item_block",
+        ItemStackBaseContext::kTypeId,
+        BlockContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* itemStackBaseCtx = static_cast<const ItemStackBaseContext*>(fromCtx);
+            if (!itemStackBaseCtx || !itemStackBaseCtx->itemStackBase) {
+                return nullptr;
+            }
+
+            const ItemStackBase* itemStackBase = itemStackBaseCtx->itemStackBase;
+            if (!itemStackBase || itemStackBase->isNull()) {
+                return nullptr;
+            }
+
+            // 直接从 ItemStackBase 获取 Block
+            const Block* block = itemStackBase->mBlock;
+            if (block && !block->isAir()) { // 检查是否是有效的方块
+                return (void*)block;
             }
             return nullptr;
         },

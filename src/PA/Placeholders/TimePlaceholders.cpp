@@ -107,6 +107,48 @@ void registerTimePlaceholders(IPlaceholderService* svc) {
         ),
         owner
     );
+
+    // {time_diff:<unix_timestamp>} 计算从指定时间到现在已经过去了多少分钟
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&, const std::vector<std::string_view>&)>>(
+            "{time_diff}",
+            +[](std::string& out, const std::vector<std::string_view>& args) {
+                if (args.empty()) {
+                    out = "Invalid arguments";
+                    return;
+                }
+                try {
+                    long long target_timestamp = std::stoll(std::string(args[0]));
+                    auto      now              = std::chrono::system_clock::now();
+                    auto      target_time      = std::chrono::system_clock::from_time_t(target_timestamp);
+                    
+                    std::string unit = "minutes"; // 默认单位是分钟
+                    if (args.size() > 1) {
+                        unit = std::string(args[1]);
+                    }
+
+                    if (unit == "hours") {
+                        auto diff = std::chrono::duration_cast<std::chrono::hours>(now - target_time);
+                        out = std::to_string(diff.count());
+                    } else if (unit == "days") {
+                        auto diff = std::chrono::duration_cast<std::chrono::days>(now - target_time);
+                        out = std::to_string(diff.count());
+                    } else if (unit == "seconds") { // 添加对秒的支持
+                        auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - target_time);
+                        out = std::to_string(diff.count());
+                    }
+                    else { // 默认为分钟
+                        auto diff = std::chrono::duration_cast<std::chrono::minutes>(now - target_time);
+                        out = std::to_string(diff.count());
+                    }
+                } catch (const std::exception& e) {
+                    out = "Error: " + std::string(e.what());
+                }
+            }
+        ),
+        owner
+    );
 }
 
 } // namespace PA

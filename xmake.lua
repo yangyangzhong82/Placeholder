@@ -17,6 +17,7 @@ add_requires("fast_float")
 add_requires("icu4c")
 add_requires("sol2")
 add_requires("legacyremotecall")
+add_requires("magic_enum")
 if not has_config("vs_runtime") then
     set_runtimes("MD")
 end
@@ -32,7 +33,7 @@ target("Placeholder") -- Change this to your mod name.
     add_rules("@levibuildscript/modpacker")
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
     add_defines("NOMINMAX", "UNICODE","Placeholder_EXPORTS")
-    add_packages("levilamina","exprtk","utfcpp","fast_float", "icu4c","sol2","legacyremotecall")
+    add_packages("levilamina","exprtk","utfcpp","fast_float", "icu4c","sol2","legacyremotecall","magic_enum")
     set_exceptions("none") -- To avoid conflicts with /EHa.
     set_kind("shared")
     set_languages("c++20")
