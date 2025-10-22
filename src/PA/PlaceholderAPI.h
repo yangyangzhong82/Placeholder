@@ -1,6 +1,7 @@
 // PlaceholderAPI.h
 #pragma once
 
+#include "mc/deps/core/math/Vec3.h"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -15,7 +16,7 @@
 #else
 #define PA_API __attribute__((visibility("default")))
 #endif
-
+#include "mc/world/level/dimension/Dimension.h" // Include Dimension and DimensionType definition
 
 class Player;
 class Mob;
@@ -23,7 +24,7 @@ class Actor; // Add Actor forward declaration
 class Block; // Add Block forward declaration
 class ItemStackBase; // Add ItemStackBase forward declaration
 class Container; // Add Container forward declaration
-class BlockActor; // Add BlockActor forward declaration
+class BlockActor; // Add BlockActor forward declaration、
 
 namespace PA {
 
@@ -150,6 +151,25 @@ struct PA_API BlockActorContext : public IContext {
     }
     std::string getContextInstanceKey() const noexcept override {
         return blockActor ? std::to_string(reinterpret_cast<uintptr_t>(blockActor)) : "";
+    }
+};
+
+// 世界坐标数据结构
+struct WorldCoordinateData {
+    Vec3          pos;
+    DimensionType dimensionId;
+};
+
+// 世界坐标上下文
+struct PA_API WorldCoordinateContext : public IContext {
+    static constexpr uint64_t kTypeId = TypeId("ctx:WorldCoordinate");
+    std::shared_ptr<WorldCoordinateData> data; // 指向实际数据的指针
+    uint64_t                  typeId() const noexcept override { return kTypeId; }
+    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
+        return {kTypeId};
+    }
+    std::string getContextInstanceKey() const noexcept override {
+        return data ? (data->pos.toString() + "_" + std::to_string(static_cast<int>(data->dimensionId))) : "";
     }
 };
 

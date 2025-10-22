@@ -25,11 +25,11 @@
 | `{player_ip}`              | 玩家的 IP 地址和端口               | `127.0.0.1:19132` |
 | `{llmoney}`                | 玩家的 LegacyMoney 余额            | `1000`           |
 | `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:type_name}` | `minecraft:horse` |
-| `{player_block:<inner_placeholder_spec>}` | 玩家脚下的方块。可用于获取方块的属性，例如 `{player_block:block_type_name}` | `minecraft:air` |
 | `{player_hand:<inner_placeholder_spec>}` | 玩家手持的物品。可用于获取手持物品的属性，例如 `{player_hand:item_name}` | `minecraft:diamond_sword` |
 | `{player_inventory:<inner_placeholder_spec>}` | 玩家背包容器。可用于获取背包容器的属性，例如 `{player_inventory:container_size}` | `36` |
 | `{player_enderchest:<inner_placeholder_spec>}` | 玩家末影箱容器。可用于获取末影箱容器的属性，例如 `{player_enderchest:container_size}` | `27` |
 | `{player_look_block_actor:<params>:<inner_placeholder_spec>}` | 玩家视线所指向的方块实体。可用于获取方块实体的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{player_look_block_actor:maxDistance=10,includeLiquid=true:block_actor_type_name}` | `minecraft:chest` |
+| `{player_world_coordinate:<inner_placeholder_spec>}` | 玩家的世界坐标。可用于获取玩家的坐标和维度信息，例如 `{player_world_coordinate:pos_x}` | `(100.5, 64.0, 200.5)` |
 
 ### 容器上下文 (`ContainerContext`)
 
@@ -80,6 +80,16 @@
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
 | `{score:objective_name}`   | Actor 在指定记分板上的分数           | `123`            |
 | `{entity_look_block:<params>:<inner_placeholder_spec>}` | 实体正在看的方块。可用于获取所看方块的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{entity_look_block:maxDistance=10,includeLiquid=true:block_type_name}` | `minecraft:stone` |
+
+### 世界坐标上下文 (`WorldCoordinateContext`)
+
+| 占位符                     | 描述                               | 示例输出         |
+| :------------------------- | :--------------------------------- | :--------------- |
+| `{world_coordinate_pos}`   | 世界坐标 (Vec3.toString())         | `(100.5, 64.0, 200.5)` |
+| `{world_coordinate_pos_x}` | 世界坐标的 X 坐标                  | `100.5`          |
+| `{world_coordinate_pos_y}` | 世界坐标的 Y 坐标                  | `64.0`           |
+| `{world_coordinate_pos_z}` | 世界坐标的 Z 坐标                  | `200.5`          |
+| `{world_coordinate_dimension_id}` | 世界坐标的维度 ID             | `0` (主世界)     |
 
 ### 方块实体上下文 (`BlockActorContext`)
 

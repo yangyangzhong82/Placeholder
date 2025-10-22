@@ -378,7 +378,8 @@ public:
         // Heuristic to distinguish parameter-less aliases from those with parameters.
         // Parameter-less aliases pass the entire parameter string as the inner spec.
         if (mAlias == "player_inventory" || mAlias == "player_enderchest" || mAlias == "player_hand"
-            || mAlias == "player_riding" || mAlias == "player_block") {
+            || mAlias == "player_riding" || mAlias == "item_block" || mAlias == "player_world_coordinate"
+            || mAlias == "block" || mAlias == "block_actor") {
             innerSpec_sv = full_param_part;
         } else {
             size_t last_colon_pos = full_param_part.rfind(':');
@@ -456,6 +457,14 @@ public:
         case BlockActorContext::kTypeId: { //  BlockActorContext
             BlockActorContext rc;
             rc.blockActor = static_cast<BlockActor*>(raw);
+            out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
+            break;
+        }
+        case WorldCoordinateContext::kTypeId: { // WorldCoordinateContext
+            WorldCoordinateContext rc;
+            rc.data = std::make_shared<WorldCoordinateData>();
+            rc.data->pos = static_cast<WorldCoordinateData*>(raw)->pos;
+            rc.data->dimensionId = static_cast<WorldCoordinateData*>(raw)->dimensionId;
             out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
             break;
         }

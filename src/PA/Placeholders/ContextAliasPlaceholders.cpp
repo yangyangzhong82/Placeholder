@@ -94,26 +94,6 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {player_block:<inner_placeholder_spec>}
-    svc->registerContextAlias(
-        "player_block",
-        PlayerContext::kTypeId,
-        BlockContext::kTypeId,
-        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
-            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
-            if (!playerCtx || !playerCtx->player) {
-                return nullptr;
-            }
-            BlockPos blockPos = BlockPos(playerCtx->player->getPosition());
-            logger.debug("pos {}", blockPos.toString());
-            BlockSource& bs    = playerCtx->player->getDimensionBlockSource();
-            const Block& block = bs.getBlock(blockPos);
-            logger.debug("block type {}", block.getTypeName());
-            return (void*)&block; // 直接返回 const Block*
-        },
-        owner
-    );
-
     // {entity_look_block:<inner_placeholder_spec>}
     svc->registerContextAlias(
         "entity_look_block",
@@ -335,23 +315,6 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {player_block_entity:<inner_placeholder_spec>}
-    svc->registerContextAlias(
-        "player_block_entity",
-        PlayerContext::kTypeId,
-        BlockActorContext::kTypeId,
-        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
-            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
-            if (!playerCtx || !playerCtx->player) {
-                return nullptr;
-            }
-            BlockPos blockPos = BlockPos(playerCtx->player->getPosition());
-            BlockSource& bs = playerCtx->player->getDimensionBlockSource();
-            return (void*)bs.getBlockEntity(blockPos);
-        },
-        owner
-    );
-
     // {player_look_block_actor:<inner_placeholder_spec>}
     svc->registerContextAlias(
         "player_look_block_actor",
@@ -425,6 +388,29 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
 
             BlockSource& bs = player->getDimensionBlockSource();
             return (void*)bs.getBlockEntity(bp);
+        },
+        owner
+    );
+
+    // {player_world_coordinate:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_world_coordinate",
+        PlayerContext::kTypeId,
+        WorldCoordinateContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+
+            // 创建一个 WorldCoordinateData 实例，并返回其指针
+            // 注意：这里使用静态变量，存在线程安全问题，但为了匹配 ContextResolverFn 的签名，暂时如此处理
+            // 更好的做法是 ContextResolverFn 返回 std::shared_ptr<WorldCoordinateData>，但需要修改 ContextResolverFn 的签名
+            static WorldCoordinateData worldCoordData;
+            worldCoordData.pos        = playerCtx->player->getPosition();
+            worldCoordData.dimensionId = playerCtx->player->getDimensionId();
+
+            return (void*)&worldCoordData;
         },
         owner
     );

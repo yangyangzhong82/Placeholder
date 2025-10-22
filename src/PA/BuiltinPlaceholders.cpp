@@ -12,6 +12,7 @@
 #include "PA/Placeholders/ItemStackBasePlaceholders.h" // Add ItemStackBasePlaceholders header
 #include "PA/Placeholders/ContainerPlaceholders.h" // Add ContainerPlaceholders header
 #include "PA/Placeholders/BlockActorPlaceholders.h" // Add BlockActorPlaceholders header
+#include "PA/Placeholders/WorldCoordinatePlaceholders.h" // Add WorldCoordinatePlaceholders header
 
 namespace PA {
 
@@ -29,6 +30,7 @@ void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
     registerItemStackBasePlaceholders(svc); // Register ItemStackBasePlaceholders
     registerContainerPlaceholders(svc); // Register ContainerPlaceholders
     registerBlockActorPlaceholders(svc); // Register BlockActorPlaceholders
+    registerWorldCoordinatePlaceholders(svc); // Register WorldCoordinatePlaceholders
 }
 
 } // namespace PA
