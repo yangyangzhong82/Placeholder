@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修正了 `SystemPlaceholders.cpp` 中内存计算的浮点数除法，确保精确度。
 - 使用 `magic_enum` 库来简化代码。
 ### Added
+- **增强的上下文扩展性**: 引入“上下文工厂”机制 (`registerContextFactory`)，允许插件注册函数来动态构造临时的、自定义的目标上下文实例。这使得插件可以无缝地将其数据模型集成到占位符的上下文别名系统中。
 - 新增 `BlockActor` 上下文及其相关占位符（`{block_actor_pos}`, `{block_actor_pos_x}`, `{block_actor_pos_y}`, `{block_actor_pos_z}`, `{block_actor_type_name}`, `{block_actor_custom_name}`, `{block_actor_is_movable}`, `{block_actor_repair_cost}`, `{block_actor_has_container}`）。
 - 新增 `player_look_block_actor` 别名占位符，用于获取玩家视线所指向的方块实体信息。
 - **物品堆上下文 (`ItemStackBaseContext`) 占位符增强:**

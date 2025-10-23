@@ -76,6 +76,10 @@ public:
         mRegistry.registerContextAlias(alias, fromContextTypeId, toContextTypeId, resolver, owner);
     }
 
+    void registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory, void* owner) override {
+        mRegistry.registerContextFactory(contextTypeId, factory, owner);
+    }
+
 private:
     PlaceholderRegistry mRegistry;
 };

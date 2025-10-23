@@ -24,9 +24,11 @@ class Actor; // Add Actor forward declaration
 class Block; // Add Block forward declaration
 class ItemStackBase; // Add ItemStackBase forward declaration
 class Container; // Add Container forward declaration
-class BlockActor; // Add BlockActor forward declaration、
+class BlockActor; // Add BlockActor forward declaration
 
 namespace PA {
+
+struct IContext; // Forward declaration
 
 // 64-bit FNV-1a 编译期哈希，用于生成稳定的上下文类型 ID
 constexpr uint64_t fnv1a64_constexpr(const char* s, size_t n) {
@@ -155,7 +157,7 @@ struct PA_API BlockActorContext : public IContext {
 };
 
 // 世界坐标数据结构
-struct WorldCoordinateData {
+struct PA_API WorldCoordinateData {
     Vec3          pos;
     DimensionType dimensionId;
 };
@@ -212,6 +214,9 @@ struct PA_API IPlaceholder {
 //  args 参数，用于向 resolver 传递参数
 using ContextResolverFn = void* (*)(const IContext*, const std::vector<std::string_view>& args);
 
+// 上下文工厂函数：从底层对象指针构造一个 IContext 实例
+using ContextFactoryFn = std::unique_ptr<IContext> (*)(void* rawObject);
+
 // RAII 作用域注册器接口
 struct PA_API IScopedPlaceholderRegistrar {
     virtual ~IScopedPlaceholderRegistrar() = default;
@@ -246,6 +251,8 @@ struct PA_API IScopedPlaceholderRegistrar {
         uint64_t          toContextTypeId,
         ContextResolverFn resolver
     ) = 0;
+
+    virtual void registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory) = 0;
 };
 
 // 跨模块服务接口（稳定 ABI）
@@ -315,6 +322,10 @@ struct PA_API IPlaceholderService {
         ContextResolverFn resolver,
         void*             owner
     ) = 0;
+
+    // 注册“上下文工厂”
+    // 用于在上下文别名解析时，动态构造目标上下文实例
+    virtual void registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory, void* owner) = 0;
 };
 
 // 跨模块获取占位符服务单例

@@ -43,18 +43,18 @@ void PlaceholderRegistry::registerPlaceholder(
         entry.cacheDuration = cacheDuration;
         if (ctxId == kServerContextId) {
             newSnapshot->cached_server.emplace(key, std::move(entry));
-            newSnapshot->ownerIndex[owner].push_back({true, false, true, false, 0, 0, 0, key});
+            newSnapshot->ownerIndex[owner].push_back({true, false, true, false, false, 0, 0, 0, key});
         } else {
             newSnapshot->cached_typed[ctxId].emplace(key, std::move(entry));
-            newSnapshot->ownerIndex[owner].push_back({false, false, true, false, 0, 0, ctxId, key});
+            newSnapshot->ownerIndex[owner].push_back({false, false, true, false, false, 0, 0, ctxId, key});
         }
     } else {
         if (ctxId == kServerContextId) {
             newSnapshot->server[key] = {p, owner};
-            newSnapshot->ownerIndex[owner].push_back({true, false, false, false, 0, 0, 0, key});
+            newSnapshot->ownerIndex[owner].push_back({true, false, false, false, false, 0, 0, 0, key});
         } else {
             newSnapshot->typed[ctxId][key] = {p, owner};
-            newSnapshot->ownerIndex[owner].push_back({false, false, false, false, 0, 0, ctxId, key});
+            newSnapshot->ownerIndex[owner].push_back({false, false, false, false, false, 0, 0, ctxId, key});
         }
     }
     mSnapshot.store(newSnapshot);
@@ -112,8 +112,8 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
 
     newSnapshot->relational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
     newSnapshot->ownerIndex[owner].push_back(
-        {false, true, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
-    ); // isServer, isRelational, isCached, isAdapter
+        {false, true, false, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
+    ); // isServer, isRelational, isCached, isAdapter, isFactory
     mSnapshot.store(newSnapshot);
 }
 
@@ -153,8 +153,8 @@ void PlaceholderRegistry::registerCachedRelationalPlaceholder(
 
     newSnapshot->cached_relational[mainContextTypeId][relationalContextTypeId].emplace(key, std::move(entry));
     newSnapshot->ownerIndex[owner].push_back(
-        {false, true, true, false, mainContextTypeId, relationalContextTypeId, 0, key}
-    ); // isServer, isRelational, isCached, isAdapter
+        {false, true, true, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
+    ); // isServer, isRelational, isCached, isAdapter, isFactory
     mSnapshot.store(newSnapshot);
 }
 
@@ -180,10 +180,36 @@ void PlaceholderRegistry::registerContextAlias(
          false, // isRelational
          false, // isCached
          true,  // isAdapter
+         false, // isFactory
          fromContextTypeId,
          toContextTypeId,
          0,
          std::string(alias)}
+    );
+
+    mSnapshot.store(snap);
+}
+
+void PlaceholderRegistry::registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory, void* owner) {
+    if (!factory) return;
+
+    std::lock_guard<std::mutex> lk(mWriteMutex);
+    auto                        current = mSnapshot.load();
+    auto                        snap    = std::make_shared<Snapshot>(*current);
+
+    snap->contextFactories[contextTypeId] = {factory, owner};
+
+    // 记录 owner -> handle
+    snap->ownerIndex[owner].push_back(
+        {false, // isServer
+         false, // isRelational
+         false, // isCached
+         false, // isAdapter
+         true,  // isFactory
+         0,
+         0,
+         contextTypeId,
+         std::to_string(contextTypeId)}
     );
 
     mSnapshot.store(snap);
@@ -198,7 +224,12 @@ void PlaceholderRegistry::unregisterByOwner(void* owner) {
     auto newSnapshot = std::make_shared<Snapshot>(*currentSnapshot);
 
     for (const Handle& h : it->second) {
-        if (h.isAdapter) {
+        if (h.isFactory) {
+            auto fit = newSnapshot->contextFactories.find(h.ctxId);
+            if (fit != newSnapshot->contextFactories.end() && fit->second.owner == owner) {
+                newSnapshot->contextFactories.erase(fit);
+            }
+        } else if (h.isAdapter) {
             auto ait = newSnapshot->adapters.find(h.token);
             if (ait != newSnapshot->adapters.end()) {
                 auto& vec = ait->second;
@@ -409,68 +440,77 @@ public:
             return;
         }
 
-        // 2) 构造一个临时目标上下文对象（栈对象）
+        // 2) 查找上下文工厂并构造目标上下文
         // 3) 在目标上下文下对“内层占位符表达式”做一次完整解析
         std::string innerSpec(innerSpec_sv);
         std::string wrapped = "{" + innerSpec + "}";
 
-        switch (mTo) {
-        case ActorContext::kTypeId: {
-            ActorContext rc;
-            rc.actor = static_cast<Actor*>(raw);
-            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case MobContext::kTypeId: {
-            MobContext rc;
-            rc.mob   = static_cast<Mob*>(raw);
-            rc.actor = static_cast<Actor*>(raw); // MobContext 继承自 ActorContext
-            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case PlayerContext::kTypeId: {
-            PlayerContext rc;
-            rc.player = static_cast<Player*>(raw);
-            rc.mob    = static_cast<Mob*>(raw);
-            rc.actor  = static_cast<Actor*>(raw);
-            out       = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case BlockContext::kTypeId: {
-            BlockContext rc;
-            rc.block = static_cast<const Block*>(raw); // raw 是 void*，需要转换为 const Block*
-            out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case ItemStackBaseContext::kTypeId: { //  ItemStackBaseContext
-            ItemStackBaseContext rc;
-            rc.itemStackBase = static_cast<const ItemStackBase*>(raw);
-            out              = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case ContainerContext::kTypeId: { //  ContainerContext
-            ContainerContext rc;
-            rc.container = static_cast<Container*>(raw);
-            out          = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case BlockActorContext::kTypeId: { //  BlockActorContext
-            BlockActorContext rc;
-            rc.blockActor = static_cast<BlockActor*>(raw);
-            out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        case WorldCoordinateContext::kTypeId: { // WorldCoordinateContext
-            WorldCoordinateContext rc;
-            rc.data = std::make_shared<WorldCoordinateData>();
-            rc.data->pos = static_cast<WorldCoordinateData*>(raw)->pos;
-            rc.data->dimensionId = static_cast<WorldCoordinateData*>(raw)->dimensionId;
-            out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
-            break;
-        }
-        default:
-            // 其他目标上下文类型：暂不支持
-            break;
+        ContextFactoryFn factory = mReg.findContextFactory(mTo);
+        if (factory) {
+            std::unique_ptr<IContext> targetCtx = factory(raw);
+            if (targetCtx) {
+                out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
+            }
+        } else {
+            // Fallback to old switch-case for built-in types if no factory is registered
+            switch (mTo) {
+            case ActorContext::kTypeId: {
+                ActorContext rc;
+                rc.actor = static_cast<Actor*>(raw);
+                out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case MobContext::kTypeId: {
+                MobContext rc;
+                rc.mob   = static_cast<Mob*>(raw);
+                rc.actor = static_cast<Actor*>(raw); // MobContext 继承自 ActorContext
+                out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case PlayerContext::kTypeId: {
+                PlayerContext rc;
+                rc.player = static_cast<Player*>(raw);
+                rc.mob    = static_cast<Mob*>(raw);
+                rc.actor  = static_cast<Actor*>(raw);
+                out       = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case BlockContext::kTypeId: {
+                BlockContext rc;
+                rc.block = static_cast<const Block*>(raw); // raw 是 void*，需要转换为 const Block*
+                out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case ItemStackBaseContext::kTypeId: { //  ItemStackBaseContext
+                ItemStackBaseContext rc;
+                rc.itemStackBase = static_cast<const ItemStackBase*>(raw);
+                out              = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case ContainerContext::kTypeId: { //  ContainerContext
+                ContainerContext rc;
+                rc.container = static_cast<Container*>(raw);
+                out          = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case BlockActorContext::kTypeId: { //  BlockActorContext
+                BlockActorContext rc;
+                rc.blockActor = static_cast<BlockActor*>(raw);
+                out           = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            case WorldCoordinateContext::kTypeId: { // WorldCoordinateContext
+                WorldCoordinateContext rc;
+                rc.data              = std::make_shared<WorldCoordinateData>();
+                rc.data->pos         = static_cast<WorldCoordinateData*>(raw)->pos;
+                rc.data->dimensionId = static_cast<WorldCoordinateData*>(raw)->dimensionId;
+                out                  = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                break;
+            }
+            default:
+                // 其他目标上下文类型：暂不支持
+                break;
+            }
         }
     }
 
@@ -600,6 +640,15 @@ const Adapter* PlaceholderRegistry::findContextAlias(std::string_view alias, uin
     return nullptr;
 }
 
+ContextFactoryFn PlaceholderRegistry::findContextFactory(uint64_t contextTypeId) const {
+    auto snapshot = mSnapshot.load();
+    auto it       = snapshot->contextFactories.find(contextTypeId);
+    if (it != snapshot->contextFactories.end()) {
+        return it->second.factory;
+    }
+    return nullptr;
+}
+
 // ScopedPlaceholderRegistrar implementation
 ScopedPlaceholderRegistrar::~ScopedPlaceholderRegistrar() {
     if (mRegistry && mOwner) {
@@ -663,6 +712,12 @@ void ScopedPlaceholderRegistrar::registerContextAlias(
 ) {
     if (mRegistry) {
         mRegistry->registerContextAlias(alias, fromContextTypeId, toContextTypeId, resolver, mOwner);
+    }
+}
+
+void ScopedPlaceholderRegistrar::registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory) {
+    if (mRegistry) {
+        mRegistry->registerContextFactory(contextTypeId, factory, mOwner);
     }
 }
 

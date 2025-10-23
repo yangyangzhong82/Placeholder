@@ -47,7 +47,29 @@ Placeholder API 允许开发者在文本中定义可替换的占位符，这些�
 **新增方法：**
 
 *   **`registerCachedRelationalPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner, uint64_t mainContextTypeId, uint64_t relationalContextTypeId, unsigned int cacheDuration)`**：注册一个带缓存的关系型占位符。它与 `registerRelationalPlaceholder` 类似，但会根据 `cacheDuration` 对占位符的求值结果进行缓存。
+*   **`registerContextAlias(...)`**: 注册一个上下文别名适配器，用于在不同上下文之间转换。
+*   **`registerContextFactory(...)`**: 注册一个上下文工厂，用于在解析别名时动态构造自定义的上下文实例。
 *   **`std::unique_ptr<IScopedPlaceholderRegistrar> createScopedRegistrar(void* owner)`**：创建一个 RAII 作用域注册器。通过此注册器注册的占位符会在注册器对象离开作用域时自动注销，极大地简化了资源管理。
+
+### 4. 上下文别名 (Context Alias)
+
+上下文别名允许你将一个占位符的求值环境从一个上下文（来源）动态切换到另一个上下文（目标）。这对于复用现有占位符非常有用。
+
+例如，一个玩家可能正在看着一个生物。你希望在玩家的上下文中，获取被看着的生物的生命值。如果已经有一个在 `MobContext` 下工作的 `{mob_health}` 占位符，你可以注册一个名为 `look` 的别名，它能将 `PlayerContext` 解析为玩家视线所及的 `MobContext`。这样，你就可以直接使用 `{look:mob_health}` 来获取信息，而无需为“玩家看着的生物的生命值”编写一个全新的占位符。
+
+这通过 `registerContextAlias` 方法实现，它需要一个**解析器函数 (Resolver Function)**。
+
+*   **`ContextResolverFn`**: 这是一个函数指针，类型为 `void* (*)(const IContext*, const std::vector<std::string_view>& args)`。它的作用是接收来源上下文，并返回一个指向目标上下文所需**底层对象**的 `void*` 指针（例如，从 `Player*` 返回 `Mob*`）。
+
+### 5. 上下文工厂 (Context Factory)
+
+当上下文别名成功解析出目标底层对象后（例如，通过 `ContextResolverFn` 得到了一个 `Mob*`），占位符系统需要将这个底层对象包装成一个临时的目标上下文实例（例如 `MobContext`）。
+
+对于内置的上下文类型，系统可以自动处理。但如果你的插件定义了**自定义的上下文类型**，你就需要提供一个**上下文工厂**。
+
+*   **`ContextFactoryFn`**: 这是一个函数指针，类型为 `std::unique_ptr<IContext> (*)(void* rawObject)`。它的作用是接收一个指向底层对象的 `void*` 指针，并返回一个包含该对象的、新创建的上下文实例 (`std::unique_ptr<IContext>`)。
+
+通过 `registerContextFactory` 方法注册工厂后，占位符系统就能在解析别名时，为你的自定义上下文类型动态创建实例，从而让别的插件也可以构造临时目标的上下文。
 
 ## 内置占位符
 
@@ -269,4 +291,67 @@ void useScopedRegistrar(PA::IPlaceholderService* svc, void* owner) {
     );
 }
 ```
+
+### 4. 注册上下文别名和工厂（高级）
+
+以下示例展示了如何注册一个自定义上下文、工厂和别名，以实现 `{my_alias:custom_value}` 的功能。
+
+```cpp
+#include "PA/PlaceholderAPI.h"
+
+// 假设你有一个自定义的数据结构和上下文
+struct MyData { int value; };
+struct MyDataContext : public PA::IContext {
+    static constexpr uint64_t kTypeId = PA::TypeId("ctx:MyData");
+    const MyData* data{};
+    uint64_t typeId() const noexcept override { return kTypeId; }
+};
+
+// 工厂函数：从 void* 创建 MyDataContext
+std::unique_ptr<PA::IContext> createMyDataContext(void* raw) {
+    auto ctx = std::make_unique<MyDataContext>();
+    ctx->data = static_cast<const MyData*>(raw);
+    return ctx;
+}
+
+// 解析器函数：从 PlayerContext 获取 MyData
+void* resolveMyDataFromPlayer(const PA::IContext* fromCtx, const std::vector<std::string_view>&) {
+    // 在真实场景中，你会从玩家身上查找关联的数据
+    static MyData dummyData{42};
+    return &dummyData;
+}
+
+// 占位符，作用于 MyDataContext
+class MyDataPlaceholder final : public PA::IPlaceholder {
+public:
+    std::string_view token() const noexcept override { return "{custom_value}"; }
+    uint64_t contextTypeId() const noexcept override { return MyDataContext::kTypeId; }
+    void evaluate(const PA::IContext* ctx, std::string& out) const override {
+        const auto* myCtx = static_cast<const MyDataContext*>(ctx);
+        if (myCtx && myCtx->data) {
+            out = std::to_string(myCtx->data->value);
+        }
+    }
+};
+
+// 注册流程
+void registerMyAliasAndFactory(PA::IPlaceholderService* svc, void* owner) {
+    auto registrar = svc->createScopedRegistrar(owner);
+
+    // 1. 注册作用于自定义上下文的占位符
+    registrar->registerPlaceholder("", std::make_shared<MyDataPlaceholder>());
+
+    // 2. 注册自定义上下文的工厂
+    registrar->registerContextFactory(MyDataContext::kTypeId, createMyDataContext);
+
+    // 3. 注册别名，将 PlayerContext 链接到 MyDataContext
+    registrar->registerContextAlias(
+        "my_alias",
+        PA::PlayerContext::kTypeId,
+        MyDataContext::kTypeId,
+        resolveMyDataFromPlayer
+    );
+}
+```
+
 **注意：** `owner` 指针用于标识占位符的归属模块，建议使用模块内唯一的地址作为 `owner`，以便在模块卸载时批量反注册。

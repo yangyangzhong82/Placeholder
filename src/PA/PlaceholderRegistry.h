@@ -93,6 +93,7 @@ public:
         uint64_t          toContextTypeId,
         ContextResolverFn resolver
     ) override;
+    void registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory) override;
 
 private:
     PlaceholderRegistry* mRegistry;
@@ -135,6 +136,9 @@ public:
         void*             owner
     );
 
+    // 注册上下文工厂
+    void registerContextFactory(uint64_t contextTypeId, ContextFactoryFn factory, void* owner);
+
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> getTypedPlaceholders(const IContext* ctx
     ) const;
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> getServerPlaceholders() const;
@@ -145,6 +149,9 @@ public:
 
     // 查找上下文别名
     const Adapter* findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;
+
+    // 查找上下文工厂
+    ContextFactoryFn findContextFactory(uint64_t contextTypeId) const;
 
 private:
     struct Entry {
@@ -157,10 +164,11 @@ private:
         bool        isRelational{};
         bool        isCached{};  // 是否为缓存占位符
         bool        isAdapter{}; // 是否为别名适配器
+        bool        isFactory{}; // 是否为上下文工厂
         uint64_t    mainCtxId{};
         uint64_t    relCtxId{};
         uint64_t    ctxId{};
-        std::string token; // 对于适配器，这里存 alias
+        std::string token; // 对于适配器，这里存 alias; 对于工厂，这里存 ctxId 的字符串形式
     };
 
     struct ci_hash {
@@ -196,6 +204,13 @@ private:
         // alias -> adapters（大小写不敏感）
         std::unordered_map<std::string, std::vector<Adapter>, ci_hash, ci_equal> adapters;
 
+        // contextTypeId -> factory
+        struct FactoryEntry {
+            ContextFactoryFn factory{};
+            void*            owner{};
+        };
+        std::unordered_map<uint64_t, FactoryEntry> contextFactories;
+
         std::unordered_map<void*, std::vector<Handle>> ownerIndex;
 
         Snapshot() = default;
@@ -205,6 +220,7 @@ private:
           relational(other.relational),
           server(other.server),
           adapters(other.adapters),
+          contextFactories(other.contextFactories),
           ownerIndex(other.ownerIndex) {
             for (const auto& pair : other.cached_typed) {
                 for (const auto& inner_pair : pair.second) {
