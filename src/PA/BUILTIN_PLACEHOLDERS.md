@@ -8,7 +8,7 @@
 
 | 占位符                     | 描述                               | 示例输出         |
 | :------------------------- | :--------------------------------- | :--------------- |
-| `{player_name}`            | 玩家的真实名称                     | `Steve`          |
+| `{player_realname}`            | 玩家的真实名称                     | `Steve`          |
 | `{player_average_ping}`    | 玩家的平均网络延迟                 | `50`             |
 | `{player_ping}`            | 玩家的当前网络延迟                 | `45`             |
 | `{player_avgpacketloss}`   | 玩家的当前丢包率                   | `0.5`            |
@@ -30,6 +30,9 @@
 | `{player_enderchest:<inner_placeholder_spec>}` | 玩家末影箱容器。可用于获取末影箱容器的属性，例如 `{player_enderchest:container_size}` | `27` |
 | `{player_look_block_actor:<params>:<inner_placeholder_spec>}` | 玩家视线所指向的方块实体。可用于获取方块实体的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{player_look_block_actor:maxDistance=10,includeLiquid=true:block_actor_type_name}` | `minecraft:chest` |
 | `{player_world_coordinate:<inner_placeholder_spec>}` | 玩家的世界坐标。可用于获取玩家的坐标和维度信息，例如 `{player_world_coordinate:pos_x}` | `(100.5, 64.0, 200.5)` |
+| `{player_offhand_item:<inner_placeholder_spec>}` | 玩家副手持有的物品。可用于获取副手物品的属性，例如 `{player_offhand_item:item_name}` | `minecraft:shield` |
+| `{player_armor_container:<inner_placeholder_spec>}` | 玩家的盔甲容器。可用于获取盔甲容器的属性，例如 `{player_armor_container:container_size}` | `4` |
+| `{player_level}` | 玩家的经验等级 | `30` |
 
 ### 容器上下文 (`ContainerContext`)
 
@@ -154,6 +157,7 @@
 | `{server_name}`           | 服务器名称           | `My Minecraft Server` |
 | `{server_port}`           | 服务器端口           | `19132`            |
 | `{server_portv6}`         | 服务器 IPv6 端口     | `19133`            |
+| `{server_mod_count}`      | 服务器加载的模组总数 | `5`                |
 
 ### 系统上下文 (`SystemContext`)
 

@@ -11,7 +11,7 @@
 #include "mc/world/level/Level.h"
 #include "mc/world/level/storage/LevelData.h"
 #include "mc/server/PropertiesSettings.h"
-
+#include "ll/api/mod/ModManagerRegistry.h" 
 
 namespace PA {
 
@@ -211,6 +211,24 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
         ),
         owner,
         300
+    );
+
+    // {server_mod_count}
+    svc->registerCachedPlaceholder(
+        "",
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
+            "{server_mod_count}",
+            +[](std::string& out) {
+                size_t totalModCount = 0;
+                for (auto& manager : ll::mod::ModManagerRegistry::getInstance().managers()) {
+                    totalModCount += manager.getModCount();
+                }
+                out = std::to_string(totalModCount);
+            },
+            60 // 缓存 1 分钟
+        ),
+        owner,
+        60
     );
 }
 

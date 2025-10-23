@@ -4,11 +4,11 @@
 #include "ll/api/service/Bedrock.h"
 #include "mc/deps/core/platform/BuildPlatform.h"
 #include "mc/network/ServerNetworkHandler.h"
-#include "mc/platform/UUID.h" // Added for Player UUID
+#include "mc/platform/UUID.h" 
 #include "mc/server/ServerPlayer.h"
-#include "mc/world/actor/Actor.h"         // Added for ActorContext
-#include "mc/world/actor/player/Player.h" // Added for Player XUID
-#include "mc/world/level/GameType.h" // Added for Player GameType
+#include "mc/world/actor/Actor.h"        
+#include "mc/world/actor/player/Player.h" 
+#include "mc/world/level/GameType.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/scores/Objective.h"
 #include <magic_enum.hpp>
@@ -16,6 +16,11 @@
 #include "mc/world/scores/Scoreboard.h"
 #include "mc/world/scores/ScoreboardId.h"
 #include "mc/world/attribute/AttributeInstance.h"
+#include "mc/world/actor/provider/ActorEquipment.h" 
+#include "mc/world/Container.h" 
+#include "mc/world/item/ItemStack.h" 
+#include "mc/world/item/ItemStackBase.h" 
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -131,11 +136,11 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {player_name}
+    // {player_realname}
     svc->registerPlaceholder(
         "",
         std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_name}",
+            "{player_realname}",
             +[](const PlayerContext& c, std::string& out) {
                 out.clear();
                 if (c.player) out = c.player->getRealName();
@@ -333,6 +338,52 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
                 if (c.player) out = c.player->getIPAndPort();
             }
         ),
+        owner
+    );
+
+    // {player_level}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
+            "{player_level}",
+            +[](const PlayerContext& c, std::string& out) {
+                out.clear();
+                if (c.player) out = std::to_string(c.player->getAttribute(Player::LEVEL()).mCurrentValue);
+            }
+        ),
+        owner
+    );
+
+    // {player_offhand_item:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_offhand_item",
+        PlayerContext::kTypeId,
+        ItemStackBaseContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // getOffhandSlot() 返回 ItemStack const&，需要转换为 const ItemStackBase*
+            return (void*)&playerCtx->player->getOffhandSlot();
+        },
+        owner
+    );
+
+    // {player_armor_container:<inner_placeholder_spec>}
+    svc->registerContextAlias(
+        "player_armor_container",
+        PlayerContext::kTypeId,
+        ContainerContext::kTypeId,
+        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
+            const auto* playerCtx = static_cast<const PlayerContext*>(fromCtx);
+            if (!playerCtx || !playerCtx->player) {
+                return nullptr;
+            }
+            // 获取玩家盔甲容器
+            // ActorEquipment::getArmorContainer 返回 SimpleContainer&，SimpleContainer 继承自 Container
+            return (void*)&ActorEquipment::getArmorContainer(playerCtx->player->getEntityContext());
+        },
         owner
     );
 }
