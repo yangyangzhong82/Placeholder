@@ -96,19 +96,7 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {item_is_damaged}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_damaged}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isDamaged = false;
-                if (c.itemStackBase) isDamaged = c.itemStackBase->isDamaged();
-                out = isDamaged ? "true" : "false";
-            }
-        ),
-        owner
-    );
+
 
     // {item_damage_value}
     svc->registerPlaceholder(
@@ -123,18 +111,7 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {item_max_damage}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_max_damage}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getMaxDamage());
-            }
-        ),
-        owner
-    );
+
 
     // {item_lore}
     svc->registerPlaceholder(
@@ -352,33 +329,9 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {item_is_full_stack}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_full_stack}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isFull = false;
-                if (c.itemStackBase) isFull = c.itemStackBase->isFullStack();
-                out = isFull ? "true" : "false";
-            }
-        ),
-        owner
-    );
 
-    // {item_has_glint}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_has_glint}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool hasGlint = false;
-                if (c.itemStackBase) hasGlint = c.itemStackBase->isGlint();
-                out = hasGlint ? "true" : "false";
-            }
-        ),
-        owner
-    );
+
+
 
     // {item_is_horse_armor}
     svc->registerPlaceholder(
@@ -394,19 +347,6 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {item_is_humanoid_armor}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_humanoid_armor}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isHumanoidArmor = false;
-                if (c.itemStackBase) isHumanoidArmor = c.itemStackBase->isHumanoidArmorItem();
-                out = isHumanoidArmor ? "true" : "false";
-            }
-        ),
-        owner
-    );
 
     // {item_is_humanoid_wearable_block}
     svc->registerPlaceholder(
@@ -422,49 +362,9 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {item_is_stackable}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_stackable}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isStackable = false;
-                if (c.itemStackBase) isStackable = c.itemStackBase->isStackable();
-                out = isStackable ? "true" : "false";
-            }
-        ),
-        owner
-    );
 
-    // {item_cooldown_type}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_cooldown_type}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = c.itemStackBase->getItem()->getCooldownType().getString();
-                }
-            }
-        ),
-        owner
-    );
 
-    // {item_cooldown_time}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_cooldown_time}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = std::to_string(c.itemStackBase->getItem()->getCooldownTime());
-                }
-            }
-        ),
-        owner
-    );
+ 
 
     // {item_is_music_disk}
     svc->registerPlaceholder(

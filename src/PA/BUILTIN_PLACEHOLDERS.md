@@ -104,7 +104,6 @@
 | `{block_actor_pos_z}`  | 方块实体的 Z 坐标                          | `200`                        |
 | `{block_actor_type_name}` | 方块实体的类型名称                       | `ChestBlockActor`            |
 | `{block_actor_custom_name}` | 方块实体的自定义名称                     | `我的箱子`                   |
-| `{block_actor_is_movable}` | 方块实体是否可移动                       | `true`                       |
 | `{block_actor_repair_cost}` | 方块实体的修复成本                       | `0`                          |
 | `{block_actor_has_container}` | 方块实体是否包含容器                     | `true`                       |
 
@@ -128,9 +127,7 @@
 | `{item_max_stack_size}`| 物品的最大堆叠数量                         | `64`                         |
 | `{item_is_null}`       | 物品是否为空                               | `false`                      |
 | `{item_is_enchanted}`  | 物品是否附魔                               | `true`                       |
-| `{item_is_damaged}`    | 物品是否损坏                               | `false`                      |
 | `{item_damage_value}`  | 物品的当前损坏值                           | `0`                          |
-| `{item_max_damage}`    | 物品的最大损坏值                           | `100`                        |
 | `{item_lore}`          | 物品的 Lore (多行文本，每行以换行符分隔) | `第一行 Lore\n第二行 Lore` |
 | `{item_custom_name}`   | 物品的自定义名称                         | `我的钻石剑`                 |
 | `{item_id}`            | 物品的数字 ID                            | `276`                        |

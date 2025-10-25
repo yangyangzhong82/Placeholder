@@ -1,24 +1,23 @@
 #include "PA/Placeholders/ContextAliasPlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
-#include "PA/Placeholders/BlockPlaceholders.h" // Added for BlockContext
-#include "mc/world/item/ItemStack.h" // Added for ItemStack
-#include "mc/world/item/ItemStackBase.h" // Added for ItemStackBase
-#include "mc/world/item/ItemStackBase.h" // Added for ItemStackBase
+#include "PA/Placeholders/BlockPlaceholders.h" 
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/item/ItemStackBase.h" 
 #include "mc/world/actor/player/Player.h"
-#include "mc/world/level/BlockPos.h"    // Added for BlockPos
-#include "mc/world/level/BlockSource.h" // Added for BlockSource
-#include "mc/world/level/block/Block.h" // Added for Block
+#include "mc/world/level/BlockPos.h"    
+#include "mc/world/level/BlockSource.h" 
+#include "mc/world/level/block/Block.h" 
 #include "mc/world/phys/HitResult.h"
-#include "mc/world/level/block/BlockLegacy.h" // For BlockLegacy
-#include "mc/world/level/block/BlockProperty.h" // For BlockProperty
-#include "mc/world/level/material/Material.h" // For MaterialType
-#include "mc/util/BlockUtils.h" // For BlockUtils::isLiquidSource
-#include "mc/world/actor/Actor.h" // For Actor::traceRay
-#include "PA/ParameterParser.h" // For parsing arguments
-#include "mc/world/actor/player/PlayerInventory.h" // Add PlayerInventory header
-#include "mc/world/actor/player/Inventory.h" // Add Inventory header
-#include "mc/world/level/block/actor/BlockActor.h" // Add BlockActor header
+#include "mc/world/level/block/BlockType.h" 
+#include "mc/world/level/block/BlockProperty.h" 
+#include "mc/world/level/material/Material.h" 
+#include "mc/util/BlockUtils.h" 
+#include "mc/world/actor/Actor.h" 
+#include "PA/ParameterParser.h" 
+#include "mc/world/actor/player/PlayerInventory.h" 
+#include "mc/world/actor/player/Inventory.h" 
+#include "mc/world/level/block/actor/BlockActor.h" 
 
 
 namespace PA {
@@ -144,7 +143,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                     if (solidOnly && !block.mCachedComponentData->mIsSolid) {
                         return false;
                     }
-                    if (fullOnly && !block.isSlabBlock()) {
+                    if (fullOnly && !block.getBlockType().isSlabBlock()) {
                         return false;
                     }
                     if (!includeLiquid && BlockUtils::isLiquidSource(block)) {
@@ -167,10 +166,12 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
 
             Block const& bl = actor->getDimensionBlockSource().getBlock(bp);
             // 检查是否是空气或无效方块
-            if (bl.isAir() || (bl.getLegacyBlock().mProperties == BlockProperty::None && bl.getLegacyBlock().mMaterial.mType == MaterialType::Any)) {
+            if (bl.isAir()
+                || (bl.getBlockType().mProperties == BlockProperty::None
+                    && bl.getBlockType().mMaterial.mType == MaterialType::Any)) {
                 return nullptr;
             }
-            
+
             return (void*)&bl; // 返回 const Block*
         },
         owner
@@ -365,7 +366,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                     if (solidOnly && !block.mCachedComponentData->mIsSolid) {
                         return false;
                     }
-                    if (fullOnly && !block.isSlabBlock()) {
+                    if (fullOnly && !block.getBlockType().isSlabBlock()) {
                         return false;
                     }
                     if (!includeLiquid && BlockUtils::isLiquidSource(block)) {

@@ -89,21 +89,7 @@ void registerBlockActorPlaceholders(IPlaceholderService* svc) {
         owner
     );
 
-    // {block_actor_is_movable}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_is_movable}",
-            +[](const BlockActorContext& c, std::string& out) {
-                bool isMovable = false;
-                if (c.blockActor) {
-                    isMovable = c.blockActor->mIsMovable; 
-                }
-                out = isMovable ? "true" : "false";
-            }
-        ),
-        owner
-    );
+
 
     // {block_actor_repair_cost}
     svc->registerPlaceholder(
