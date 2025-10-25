@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-## [0.4.1]
+## [0.4.1] 2025-10-25
 
 ### Fixed
 - 修复了 `AdapterAliasPlaceholder::evaluateWithArgs` 中无参数上下文别名（如 `player_inventory`）的参数分割逻辑错误，导致嵌套占位符解析失败的问题。
