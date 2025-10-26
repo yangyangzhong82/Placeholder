@@ -66,11 +66,11 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
         // Find the longest registered placeholder that is a prefix of `content`.
         for (size_t split_pos = content.length();;) {
             std::string potential_token = content.substr(0, split_pos);
-            auto [found_ph, found_cached_entry] = registry.findPlaceholder(potential_token, ctx);
+            auto        find_result     = registry.findPlaceholder(potential_token, ctx);
 
-            if (found_ph) {
-                ph          = found_ph;
-                cachedEntry = found_cached_entry;
+            if (find_result.placeholder) {
+                ph          = find_result.placeholder;
+                cachedEntry = find_result.entry;
                 token       = potential_token;
                 if (split_pos < content.length()) {
                     if (content[split_pos] == ':') {

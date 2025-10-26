@@ -522,20 +522,19 @@ private:
     const PlaceholderRegistry& mReg;
 };
 
-std::pair<std::shared_ptr<const IPlaceholder>, const CachedEntry*>
-PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
+LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
     auto snapshot = mSnapshot.load();
 
     // 1. Check cached server placeholders
     auto cachedServerIt = snapshot->cached_server.find(token);
     if (cachedServerIt != snapshot->cached_server.end()) {
-        return std::make_pair(cachedServerIt->second.ptr, &cachedServerIt->second);
+        return {cachedServerIt->second.ptr, &cachedServerIt->second, snapshot};
     }
 
     // 2. Check non-cached server placeholders
     auto serverIt = snapshot->server.find(token);
     if (serverIt != snapshot->server.end()) {
-        return {serverIt->second.ptr, nullptr};
+        return {serverIt->second.ptr, nullptr, snapshot};
     }
 
     if (ctx) {
@@ -557,7 +556,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
                                 ad.resolver,
                                 *this
                             );
-                            return {aliasPh, nullptr};
+                            return {aliasPh, nullptr, snapshot};
                         }
                     }
                 }
@@ -570,7 +569,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
             if (it != snapshot->cached_typed.end()) {
                 auto placeholderIt = it->second.find(token);
                 if (placeholderIt != it->second.end()) {
-                    return std::make_pair(placeholderIt->second.ptr, &placeholderIt->second);
+                    return {placeholderIt->second.ptr, &placeholderIt->second, snapshot};
                 }
             }
         }
@@ -581,7 +580,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
             if (it != snapshot->typed.end()) {
                 auto placeholderIt = it->second.find(token);
                 if (placeholderIt != it->second.end()) {
-                    return {placeholderIt->second.ptr, nullptr};
+                    return {placeholderIt->second.ptr, nullptr, snapshot};
                 }
             }
         }
@@ -595,7 +594,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
                 if (relIt != mainIt->second.end()) {
                     auto placeholderIt = relIt->second.find(token);
                     if (placeholderIt != relIt->second.end()) {
-                        return std::make_pair(placeholderIt->second.ptr, &placeholderIt->second);
+                        return {placeholderIt->second.ptr, &placeholderIt->second, snapshot};
                     }
                 }
             }
@@ -609,7 +608,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
                 if (relIt != mainItNonCached->second.end()) {
                     auto placeholderIt = relIt->second.find(token);
                     if (placeholderIt != relIt->second.end()) {
-                        return {placeholderIt->second.ptr, nullptr};
+                        return {placeholderIt->second.ptr, nullptr, snapshot};
                     }
                 }
             }
@@ -624,7 +623,7 @@ PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* c
         // For now, we'll just let it fall through to the default.
     }
 
-    return {nullptr, nullptr};
+    return {nullptr, nullptr, nullptr};
 }
 
 const Adapter* PlaceholderRegistry::findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const {

@@ -62,6 +62,12 @@ struct CachedEntry {
 
 class PlaceholderRegistry; // Forward declaration
 
+struct LookupResult {
+    std::shared_ptr<const IPlaceholder> placeholder;
+    const CachedEntry*                  entry = nullptr;
+    std::shared_ptr<const void>         snapshot_guard;
+};
+
 // ScopedPlaceholderRegistrar 的实现
 class ScopedPlaceholderRegistrar : public IScopedPlaceholderRegistrar {
 public:
@@ -144,8 +150,7 @@ public:
     std::vector<std::pair<std::string, std::shared_ptr<const IPlaceholder>>> getServerPlaceholders() const;
 
     // 修改 findPlaceholder 的返回类型，以支持缓存
-    std::pair<std::shared_ptr<const IPlaceholder>, const CachedEntry*>
-    findPlaceholder(const std::string& token, const IContext* ctx) const;
+    LookupResult findPlaceholder(const std::string& token, const IContext* ctx) const;
 
     // 查找上下文别名
     const Adapter* findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;

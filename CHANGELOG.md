@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] 2025-10-26
+### Fixed
+- 修复了 `PlaceholderRegistry::findPlaceholder` 在并发场景下可能返回悬垂指针的问题。通过引入一个持有快照生命周期的 `LookupResult` 结构体，确保了返回的 `CachedEntry*` 指针在被使用期间始终有效。
+
 ## [0.4.2] 2025-10-26
+
+
 
 ### Changed
 - 适配LL1.6.1 并删除部分默认占位符以做适配。
