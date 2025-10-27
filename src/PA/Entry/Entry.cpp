@@ -16,6 +16,8 @@ Entry& Entry::getInstance() {
     return instance;
 }
 
+ll::io::Logger& logger = Entry::getInstance().getSelf().getLogger();
+
 bool Entry::load() {
     getSelf().getLogger().debug("Loading...");
     ConfigManager::getInstance().load((getSelf().getConfigDir() / "config.json").string());

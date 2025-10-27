@@ -1,14 +1,13 @@
 #pragma once
 
 #include "ll/api/mod/NativeMod.h"
-#include "PA/PlaceholderAPI.h" // 引入 PA_API 宏定义
 
 namespace PA {
 
 class Entry {
 
 public:
-    PA_API static Entry& getInstance();
+    static Entry& getInstance();
 
     Entry() : mSelf(*ll::mod::NativeMod::current()) {}
 

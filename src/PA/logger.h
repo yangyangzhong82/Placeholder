@@ -2,5 +2,5 @@
 #include "ll/api/io/Logger.h"
 
 namespace PA{
-inline ll::io::Logger& logger = Entry::getInstance().getSelf().getLogger(); // logger.Trace Debug Info Warn Error Fatal
+extern ll::io::Logger& logger; // logger.Trace Debug Info Warn Error Fatal
 } // namespace CT
