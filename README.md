@@ -139,21 +139,28 @@ mc.listen("onJoin", (player) => {
 
 1.  **定义回调函数**: 在 `JS_CB_NS` 命名空间下，使用 `ll.export` 定义一个新的 JavaScript 回调函数。确保其签名与您希望支持的上下文类型（服务器、玩家、实体等）相匹配。
 
-    例如，一个简单的服务器级占位符回调：
+    回调函数通常接收 `token` (占位符名称), `param` (占位符参数，如果存在), 以及可选的上下文对象 (如 `Player*`, `Actor*`)。
+
+    例如，一个支持参数的玩家上下文占位符回调：
     ```javascript
-    ll.export((token, param) => {
-        return `这是一个新的服务器级占位符！参数：${param}`;
-    }, JS_CB_NS, "myNewServerPlaceholder");
+    ll.export((token, param, player) => {
+        const playerName = player ? player.name : "未知玩家";
+        if (param) {
+            return `玩家 ${playerName} 的自定义消息: ${param}`;
+        }
+        return `你好，${playerName}！`;
+    }, JS_CB_NS, "myParameterizedPlayerPlaceholder");
     ```
 
 2.  **注册占位符**: 使用 `PA` 对象中相应的 `register*Placeholder` 函数注册您的占位符。
 
-    例如，注册上述服务器级占位符：
+    例如，注册上述支持参数的玩家上下文占位符：
     ```javascript
-    const okNew = PA.registerServerPlaceholder("js", "my_new_placeholder", JS_CB_NS, "myNewServerPlaceholder");
+    const okNew = PA.registerPlayerPlaceholder("js", "my_param_player", JS_CB_NS, "myParameterizedPlayerPlaceholder");
     if (okNew) {
-        logger.info("已注册新的 JS 占位符：{js:my_new_placeholder}");
+        logger.info("已注册新的 JS 占位符：{js:my_param_player} (支持参数)");
     }
     ```
+    现在您可以在游戏中使用 `{js:my_param_player}` 或 `{js:my_param_player:您的参数}`。
 
 **请注意**: 您可以使用的内置占位符取决于 `PlaceholderAPI` C++ 插件中注册了哪些。请参考其文档以获取所有可用的内置占位符列表。对于自定义 JS 占位符，您需要确保 `ll.export` 的回调函数签名与 `PA.register*Placeholder` 函数所期望的上下文类型相匹配。如果需要注册缓存占位符，只需在注册时为 `register*Placeholder` 函数的 `cacheDuration` 参数传入一个大于 0 的值即可。
