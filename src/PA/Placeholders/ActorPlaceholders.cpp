@@ -2,14 +2,16 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
-#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h" // 提供 EntityRegistry 的完整定义
-#include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h" // 确保 EntityContext 尽早被完全定义
+#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h" 
+#include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h"
 #include "mc/deps/game_refs/GameRefs.h"
 #include "mc/deps/game_refs/OwnerPtr.h"
 #include "mc/legacy/ActorRuntimeID.h"
 #include "mc/world/actor/Actor.h"
-#include "mc/world/effect/MobEffect.h" // 引入 MobEffect.h
-#include "mc/world/effect/MobEffectInstance.h" // 引入 MobEffectInstance.h
+#include "mc/world/effect/MobEffect.h" 
+#include "mc/world/effect/MobEffectInstance.h"
+
+#include "mc/server/commands/CommandUtils.h"
 
 namespace PA {
 
@@ -310,6 +312,19 @@ void registerActorPlaceholders(IPlaceholderService* svc) {
             +[](const ActorContext& c, std::string& out) {
                 out = "0";
                 if (c.actor) out = std::to_string(c.actor->getMaxHealth());
+            }
+        ),
+        owner
+    );
+
+    // {actor_name}
+    svc->registerPlaceholder(
+        "",
+        std::make_shared<TypedLambdaPlaceholder<ActorContext, void (*)(const ActorContext&, std::string&)>>(
+            "{actor_name}",
+            +[](const ActorContext& c, std::string& out) {
+                out = "N/A";
+                if (c.actor) out = CommandUtils::getActorName(*c.actor);
             }
         ),
         owner

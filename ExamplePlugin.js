@@ -8,8 +8,6 @@ const PA = {
   replace: ll.import('PA', 'replace'),
 
   registerPlayerPlaceholder: ll.import('PA', 'registerPlayerPlaceholder'),
-  // registerMobPlaceholder: ll.import("PA", "registerMobPlaceholder"),
-  // lse没有Mob这个对象，不要用
   registerActorPlaceholder: ll.import('PA', 'registerActorPlaceholder'),
   registerServerPlaceholder: ll.import('PA', 'registerServerPlaceholder'),
   registerPlaceholderByKind: ll.import('PA', 'registerPlaceholderByKind'),
