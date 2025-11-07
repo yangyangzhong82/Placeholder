@@ -405,13 +405,13 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             }
 
             // 创建一个 WorldCoordinateData 实例，并返回其指针
-            // 注意：这里使用静态变量，存在线程安全问题，但为了匹配 ContextResolverFn 的签名，暂时如此处理
-            // 更好的做法是 ContextResolverFn 返回 std::shared_ptr<WorldCoordinateData>，但需要修改 ContextResolverFn 的签名
-            static WorldCoordinateData worldCoordData;
-            worldCoordData.pos        = playerCtx->player->getPosition();
-            worldCoordData.dimensionId = playerCtx->player->getDimensionId();
-
-            return (void*)&worldCoordData;
+            // 创建一个 WorldCoordinateData 实例，并返回其指针
+            auto data = std::make_shared<WorldCoordinateData>();
+            data->pos = playerCtx->player->getPosition();
+            data->dimensionId = playerCtx->player->getDimensionId();
+            
+            // 使用 WorldCoordinateContext 的工厂方法创建上下文
+            return WorldCoordinateContext::factory(data.get()).release();
         },
         owner
     );

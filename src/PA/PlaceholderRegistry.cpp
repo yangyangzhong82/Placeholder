@@ -455,24 +455,27 @@ public:
             // Fallback to old switch-case for built-in types if no factory is registered
             switch (mTo) {
             case ActorContext::kTypeId: {
-                ActorContext rc;
-                rc.actor = static_cast<Actor*>(raw);
-                out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                // 使用 ActorContext::factory
+                std::unique_ptr<IContext> targetCtx = ActorContext::factory(raw);
+                if (targetCtx) {
+                    out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
+                }
                 break;
             }
             case MobContext::kTypeId: {
-                MobContext rc;
-                rc.mob   = static_cast<Mob*>(raw);
-                rc.actor = static_cast<Actor*>(raw); // MobContext 继承自 ActorContext
-                out      = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                // 使用 MobContext::factory
+                std::unique_ptr<IContext> targetCtx = MobContext::factory(raw);
+                if (targetCtx) {
+                    out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
+                }
                 break;
             }
             case PlayerContext::kTypeId: {
-                PlayerContext rc;
-                rc.player = static_cast<Player*>(raw);
-                rc.mob    = static_cast<Mob*>(raw);
-                rc.actor  = static_cast<Actor*>(raw);
-                out       = PlaceholderProcessor::process(wrapped, &rc, mReg);
+                // 使用 PlayerContext::factory
+                std::unique_ptr<IContext> targetCtx = PlayerContext::factory(raw);
+                if (targetCtx) {
+                    out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
+                }
                 break;
             }
             case BlockContext::kTypeId: {

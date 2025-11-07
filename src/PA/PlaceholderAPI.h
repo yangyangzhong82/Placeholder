@@ -69,6 +69,15 @@ struct PA_API ActorContext : public IContext {
     std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         return {kTypeId}; // Actor 不继承其他上下文
     }
+    // 确保 ActorContext 也能从 PlayerContext 构造
+    static std::unique_ptr<IContext> factory(void* rawObject) {
+        if (rawObject) {
+            auto ctx = std::make_unique<ActorContext>();
+            ctx->actor = static_cast<Actor*>(rawObject);
+            return ctx;
+        }
+        return nullptr;
+    }
     std::string getContextInstanceKey() const noexcept override {
         return actor ? std::to_string(reinterpret_cast<uintptr_t>(actor)) : "";
     }
@@ -84,6 +93,16 @@ struct PA_API MobContext : public ActorContext { // Mob 继承自 Actor
         inherited.push_back(kTypeId);
         return inherited;
     }
+    // 确保 MobContext 也能从 PlayerContext 构造
+    static std::unique_ptr<IContext> factory(void* rawObject) {
+        if (rawObject) {
+            auto ctx = std::make_unique<MobContext>();
+            ctx->mob = static_cast<Mob*>(rawObject);
+            ctx->actor = static_cast<Actor*>(rawObject); // MobContext 继承自 ActorContext
+            return ctx;
+        }
+        return nullptr;
+    }
     std::string getContextInstanceKey() const noexcept override {
         return mob ? std::to_string(reinterpret_cast<uintptr_t>(mob)) : "";
     }
@@ -98,6 +117,17 @@ struct PA_API PlayerContext : public MobContext { //  Player 继承自 Mob
         std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
+    }
+    // 确保 PlayerContext 也能从 PlayerContext 构造
+    static std::unique_ptr<IContext> factory(void* rawObject) {
+        if (rawObject) {
+            auto ctx = std::make_unique<PlayerContext>();
+            ctx->player = static_cast<Player*>(rawObject);
+            ctx->mob = static_cast<Mob*>(rawObject);
+            ctx->actor = static_cast<Actor*>(rawObject);
+            return ctx;
+        }
+        return nullptr;
     }
     std::string getContextInstanceKey() const noexcept override {
         return player ? std::to_string(reinterpret_cast<uintptr_t>(player)) : "";
@@ -172,6 +202,16 @@ struct PA_API WorldCoordinateContext : public IContext {
     }
     std::string getContextInstanceKey() const noexcept override {
         return data ? (data->pos.toString() + "_" + std::to_string(static_cast<int>(data->dimensionId))) : "";
+    }
+    // 为 WorldCoordinateContext 添加工厂方法
+    static std::unique_ptr<IContext> factory(void* rawObject) {
+        if (rawObject) {
+            auto ctx = std::make_unique<WorldCoordinateContext>();
+            // rawObject 实际上是指向 WorldCoordinateData 的指针
+            ctx->data = std::make_shared<WorldCoordinateData>(*static_cast<WorldCoordinateData*>(rawObject));
+            return ctx;
+        }
+        return nullptr;
     }
 };
 
