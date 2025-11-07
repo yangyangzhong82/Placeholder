@@ -456,7 +456,16 @@ public:
             switch (mTo) {
             case ActorContext::kTypeId: {
                 // 使用 ActorContext::factory
-                std::unique_ptr<IContext> targetCtx = ActorContext::factory(raw);
+                // 确保当 raw 是 Player* 或 Mob* 时，也能正确创建 ActorContext
+                std::unique_ptr<IContext> targetCtx;
+                if (mFrom == PlayerContext::kTypeId) {
+                    targetCtx = PlayerContext::factory(raw);
+                } else if (mFrom == MobContext::kTypeId) {
+                    targetCtx = MobContext::factory(raw);
+                } else {
+                    targetCtx = ActorContext::factory(raw);
+                }
+                
                 if (targetCtx) {
                     out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
                 }
