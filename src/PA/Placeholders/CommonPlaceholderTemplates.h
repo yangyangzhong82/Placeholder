@@ -18,7 +18,9 @@ template <typename Ctx, typename Fn>
 class TypedLambdaPlaceholder final : public PA::IPlaceholder {
 public:
     TypedLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
-    : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}
+    : token_(std::move(token)),
+      fn_(std::move(fn)),
+      cacheDuration_(cacheDuration) {}
 
     std::string_view token() const noexcept override { return token_; }
     uint64_t         contextTypeId() const noexcept override { return Ctx::kTypeId; }
@@ -35,11 +37,8 @@ public:
         }
     }
 
-    void evaluateWithArgs(
-        const PA::IContext*                           ctx,
-        const std::vector<std::string_view>&          args,
-        std::string&                                  out
-    ) const override {
+    void evaluateWithArgs(const PA::IContext* ctx, const std::vector<std::string_view>& args, std::string& out)
+        const override {
         const auto* c = static_cast<const Ctx*>(ctx);
         if constexpr (std::is_invocable_v<Fn, const Ctx&, const std::vector<std::string_view>&, std::string&>) {
             fn_(*c, args, out);
@@ -60,7 +59,9 @@ template <typename Fn>
 class ServerLambdaPlaceholder final : public PA::IPlaceholder {
 public:
     ServerLambdaPlaceholder(std::string token, Fn fn, unsigned int cacheDuration = 0)
-    : token_(std::move(token)), fn_(std::move(fn)), cacheDuration_(cacheDuration) {}
+    : token_(std::move(token)),
+      fn_(std::move(fn)),
+      cacheDuration_(cacheDuration) {}
 
     std::string_view token() const noexcept override { return token_; }
     uint64_t         contextTypeId() const noexcept override { return PA::kServerContextId; }
@@ -76,11 +77,8 @@ public:
         }
     }
 
-    void evaluateWithArgs(
-        const PA::IContext*                           ctx,
-        const std::vector<std::string_view>&          args,
-        std::string&                                  out
-    ) const override {
+    void evaluateWithArgs(const PA::IContext* ctx, const std::vector<std::string_view>& args, std::string& out)
+        const override {
         if constexpr (std::is_invocable_v<Fn, std::string&, const std::vector<std::string_view>&>) {
             fn_(out, args);
         } else {
@@ -105,5 +103,38 @@ inline std::tm local_tm(std::time_t t) {
 #endif
     return buf;
 }
+
+// 简化占位符注册的宏
+#define PA_REGISTER_SIMPLE_PLACEHOLDER(svc, owner, ctx_type, token_str, lambda_body)                                   \
+    (svc)->registerPlaceholder(                                                                                        \
+        "",                                                                                                            \
+        std::make_shared<TypedLambdaPlaceholder<ctx_type, void (*)(const ctx_type&, std::string&)>>(                   \
+            token_str,                                                                                                 \
+            +[](const ctx_type& c, std::string& out) lambda_body                                                       \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_REGISTER_SIMPLE_SERVER_PLACEHOLDER(svc, owner, token_str, lambda_body)                                      \
+    (svc)->registerPlaceholder(                                                                                        \
+        "",                                                                                                            \
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(                                             \
+            token_str,                                                                                                 \
+            +[](std::string & out) lambda_body                                                                         \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_REGISTER_ARGS_PLACEHOLDER(svc, owner, ctx_type, token_str, lambda_body)                                     \
+    (svc)->registerPlaceholder(                                                                                        \
+        "",                                                                                                            \
+        std::make_shared<TypedLambdaPlaceholder<                                                                       \
+            ctx_type,                                                                                                  \
+            void (*)(const ctx_type&, const std::vector<std::string_view>&, std::string&)>>(                           \
+            token_str,                                                                                                 \
+            +[](const ctx_type& c, const std::vector<std::string_view>& args, std::string& out) lambda_body            \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
 
 } // namespace PA

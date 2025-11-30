@@ -98,7 +98,7 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
             split_pos = prev_colon;
         }
 
-        logger.debug("1. Initial Parse: token='{}', param_part='{}'", token, param_part);
+        logger.debug("1. Initial Parse: token='{}', param_part='{}', ctx_type_id={}", token, param_part, ctx ? ctx->typeId() : 0);
         if (ph) {
             std::string evaluatedValue;
             // 占位符参数部分，用于生成缓存键和传递给占位符回调

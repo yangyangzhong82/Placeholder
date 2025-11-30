@@ -1,23 +1,24 @@
 #include "PA/Placeholders/ContextAliasPlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
-#include "PA/Placeholders/BlockPlaceholders.h" 
-#include "mc/world/item/ItemStack.h"
-#include "mc/world/item/ItemStackBase.h" 
+#include "PA/ParameterParser.h"
+#include "PA/Placeholders/BlockPlaceholders.h"
+#include "mc/util/BlockUtils.h"
+#include "mc/world/actor/Actor.h"
+#include "mc/world/actor/player/Inventory.h"
 #include "mc/world/actor/player/Player.h"
-#include "mc/world/level/BlockPos.h"    
-#include "mc/world/level/BlockSource.h" 
-#include "mc/world/level/block/Block.h" 
+#include "mc/world/actor/player/PlayerInventory.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/item/ItemStackBase.h"
+#include "mc/world/level/BlockPos.h"
+#include "mc/world/level/BlockSource.h"
+#include "mc/world/level/block/Block.h"
+#include "mc/world/level/block/BlockProperty.h"
+#include "mc/world/level/block/BlockType.h"
+#include "mc/world/level/block/actor/BlockActor.h"
+#include "mc/world/level/material/Material.h"
 #include "mc/world/phys/HitResult.h"
-#include "mc/world/level/block/BlockType.h" 
-#include "mc/world/level/block/BlockProperty.h" 
-#include "mc/world/level/material/Material.h" 
-#include "mc/util/BlockUtils.h" 
-#include "mc/world/actor/Actor.h" 
-#include "PA/ParameterParser.h" 
-#include "mc/world/actor/player/PlayerInventory.h" 
-#include "mc/world/actor/player/Inventory.h" 
-#include "mc/world/level/block/actor/BlockActor.h" 
+
 
 
 namespace PA {
@@ -58,8 +59,8 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                 }
             }
 
-            HitResult result = actor->traceRay(maxDistance, true, false); // 使用 actor->traceRay
-            auto      targetActor  = result.getEntity();
+            HitResult result      = actor->traceRay(maxDistance, true, false); // 使用 actor->traceRay
+            auto      targetActor = result.getEntity();
             if (targetActor) {
                 logger.info(
                     "Actor {} is looking at entity type: {}",
@@ -207,9 +208,10 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             int slotIndex = 0; // 默认槽位为 0
 
             if (!args.empty()) {
-                std::string_view full_arg = args[0];
+                std::string_view full_arg  = args[0];
                 size_t           colon_pos = full_arg.find(':');
-                std::string_view slot_arg = (colon_pos != std::string_view::npos) ? full_arg.substr(0, colon_pos) : full_arg;
+                std::string_view slot_arg =
+                    (colon_pos != std::string_view::npos) ? full_arg.substr(0, colon_pos) : full_arg;
 
                 int parsedValue;
                 if (auto [ptr, ec] = std::from_chars(slot_arg.data(), slot_arg.data() + slot_arg.size(), parsedValue);
@@ -225,32 +227,6 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                     return nullptr;
                 }
                 return (void*)&item;
-            }
-            return nullptr;
-        },
-        owner
-    );
-
-    // {item_block:<inner_placeholder_spec>}
-    svc->registerContextAlias(
-        "item_block",
-        ItemStackBaseContext::kTypeId,
-        BlockContext::kTypeId,
-        +[](const PA::IContext* fromCtx, const std::vector<std::string_view>&) -> void* {
-            const auto* itemStackBaseCtx = static_cast<const ItemStackBaseContext*>(fromCtx);
-            if (!itemStackBaseCtx || !itemStackBaseCtx->itemStackBase) {
-                return nullptr;
-            }
-
-            const ItemStackBase* itemStackBase = itemStackBaseCtx->itemStackBase;
-            if (!itemStackBase || itemStackBase->isNull()) {
-                return nullptr;
-            }
-
-            // 直接从 ItemStackBase 获取 Block
-            const Block* block = itemStackBase->mBlock;
-            if (block && !block->isAir()) { // 检查是否是有效的方块
-                return (void*)block;
             }
             return nullptr;
         },
@@ -406,10 +382,10 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
 
             // 创建一个 WorldCoordinateData 实例，并返回其指针
             // 创建一个 WorldCoordinateData 实例，并返回其指针
-            auto data = std::make_shared<WorldCoordinateData>();
-            data->pos = playerCtx->player->getPosition();
+            auto data         = std::make_shared<WorldCoordinateData>();
+            data->pos         = playerCtx->player->getPosition();
             data->dimensionId = playerCtx->player->getDimensionId();
-            
+
             // 使用 WorldCoordinateContext 的工厂方法创建上下文
             return WorldCoordinateContext::factory(data.get()).release();
         },
