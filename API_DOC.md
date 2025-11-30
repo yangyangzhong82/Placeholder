@@ -197,7 +197,94 @@ if (!service) {
 
 ### 3. 注册自定义占位符
 
-开发者可以实现 `PA::IPlaceholder` 接口来创建自定义占位符。
+#### 推荐方式：使用简化宏
+
+从最新版本开始，强烈推荐使用 `CommonPlaceholderTemplates.h` 中提供的简化宏来注册占位符。这些宏大幅简化了代码，提高了可读性和可维护性。
+
+**可用的宏：**
+
+1. **`PA_SIMPLE(svc, owner, ctx_type, token_str, lambda_body)`** - 简单上下文占位符（无参数）
+2. **`PA_CACHED(svc, owner, ctx_type, token_str, cache_duration, lambda_body)`** - 带缓存的上下文占位符
+3. **`PA_WITH_ARGS(svc, owner, ctx_type, token_str, lambda_body)`** - 带参数的上下文占位符
+4. **`PA_WITH_ARGS_CACHED(svc, owner, ctx_type, token_str, cache_duration, lambda_body)`** - 带参数且带缓存的上下文占位符
+5. **`PA_SERVER(svc, owner, token_str, lambda_body)`** - 服务器级占位符（无参数）
+6. **`PA_SERVER_CACHED(svc, owner, token_str, cache_duration, lambda_body)`** - 带缓存的服务器级占位符
+7. **`PA_SERVER_WITH_ARGS(svc, owner, token_str, lambda_body)`** - 带参数的服务器级占位符
+8. **`PA_SERVER_WITH_ARGS_CACHED(svc, owner, token_str, cache_duration, lambda_body)`** - 带参数且带缓存的服务器级占位符
+
+**使用示例：**
+
+```cpp
+#include "PA/PlaceholderAPI.h"
+#include "PA/Placeholders/CommonPlaceholderTemplates.h"
+
+void registerMyPlaceholders(PA::IPlaceholderService* svc) {
+    static int kOwnerTag = 0;
+    void* owner = &kOwnerTag;
+
+    // 1. 简单的玩家占位符
+    PA_SIMPLE(svc, owner, PA::PlayerContext, "{player_custom_name}", {
+        out = c.player ? c.player->getRealName() : "Unknown";
+    });
+
+    // 2. 带缓存的服务器占位符（缓存60秒）
+    PA_SERVER_CACHED(svc, owner, "{server_motd}", 60, {
+        out = "欢迎来到我的服务器！";
+    });
+
+    // 3. 带参数的占位符
+    PA_WITH_ARGS(svc, owner, PA::PlayerContext, "{player_custom_data}", {
+        if (!args.empty()) {
+            std::string key(args[0]);
+            out = getPlayerData(c.player, key);
+        } else {
+            out = "请提供数据键";
+        }
+    });
+
+    // 4. 带参数且带缓存的占位符（缓存30秒）
+    PA_WITH_ARGS_CACHED(svc, owner, PA::PlayerContext, "{player_rank}", 30, {
+        if (!args.empty()) {
+            std::string rankType(args[0]);
+            out = getPlayerRank(c.player, rankType);
+        } else {
+            out = getPlayerDefaultRank(c.player);
+        }
+    });
+
+    // 5. 带参数的服务器级占位符
+    PA_SERVER_WITH_ARGS(svc, owner, "{world_info}", {
+        if (!args.empty()) {
+            std::string worldName(args[0]);
+            out = getWorldInfo(worldName);
+        } else {
+            out = "请提供世界名称";
+        }
+    });
+}
+```
+
+**宏参数说明：**
+- `svc`: `IPlaceholderService*` 服务指针
+- `owner`: `void*` 所有者标识，用于批量注销
+- `ctx_type`: 上下文类型（如 `PA::PlayerContext`, `PA::ActorContext` 等）
+- `token_str`: 占位符标识字符串（如 `"{player_name}"`）
+- `cache_duration`: 缓存持续时间（秒）
+- `lambda_body`: Lambda 函数体，可以直接访问：
+  - `c`: 上下文对象（类型为 `const ctx_type&`）
+  - `out`: 输出字符串引用（类型为 `std::string&`）
+  - `args`: 参数向量（仅在 `_WITH_ARGS` 宏中可用，类型为 `const std::vector<std::string_view>&`）
+
+**优势：**
+- 代码量减少 50% 以上
+- 更清晰的代码结构
+- 减少模板代码错误
+- 统一的代码风格
+- 更易于维护
+
+#### 传统方式：实现 IPlaceholder 接口
+
+对于需要更复杂逻辑或特殊需求的场景，也可以直接实现 `PA::IPlaceholder` 接口来创建自定义占位符。
 
 ```cpp
 #include "PA/PlaceholderAPI.h"

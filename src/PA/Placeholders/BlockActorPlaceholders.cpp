@@ -2,8 +2,8 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/world/level/block/actor/BlockActor.h"
-#include "mc/world/level/BlockSource.h" // For BlockSource
-#include "mc/world/Container.h" // For Container
+#include "mc/world/level/BlockSource.h"
+#include "mc/world/Container.h"
 
 namespace PA {
 
@@ -12,111 +12,53 @@ void registerBlockActorPlaceholders(IPlaceholderService* svc) {
     void*      owner            = &kBuiltinOwnerTag;
 
     // {block_actor_pos}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_pos}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "0";
-                if (c.blockActor) out = (*c.blockActor->mPosition).toString();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_pos}", {
+        out = "0";
+        if (c.blockActor) out = (*c.blockActor->mPosition).toString();
+    });
 
     // {block_actor_pos_x}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_pos_x}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "0";
-                if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).x);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_pos_x}", {
+        out = "0";
+        if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).x);
+    });
 
     // {block_actor_pos_y}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_pos_y}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "0";
-                if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).y);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_pos_y}", {
+        out = "0";
+        if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).y);
+    });
 
     // {block_actor_pos_z}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_pos_z}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "0";
-                if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).z);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_pos_z}", {
+        out = "0";
+        if (c.blockActor) out = std::to_string((*c.blockActor->mPosition).z);
+    });
 
     // {block_actor_type_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_type_name}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "N/A";
-                if (c.blockActor) out = c.blockActor->getName(); // getName() 是一个方法，不需要解引用
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_type_name}", {
+        out = "N/A";
+        if (c.blockActor) out = c.blockActor->getName();
+    });
 
     // {block_actor_custom_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_custom_name}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "N/A";
-                if (c.blockActor) out = c.blockActor->mCustomName->mUnredactedString; 
-            }
-        ),
-        owner
-    );
-
-
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_custom_name}", {
+        out = "N/A";
+        if (c.blockActor) out = c.blockActor->mCustomName->mUnredactedString;
+    });
 
     // {block_actor_repair_cost}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_repair_cost}",
-            +[](const BlockActorContext& c, std::string& out) {
-                out = "0";
-                if (c.blockActor) out = std::to_string(c.blockActor->mRepairCost); 
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_repair_cost}", {
+        out = "0";
+        if (c.blockActor) out = std::to_string(c.blockActor->mRepairCost);
+    });
 
     // {block_actor_has_container}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockActorContext, void (*)(const BlockActorContext&, std::string&)>>(
-            "{block_actor_has_container}",
-            +[](const BlockActorContext& c, std::string& out) {
-                bool hasContainer = false;
-                if (c.blockActor) hasContainer = (c.blockActor->getContainer() != nullptr);
-                out = hasContainer ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_has_container}", {
+        bool hasContainer = false;
+        if (c.blockActor) hasContainer = (c.blockActor->getContainer() != nullptr);
+        out = hasContainer ? "true" : "false";
+    });
 }
 
 } // namespace PA

@@ -2,12 +2,12 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/world/item/ItemStackBase.h"
-#include "mc/world/item/Item.h" // For Item class and related enums (Rarity)
-#include "mc/world/item/ItemStack.h" // For ItemStack class
-#include "mc/deps/core/math/Color.h" // For mce::Color
-#include "mc/world/item/ItemColor.h" // For ItemColor enum
-#include "mc/world/item/Rarity.h"    // For Rarity enum
-#include "mc/deps/core/string/HashedString.h" // For HashedString
+#include "mc/world/item/Item.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/deps/core/math/Color.h"
+#include "mc/world/item/ItemColor.h"
+#include "mc/world/item/Rarity.h"
+#include "mc/deps/core/string/HashedString.h"
 #include <magic_enum.hpp>
 
 namespace PA {
@@ -16,802 +16,371 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
     static int kBuiltinOwnerTag = 0;
     void*      owner            = &kBuiltinOwnerTag;
 
-    // {item_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_name}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "N/A";
-                if (c.itemStackBase) out = c.itemStackBase->getDescriptionName();
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_name}", {
+        out = "N/A";
+        if (c.itemStackBase) out = c.itemStackBase->getDescriptionName();
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_count}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->mCount);
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_aux_value}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->getAuxValue());
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_max_stack_size}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->getMaxStackSize());
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_null}", {
+        bool isNull = true;
+        if (c.itemStackBase) isNull = c.itemStackBase->isNull();
+        out = isNull ? "true" : "false";
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_enchanted}", {
+        bool isEnchanted = false;
+        if (c.itemStackBase) isEnchanted = c.itemStackBase->isEnchanted();
+        out = isEnchanted ? "true" : "false";
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_damage_value}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->getDamageValue());
+    });
+
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_lore}", {
+        out = "";
+        if (c.itemStackBase) {
+            auto lore = c.itemStackBase->getCustomLore();
+            for (const auto& line : lore) {
+                out += line + "\n";
             }
-        ),
-        owner
-    );
+            if (!out.empty()) out.pop_back();
+        }
+    });
 
-    // {item_count}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_count}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->mCount);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_custom_name}", {
+        out = "";
+        if (c.itemStackBase) out = c.itemStackBase->getCustomName();
+    });
 
-    // {item_aux_value}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_aux_value}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getAuxValue());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_id}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->getId());
+    });
 
-    // {item_max_stack_size}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_max_stack_size}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getMaxStackSize());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_raw_name_id}", {
+        out = "";
+        if (c.itemStackBase) out = c.itemStackBase->getRawNameId();
+    });
 
-    // {item_is_null}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_null}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isNull = true;
-                if (c.itemStackBase) isNull = c.itemStackBase->isNull();
-                out = isNull ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_description_id}", {
+        out = "";
+        if (c.itemStackBase) out = c.itemStackBase->getDescriptionId();
+    });
 
-    // {item_is_enchanted}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_enchanted}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isEnchanted = false;
-                if (c.itemStackBase) isEnchanted = c.itemStackBase->isEnchanted();
-                out = isEnchanted ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_block}", {
+        bool isBlock = false;
+        if (c.itemStackBase) isBlock = c.itemStackBase->isBlock();
+        out = isBlock ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_armor}", {
+        bool isArmor = false;
+        if (c.itemStackBase) isArmor = c.itemStackBase->isArmorItem();
+        out = isArmor ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_potion}", {
+        bool isPotion = false;
+        if (c.itemStackBase) isPotion = c.itemStackBase->isPotionItem();
+        out = isPotion ? "true" : "false";
+    });
 
-    // {item_damage_value}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_damage_value}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getDamageValue());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_type_name}", {
+        out = "";
+        if (c.itemStackBase) out = c.itemStackBase->getTypeName();
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_base_repair_cost}", {
+        out = "0";
+        if (c.itemStackBase) out = std::to_string(c.itemStackBase->getBaseRepairCost());
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_color}", {
+        out = "0,0,0,0";
+        if (c.itemStackBase) {
+            mce::Color color = c.itemStackBase->getColor();
+            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
+                  std::to_string(static_cast<int>(color.g * 255)) + "," +
+                  std::to_string(static_cast<int>(color.b * 255)) + "," +
+                  std::to_string(static_cast<int>(color.a * 255));
+        }
+    });
 
-    // {item_lore}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_lore}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase) {
-                    auto lore = c.itemStackBase->getCustomLore();
-                    for (const auto& line : lore) {
-                        out += line + "\n";
-                    }
-                    if (!out.empty()) {
-                        out.pop_back(); // 移除最后一个换行符
-                    }
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_container_data}", {
+        bool hasData = false;
+        if (c.itemStackBase) hasData = c.itemStackBase->hasContainerData();
+        out = hasData ? "true" : "false";
+    });
 
-    // {item_custom_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_custom_name}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase) out = c.itemStackBase->getCustomName();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_custom_hover_name}", {
+        bool hasName = false;
+        if (c.itemStackBase) hasName = c.itemStackBase->hasCustomHoverName();
+        out = hasName ? "true" : "false";
+    });
 
-    // {item_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_id}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getId());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_damageable_item_type}", {
+        bool isDamageable = false;
+        if (c.itemStackBase) isDamageable = c.itemStackBase->isDamageableItem();
+        out = isDamageable ? "true" : "false";
+    });
 
-    // {item_raw_name_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_raw_name_id}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase) out = c.itemStackBase->getRawNameId();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_enchanting_book}", {
+        bool isBook = false;
+        if (c.itemStackBase) isBook = c.itemStackBase->isEnchantingBook();
+        out = isBook ? "true" : "false";
+    });
 
-    // {item_description_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_description_id}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase) out = c.itemStackBase->getDescriptionId();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_horse_armor}", {
+        bool isHorseArmor = false;
+        if (c.itemStackBase) isHorseArmor = c.itemStackBase->isHorseArmorItem();
+        out = isHorseArmor ? "true" : "false";
+    });
 
-    // {item_is_block}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_block}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isBlock = false;
-                if (c.itemStackBase) isBlock = c.itemStackBase->isBlock();
-                out = isBlock ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_humanoid_wearable_block}", {
+        bool isWearableBlock = false;
+        if (c.itemStackBase) isWearableBlock = c.itemStackBase->isHumanoidWearableBlockItem();
+        out = isWearableBlock ? "true" : "false";
+    });
 
-    // {item_is_armor}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_armor}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isArmor = false;
-                if (c.itemStackBase) isArmor = c.itemStackBase->isArmorItem();
-                out = isArmor ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_music_disk}", {
+        bool isMusicDisk = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isMusicDisk = c.itemStackBase->getItem()->isMusicDisk();
+        }
+        out = isMusicDisk ? "true" : "false";
+    });
 
-    // {item_is_potion}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_potion}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isPotion = false;
-                if (c.itemStackBase) isPotion = c.itemStackBase->isPotionItem();
-                out = isPotion ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_component_based}", {
+        bool isComponentBased = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isComponentBased = c.itemStackBase->getItem()->isComponentBased();
+        }
+        out = isComponentBased ? "true" : "false";
+    });
 
-    // {item_type_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_type_name}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "";
-                if (c.itemStackBase) out = c.itemStackBase->getTypeName();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_block_planter}", {
+        bool isBlockPlanter = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isBlockPlanter = c.itemStackBase->getItem()->isBlockPlanterItem();
+        }
+        out = isBlockPlanter ? "true" : "false";
+    });
 
-    // {item_base_repair_cost}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_base_repair_cost}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase) out = std::to_string(c.itemStackBase->getBaseRepairCost());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_bucket}", {
+        bool isBucket = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isBucket = c.itemStackBase->getItem()->isBucket();
+        }
+        out = isBucket ? "true" : "false";
+    });
 
-    // {item_color}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_color}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0,0,0,0"; // RGBA
-                if (c.itemStackBase) {
-                    mce::Color color = c.itemStackBase->getColor();
-                    out              = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                         std::to_string(static_cast<int>(color.g * 255)) + "," +
-                         std::to_string(static_cast<int>(color.b * 255)) + "," +
-                         std::to_string(static_cast<int>(color.a * 255));
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_candle}", {
+        bool isCandle = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isCandle = c.itemStackBase->getItem()->isCandle();
+        }
+        out = isCandle ? "true" : "false";
+    });
 
-    // {item_has_container_data}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_has_container_data}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool hasData = false;
-                if (c.itemStackBase) hasData = c.itemStackBase->hasContainerData();
-                out = hasData ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_dyeable}", {
+        bool isDyeable = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isDyeable = c.itemStackBase->getItem()->isDyeable();
+        }
+        out = isDyeable ? "true" : "false";
+    });
 
-    // {item_has_custom_hover_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_has_custom_hover_name}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool hasName = false;
-                if (c.itemStackBase) hasName = c.itemStackBase->hasCustomHoverName();
-                out = hasName ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_dye}", {
+        bool isDye = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isDye = c.itemStackBase->getItem()->isDye();
+        }
+        out = isDye ? "true" : "false";
+    });
 
-    // {item_is_damageable_item_type}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_damageable_item_type}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isDamageable = false;
-                if (c.itemStackBase) isDamageable = c.itemStackBase->isDamageableItem();
-                out = isDamageable ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_color_enum}", {
+        out = "None";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = magic_enum::enum_name(c.itemStackBase->getItem()->getItemColor());
+        }
+    });
 
-    // {item_is_enchanting_book}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_enchanting_book}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isBook = false;
-                if (c.itemStackBase) isBook = c.itemStackBase->isEnchantingBook();
-                out = isBook ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_fertilizer}", {
+        bool isFertilizer = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isFertilizer = c.itemStackBase->getItem()->isFertilizer();
+        }
+        out = isFertilizer ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_food_item_type}", {
+        bool isFood = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isFood = c.itemStackBase->getItem()->isFood();
+        }
+        out = isFood ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_throwable}", {
+        bool isThrowable = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isThrowable = c.itemStackBase->getItem()->isThrowable();
+        }
+        out = isThrowable ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_useable}", {
+        bool isUseable = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isUseable = c.itemStackBase->getItem()->isUseable();
+        }
+        out = isUseable ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_trim_allowed}", {
+        bool isTrimAllowed = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isTrimAllowed = c.itemStackBase->getItem()->isTrimAllowed();
+        }
+        out = isTrimAllowed ? "true" : "false";
+    });
 
-    // {item_is_horse_armor}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_horse_armor}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isHorseArmor = false;
-                if (c.itemStackBase) isHorseArmor = c.itemStackBase->isHorseArmorItem();
-                out = isHorseArmor ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_max_damage_type}", {
+        out = "0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = std::to_string(c.itemStackBase->getItem()->getMaxDamage());
+        }
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_attack_damage}", {
+        out = "0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = std::to_string(c.itemStackBase->getItem()->getAttackDamage());
+        }
+    });
 
-    // {item_is_humanoid_wearable_block}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_humanoid_wearable_block}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isWearableBlock = false;
-                if (c.itemStackBase) isWearableBlock = c.itemStackBase->isHumanoidWearableBlockItem();
-                out = isWearableBlock ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_hand_equipped}", {
+        bool isHandEquipped = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isHandEquipped = c.itemStackBase->getItem()->isHandEquipped();
+        }
+        out = isHandEquipped ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_pattern}", {
+        bool isPattern = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isPattern = c.itemStackBase->getItem()->isPattern();
+        }
+        out = isPattern ? "true" : "false";
+    });
 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_pattern_index}", {
+        out = "0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = std::to_string(c.itemStackBase->getItem()->getPatternIndex());
+        }
+    });
 
- 
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_base_rarity}", {
+        out = "Common";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = magic_enum::enum_name(c.itemStackBase->getItem()->getBaseRarity());
+        }
+    });
 
-    // {item_is_music_disk}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_music_disk}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isMusicDisk = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isMusicDisk = c.itemStackBase->getItem()->isMusicDisk();
-                }
-                out = isMusicDisk ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_rarity}", {
+        out = "Common";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = magic_enum::enum_name(c.itemStackBase->getItem()->getRarity(*c.itemStackBase));
+        }
+    });
 
-    // {item_is_component_based}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_component_based}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isComponentBased = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isComponentBased = c.itemStackBase->getItem()->isComponentBased();
-                }
-                out = isComponentBased ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_shows_durability_in_creative}", {
+        bool showsDurability = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            showsDurability = c.itemStackBase->getItem()->showsDurabilityInCreative();
+        }
+        out = showsDurability ? "true" : "false";
+    });
 
-    // {item_is_block_planter}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_block_planter}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isBlockPlanter = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isBlockPlanter = c.itemStackBase->getItem()->isBlockPlanterItem();
-                }
-                out = isBlockPlanter ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_complex}", {
+        bool isComplex = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isComplex = c.itemStackBase->getItem()->isComplex();
+        }
+        out = isComplex ? "true" : "false";
+    });
 
-    // {item_is_bucket}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_bucket}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isBucket = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isBucket = c.itemStackBase->getItem()->isBucket();
-                }
-                out = isBucket ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_actor_placer}", {
+        bool isActorPlacer = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            isActorPlacer = c.itemStackBase->getItem()->isActorPlacerItem();
+        }
+        out = isActorPlacer ? "true" : "false";
+    });
 
-    // {item_is_candle}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_candle}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isCandle = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isCandle = c.itemStackBase->getItem()->isCandle();
-                }
-                out = isCandle ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_custom_color_item_type}", {
+        bool hasCustomColor = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            hasCustomColor = c.itemStackBase->getItem()->hasCustomColor(*c.itemStackBase);
+        }
+        out = hasCustomColor ? "true" : "false";
+    });
 
-    // {item_is_dyeable}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_dyeable}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isDyeable = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isDyeable = c.itemStackBase->getItem()->isDyeable();
-                }
-                out = isDyeable ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_base_color_rgb}", {
+        out = "0,0,0,0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            mce::Color color = c.itemStackBase->getItem()->getBaseColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
+            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
+                  std::to_string(static_cast<int>(color.g * 255)) + "," +
+                  std::to_string(static_cast<int>(color.b * 255)) + "," +
+                  std::to_string(static_cast<int>(color.a * 255));
+        }
+    });
 
-    // {item_is_dye}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_dye}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isDye = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isDye = c.itemStackBase->getItem()->isDye();
-                }
-                out = isDye ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_secondary_color_rgb}", {
+        out = "0,0,0,0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            mce::Color color = c.itemStackBase->getItem()->getSecondaryColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
+            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
+                  std::to_string(static_cast<int>(color.g * 255)) + "," +
+                  std::to_string(static_cast<int>(color.b * 255)) + "," +
+                  std::to_string(static_cast<int>(color.a * 255));
+        }
+    });
 
-    // {item_color_enum}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_color_enum}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "None";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = magic_enum::enum_name(c.itemStackBase->getItem()->getItemColor());
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_can_be_charged}", {
+        bool canBeCharged = false;
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            canBeCharged = c.itemStackBase->getItem()->canBeCharged();
+        }
+        out = canBeCharged ? "true" : "false";
+    });
 
-    // {item_is_fertilizer}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_fertilizer}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isFertilizer = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isFertilizer = c.itemStackBase->getItem()->isFertilizer();
-                }
-                out = isFertilizer ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_food_item_type}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_food_item_type}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isFood = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isFood = c.itemStackBase->getItem()->isFood();
-                }
-                out = isFood ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_throwable}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_throwable}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isThrowable = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isThrowable = c.itemStackBase->getItem()->isThrowable();
-                }
-                out = isThrowable ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_useable}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_useable}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isUseable = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isUseable = c.itemStackBase->getItem()->isUseable();
-                }
-                out = isUseable ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_trim_allowed}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_trim_allowed}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isTrimAllowed = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isTrimAllowed = c.itemStackBase->getItem()->isTrimAllowed();
-                }
-                out = isTrimAllowed ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_max_damage_type}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_max_damage_type}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = std::to_string(c.itemStackBase->getItem()->getMaxDamage());
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_attack_damage}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_attack_damage}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = std::to_string(c.itemStackBase->getItem()->getAttackDamage());
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_is_hand_equipped}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_hand_equipped}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isHandEquipped = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isHandEquipped = c.itemStackBase->getItem()->isHandEquipped();
-                }
-                out = isHandEquipped ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_pattern}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_pattern}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isPattern = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isPattern = c.itemStackBase->getItem()->isPattern();
-                }
-                out = isPattern ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_pattern_index}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_pattern_index}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = std::to_string(c.itemStackBase->getItem()->getPatternIndex());
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_base_rarity}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_base_rarity}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "Common"; // Default
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = magic_enum::enum_name(c.itemStackBase->getItem()->getBaseRarity());
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_rarity}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_rarity}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "Common"; // Default
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = magic_enum::enum_name(c.itemStackBase->getItem()->getRarity(*c.itemStackBase));
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_shows_durability_in_creative}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_shows_durability_in_creative}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool showsDurability = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    showsDurability = c.itemStackBase->getItem()->showsDurabilityInCreative();
-                }
-                out = showsDurability ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_complex}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_complex}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isComplex = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isComplex = c.itemStackBase->getItem()->isComplex();
-                }
-                out = isComplex ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_is_actor_placer}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_is_actor_placer}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool isActorPlacer = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    isActorPlacer = c.itemStackBase->getItem()->isActorPlacerItem();
-                }
-                out = isActorPlacer ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_has_custom_color_item_type}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_has_custom_color_item_type}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool hasCustomColor = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    hasCustomColor = c.itemStackBase->getItem()->hasCustomColor(*c.itemStackBase);
-                }
-                out = hasCustomColor ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_base_color_rgb}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_base_color_rgb}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0,0,0,0"; // RGBA
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    mce::Color color = c.itemStackBase->getItem()->getBaseColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
-                    out              = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                         std::to_string(static_cast<int>(color.g * 255)) + "," +
-                         std::to_string(static_cast<int>(color.b * 255)) + "," +
-                         std::to_string(static_cast<int>(color.a * 255));
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_secondary_color_rgb}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_secondary_color_rgb}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0,0,0,0"; // RGBA
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    mce::Color color = c.itemStackBase->getItem()->getSecondaryColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
-                    out              = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                         std::to_string(static_cast<int>(color.g * 255)) + "," +
-                         std::to_string(static_cast<int>(color.b * 255)) + "," +
-                         std::to_string(static_cast<int>(color.a * 255));
-                }
-            }
-        ),
-        owner
-    );
-
-    // {item_can_be_charged}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_can_be_charged}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                bool canBeCharged = false;
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    canBeCharged = c.itemStackBase->getItem()->canBeCharged();
-                }
-                out = canBeCharged ? "true" : "false";
-            }
-        ),
-        owner
-    );
-
-    // {item_furnace_xp_multiplier}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<ItemStackBaseContext, void (*)(const ItemStackBaseContext&, std::string&)>>(
-            "{item_furnace_xp_multiplier}",
-            +[](const ItemStackBaseContext& c, std::string& out) {
-                out = "0.0";
-                if (c.itemStackBase && c.itemStackBase->getItem()) {
-                    out = std::to_string(c.itemStackBase->getItem()->getFurnaceXPmultiplier(*c.itemStackBase));
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_furnace_xp_multiplier}", {
+        out = "0.0";
+        if (c.itemStackBase && c.itemStackBase->getItem()) {
+            out = std::to_string(c.itemStackBase->getItem()->getFurnaceXPmultiplier(*c.itemStackBase));
+        }
+    });
 }
 
 } // namespace PA

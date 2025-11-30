@@ -13,71 +13,36 @@ void registerBlockPlaceholders(IPlaceholderService* svc) {
     void*      owner            = &kBuiltinOwnerTag;
 
     // {block_type_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockContext, void (*)(const BlockContext&, std::string&)>>(
-            "{block_type_name}",
-            +[](const BlockContext& c, std::string& out) {
-                out = "N/A";
-                if (c.block) out = c.block->getTypeName();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockContext, "{block_type_name}", {
+        out = "N/A";
+        if (c.block) out = c.block->getTypeName();
+    });
 
     // {block_data}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockContext, void (*)(const BlockContext&, std::string&)>>(
-            "{block_data}",
-            +[](const BlockContext& c, std::string& out) {
-                out = "0";
-                if (c.block) out = std::to_string(c.block->getData());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockContext, "{block_data}", {
+        out = "0";
+        if (c.block) out = std::to_string(c.block->getData());
+    });
 
     // {block_is_solid}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockContext, void (*)(const BlockContext&, std::string&)>>(
-            "{block_is_solid}",
-            +[](const BlockContext& c, std::string& out) {
-                bool isSolid = false;
-                if (c.block) isSolid = c.block->_isSolid();
-                out = isSolid ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockContext, "{block_is_solid}", {
+        bool isSolid = false;
+        if (c.block) isSolid = c.block->_isSolid();
+        out = isSolid ? "true" : "false";
+    });
 
     // {block_is_air}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockContext, void (*)(const BlockContext&, std::string&)>>(
-            "{block_is_air}",
-            +[](const BlockContext& c, std::string& out) {
-                bool isAir = false;
-                if (c.block) isAir = c.block->isAir();
-                out = isAir ? "true" : "false";
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockContext, "{block_is_air}", {
+        bool isAir = false;
+        if (c.block) isAir = c.block->isAir();
+        out = isAir ? "true" : "false";
+    });
 
     // {block_description_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<BlockContext, void (*)(const BlockContext&, std::string&)>>(
-            "{block_description_id}",
-            +[](const BlockContext& c, std::string& out) {
-                out = "N/A";
-                if (c.block) out = c.block->getDescriptionId();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, BlockContext, "{block_description_id}", {
+        out = "N/A";
+        if (c.block) out = c.block->getDescriptionId();
+    });
 }
 
 } // namespace PA

@@ -2,16 +2,17 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "ll/api/Versions.h"
+#include "ll/api/mod/ModManagerRegistry.h"
 #include "ll/api/service/Bedrock.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
 #include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h"
 #include "mc/network/ServerNetworkHandler.h"
+#include "mc/server/PropertiesSettings.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/ActorType.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/level/storage/LevelData.h"
-#include "mc/server/PropertiesSettings.h"
-#include "ll/api/mod/ModManagerRegistry.h" 
+
 
 namespace PA {
 
@@ -20,216 +21,105 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
     void*      owner            = &kBuiltinOwnerTag;
 
     // {online_players}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{online_players}",
-            +[](std::string& out) {
-                auto level = ll::service::getLevel();
-                out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
-            }
-        ),
-        owner
-    );
+    PA_SERVER(svc, owner, "{online_players}", {
+        auto level = ll::service::getLevel();
+        out        = level ? std::to_string(level->getActivePlayerCount()) : "0";
+    });
 
     // {max_players}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{max_players}",
-            +[](std::string& out) {
-                auto server = ll::service::getServerNetworkHandler();
-                out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
+    PA_SERVER(svc, owner, "{max_players}", {
+        auto server = ll::service::getServerNetworkHandler();
+        out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
+    });
+
+    // {total_entities} - 允许通过参数选择是否排除掉落物
+    PA_SERVER_WITH_ARGS(svc, owner, "{total_entities}", {
+        auto level = ll::service::getLevel();
+        if (!level) {
+            out = "0";
+            return;
+        }
+
+        bool excludeDrops   = false;
+        bool excludePlayers = false;
+        for (const auto& arg : args) {
+            if (arg == "exclude_drops") {
+                excludeDrops = true;
+            } else if (arg == "exclude_players") {
+                excludePlayers = true;
             }
-        ),
-        owner
-    );
+        }
 
-    // {total_entities}
-    // 允许通过参数选择是否排除掉落物
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&, const std::vector<std::string_view>&)>>(
-            "{total_entities}",
-            +[](std::string& out, const std::vector<std::string_view>& args) {
-                auto level = ll::service::getLevel();
-                if (!level) {
-                    out = "0";
-                    return;
+        size_t total = 0;
+        for (auto entityOwnerPtr : level->getEntities()) {
+            if (auto* actor = Actor::tryGetFromEntity(*entityOwnerPtr, false)) {
+                if (excludeDrops && actor->getEntityTypeId() == ActorType::ItemEntity) {
+                    continue;
                 }
-
-                bool excludeDrops  = false;
-                bool excludePlayers = false;
-                for (const auto& arg : args) {
-                    if (arg == "exclude_drops") {
-                        excludeDrops = true;
-                    } else if (arg == "exclude_players") {
-                        excludePlayers = true;
-                    }
+                if (excludePlayers && actor->isPlayer()) {
+                    continue;
                 }
-
-                size_t total = 0;
-
-                for (auto entityOwnerPtr : level->getEntities()) {
-                    if (auto* actor = Actor::tryGetFromEntity(*entityOwnerPtr, false)) {
-                        if (excludeDrops && actor->getEntityTypeId() == ActorType::ItemEntity) {
-                            continue;
-                        }
-                        if (excludePlayers && actor->isPlayer()) {
-                            continue;
-                        }
-                        ++total;
-                    }
-                }
-
-                out = std::to_string(total);
+                ++total;
             }
-        ),
-        owner
-    );
+        }
+        out = std::to_string(total);
+    });
 
     // 服务器版本占位符 (缓存 5 分钟)
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_version}",
-            +[](std::string& out) { out = ll::getGameVersion().to_string(); },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{server_version}", 300, { out = ll::getGameVersion().to_string(); });
 
     // 服务器协议版本占位符 (缓存 5 分钟)
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_protocol_version}",
-            +[](std::string& out) { out = std::to_string(ll::getNetworkProtocolVersion()); },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{server_protocol_version}", 300, {
+        out = std::to_string(ll::getNetworkProtocolVersion());
+    });
 
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{loader_version}",
-            +[](std::string& out) { out = ll::getLoaderVersion().to_string(); },
-            300
-        ),
-        owner,
-        300
-    );
+    // 加载器版本占位符 (缓存 5 分钟)
+    PA_SERVER_CACHED(svc, owner, "{loader_version}", 300, { out = ll::getLoaderVersion().to_string(); });
 
     // {level_seed}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{level_seed}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? settings->mLevelSeed : "";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{level_seed}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? settings->mLevelSeed : "";
+    });
 
     // {level_name}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{level_name}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? settings->mLevelName : "";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{level_name}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? settings->mLevelName : "";
+    });
 
     // {language}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{language}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? settings->mLanguage : "";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{language}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? settings->mLanguage : "";
+    });
 
     // {server_name}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_name}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? settings->mServerName : "";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{server_name}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? settings->mServerName : "";
+    });
 
     // {server_port}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_port}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? std::to_string(settings->mServerPort) : "0";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{server_port}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? std::to_string(settings->mServerPort) : "0";
+    });
 
     // {server_portv6}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_portv6}",
-            +[](std::string& out) {
-                auto settings = ll::service::getPropertiesSettings();
-                out           = settings ? std::to_string(settings->mServerPortv6) : "0";
-            },
-            300
-        ),
-        owner,
-        300
-    );
+    PA_SERVER_CACHED(svc, owner, "{server_portv6}", 300, {
+        auto settings = ll::service::getPropertiesSettings();
+        out           = settings ? std::to_string(settings->mServerPortv6) : "0";
+    });
 
-    // {server_mod_count}
-    svc->registerCachedPlaceholder(
-        "",
-        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(
-            "{server_mod_count}",
-            +[](std::string& out) {
-                size_t totalModCount = 0;
-                for (auto& manager : ll::mod::ModManagerRegistry::getInstance().managers()) {
-                    totalModCount += manager.getModCount();
-                }
-                out = std::to_string(totalModCount);
-            },
-            60 // 缓存 1 分钟
-        ),
-        owner,
-        60
-    );
+    // {server_mod_count} - 缓存 1 分钟
+    PA_SERVER_CACHED(svc, owner, "{server_mod_count}", 60, {
+        size_t totalModCount = 0;
+        for (auto& manager : ll::mod::ModManagerRegistry::getInstance().managers()) {
+            totalModCount += manager.getModCount();
+        }
+        out = std::to_string(totalModCount);
+    });
 }
 
 } // namespace PA

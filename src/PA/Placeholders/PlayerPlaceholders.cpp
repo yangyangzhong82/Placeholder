@@ -4,10 +4,10 @@
 #include "ll/api/service/Bedrock.h"
 #include "mc/deps/core/platform/BuildPlatform.h"
 #include "mc/network/ServerNetworkHandler.h"
-#include "mc/platform/UUID.h" 
+#include "mc/platform/UUID.h"
 #include "mc/server/ServerPlayer.h"
-#include "mc/world/actor/Actor.h"        
-#include "mc/world/actor/player/Player.h" 
+#include "mc/world/actor/Actor.h"
+#include "mc/world/actor/player/Player.h"
 #include "mc/world/level/GameType.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/scores/Objective.h"
@@ -16,10 +16,10 @@
 #include "mc/world/scores/Scoreboard.h"
 #include "mc/world/scores/ScoreboardId.h"
 #include "mc/world/attribute/AttributeInstance.h"
-#include "mc/world/actor/provider/ActorEquipment.h" 
-#include "mc/world/Container.h" 
-#include "mc/world/item/ItemStack.h" 
-#include "mc/world/item/ItemStackBase.h" 
+#include "mc/world/actor/provider/ActorEquipment.h"
+#include "mc/world/Container.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/item/ItemStackBase.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 
 #if defined(_WIN32)
@@ -89,270 +89,150 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
     }
 
     // {llmoney}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{llmoney}",
-            +[](const PlayerContext& c, std::string& out) {
-                if (c.player && sLLMoney_Get) {
-                    out = std::to_string(sLLMoney_Get(c.player->getXuid()));
-                } else {
-                    out = "0"; // LegacyMoney.dll 未加载或玩家无效时返回 0
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{llmoney}", {
+        if (c.player && sLLMoney_Get) {
+            out = std::to_string(sLLMoney_Get(c.player->getXuid()));
+        } else {
+            out = "0"; // LegacyMoney.dll 未加载或玩家无效时返回 0
+        }
+    });
 #endif // _WIN32
 
     // {score}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<
-            ActorContext,
-            void (*)(const ActorContext&, const std::vector<std::string_view>&, std::string&)>>(
-            "{score}",
-            +[](const ActorContext& c, const std::vector<std::string_view>& args, std::string& out) {
-                if (c.actor && !args.empty()) {
-                    std::string score_name(args[0]);
-                    Scoreboard& scoreboard = ll::service::getLevel()->getScoreboard();
-                    Objective*  obj        = scoreboard.getObjective(score_name);
-                    if (!obj) {
-                        out = "0";
-                        return;
-                    }
-                    const ScoreboardId& id = scoreboard.getScoreboardId(*c.actor);
-                    if (id.mRawID == ScoreboardId::INVALID().mRawID) {
-                        // 如果玩家没有记分板ID，则分数默认为0
-                        out = "0";
-                        return;
-                    }
-                    out = std::to_string(obj->getPlayerScore(id).mValue);
-                } else {
-                    out = PA_COLOR_RED "Usage: {score:objective_name}" PA_COLOR_RESET; // 如果没有提供参数，返回使用说明
-                }
+    PA_WITH_ARGS(svc, owner, ActorContext, "{score}", {
+        if (c.actor && !args.empty()) {
+            std::string score_name(args[0]);
+            Scoreboard& scoreboard = ll::service::getLevel()->getScoreboard();
+            Objective*  obj        = scoreboard.getObjective(score_name);
+            if (!obj) {
+                out = "0";
+                return;
             }
-        ),
-        owner
-    );
+            const ScoreboardId& id = scoreboard.getScoreboardId(*c.actor);
+            if (id.mRawID == ScoreboardId::INVALID().mRawID) {
+                // 如果玩家没有记分板ID，则分数默认为0
+                out = "0";
+                return;
+            }
+            out = std::to_string(obj->getPlayerScore(id).mValue);
+        } else {
+            out = PA_COLOR_RED "Usage: {score:objective_name}" PA_COLOR_RESET; // 如果没有提供参数，返回使用说明
+        }
+    });
 
     // {player_realname}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_realname}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = c.player->getRealName();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_realname}", {
+        out.clear();
+        if (c.player) out = c.player->getRealName();
+    });
 
     // {player_average_ping}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_average_ping}",
-            +[](const PlayerContext& c, std::string& out) {
-                out = "0";
-                if (c.player) {
-                    if (auto ns = c.player->getNetworkStatus()) {
-                        out = std::to_string(ns->mAveragePing);
-                    }
-                }
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_average_ping}", {
+        out = "0";
+        if (c.player) {
+            if (auto ns = c.player->getNetworkStatus()) {
+                out = std::to_string(ns->mAveragePing);
             }
-        ),
-        owner
-    );
+        }
+    });
+
     // {player_ping}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_ping}",
-            +[](const PlayerContext& c, std::string& out) {
-                out = "0";
-                if (c.player) {
-                    if (auto ns = c.player->getNetworkStatus()) {
-                        out = std::to_string(ns->mCurrentPing);
-                    }
-                }
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_ping}", {
+        out = "0";
+        if (c.player) {
+            if (auto ns = c.player->getNetworkStatus()) {
+                out = std::to_string(ns->mCurrentPing);
             }
-        ),
-        owner
-    );
+        }
+    });
+
     // {player_avgpacketloss}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_avgpacketloss}",
-            +[](const PlayerContext& c, std::string& out) {
-                out = "0";
-                if (c.player) {
-                    if (auto ns = c.player->getNetworkStatus()) {
-                        out = std::to_string(ns->mCurrentPacketLoss);
-                    }
-                }
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_avgpacketloss}", {
+        out = "0";
+        if (c.player) {
+            if (auto ns = c.player->getNetworkStatus()) {
+                out = std::to_string(ns->mCurrentPacketLoss);
             }
-        ),
-        owner
-    );
+        }
+    });
+
     // {player_averagepacketloss}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_averagepacketloss}",
-            +[](const PlayerContext& c, std::string& out) {
-                out = "0";
-                if (c.player) {
-                    if (auto ns = c.player->getNetworkStatus()) {
-                        out = std::to_string(ns->mAveragePacketLoss);
-                    }
-                }
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_averagepacketloss}", {
+        out = "0";
+        if (c.player) {
+            if (auto ns = c.player->getNetworkStatus()) {
+                out = std::to_string(ns->mAveragePacketLoss);
             }
-        ),
-        owner
-    );
+        }
+    });
 
     // {player_locale_code}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_locale_code}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = c.player->getLocaleCode();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_locale_code}", {
+        out.clear();
+        if (c.player) out = c.player->getLocaleCode();
+    });
 
     // {player_os}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_os}",
-            +[](const PlayerContext& c, std::string& out) {
-                out = "Unknown";
-                if (c.player) {
-                    out = magic_enum::enum_name(c.player->mBuildPlatform);
-                }
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_os}", {
+        out = "Unknown";
+        if (c.player) {
+            out = magic_enum::enum_name(c.player->mBuildPlatform);
+        }
+    });
 
     // {player_uuid}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_uuid}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = c.player->getUuid().asString();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_uuid}", {
+        out.clear();
+        if (c.player) out = c.player->getUuid().asString();
+    });
 
     // {player_xuid}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_xuid}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = c.player->getXuid();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_xuid}", {
+        out.clear();
+        if (c.player) out = c.player->getXuid();
+    });
+
     // {player_hunger}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_hunger}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentValue);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_hunger}", {
+        out.clear();
+        if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentValue);
+    });
+
     // {player_max_hunger}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_max_hunger}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentMaxValue);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_max_hunger}", {
+        out.clear();
+        if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentMaxValue);
+    });
+
     // {player_saturation}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_saturation}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentValue);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_saturation}", {
+        out.clear();
+        if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentValue);
+    });
+
     // {player_max_saturation}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_max_saturation}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentMaxValue);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_max_saturation}", {
+        out.clear();
+        if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentMaxValue);
+    });
+
     // {player_gametype}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_gametype}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = magic_enum::enum_name(c.player->getPlayerGameType());
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_gametype}", {
+        out.clear();
+        if (c.player) out = magic_enum::enum_name(c.player->getPlayerGameType());
+    });
 
     // {player_ip}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_ip}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = c.player->getIPAndPort();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_ip}", {
+        out.clear();
+        if (c.player) out = c.player->getIPAndPort();
+    });
 
     // {player_level}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<PlayerContext, void (*)(const PlayerContext&, std::string&)>>(
-            "{player_level}",
-            +[](const PlayerContext& c, std::string& out) {
-                out.clear();
-                if (c.player) out = std::to_string(c.player->getAttribute(Player::LEVEL()).mCurrentValue);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, PlayerContext, "{player_level}", {
+        out.clear();
+        if (c.player) out = std::to_string(c.player->getAttribute(Player::LEVEL()).mCurrentValue);
+    });
 
     // {player_offhand_item:<inner_placeholder_spec>}
     svc->registerContextAlias(

@@ -3,11 +3,11 @@
 
 #include "mc/world/level/block/Block.h"
 #include "mc/world/level/block/actor/BlockActor.h"
-#include "mc/world/level/dimension/Dimension.h" 
-#include "ll/api/service/Bedrock.h"            
-#include "mc/world/level/Level.h"           
-#include "mc/world/level/BlockSource.h"   
-#include "mc/world/level/BlockPos.h"      
+#include "mc/world/level/dimension/Dimension.h"
+#include "ll/api/service/Bedrock.h"
+#include "mc/world/level/Level.h"
+#include "mc/world/level/BlockSource.h"
+#include "mc/world/level/BlockPos.h"
 
 namespace PA {
 
@@ -16,151 +16,95 @@ void registerWorldCoordinatePlaceholders(IPlaceholderService* svc) {
     void*      owner            = &kBuiltinOwnerTag;
 
     // {world_pos}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_pos}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (c.data) out = c.data->pos.toString();
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_pos}", {
+        if (c.data) out = c.data->pos.toString();
+    });
 
     // {world_pos_x}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_pos_x}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (c.data) out = std::to_string(c.data->pos.x);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_pos_x}", {
+        if (c.data) out = std::to_string(c.data->pos.x);
+    });
 
     // {world_pos_y}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_pos_y}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (c.data) out = std::to_string(c.data->pos.y);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_pos_y}", {
+        if (c.data) out = std::to_string(c.data->pos.y);
+    });
 
     // {world_pos_z}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_pos_z}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (c.data) out = std::to_string(c.data->pos.z);
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_pos_z}", {
+        if (c.data) out = std::to_string(c.data->pos.z);
+    });
 
     // {world_dimension_id}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_dimension_id}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (c.data) out = std::to_string(static_cast<int>(c.data->dimensionId));
-            }
-        ),
-        owner
-    );
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_dimension_id}", {
+        if (c.data) out = std::to_string(static_cast<int>(c.data->dimensionId));
+    });
 
     // {world_dimension_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_dimension_name}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                if (!c.data) {
-                    out = "Invalid WorldCoordinateData";
-                    return;
-                }
-                auto level = ll::service::getLevel();
-                if (level) {
-                    auto dimRef = level->getDimension(c.data->dimensionId);
-                    if (!dimRef.expired()) { // Check if WeakRef is not expired
-                        auto dim = dimRef.lock();
-                        if (dim) { // Check if shared_ptr is valid
-                            out = dim->mName; // Access the std::string directly
-                        } else {
-                            out = "Invalid Dimension";
-                        }
-                    } else {
-                        out = "Invalid Dimension";
-                    }
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_dimension_name}", {
+        if (!c.data) {
+            out = "Invalid WorldCoordinateData";
+            return;
+        }
+        auto level = ll::service::getLevel();
+        if (level) {
+            auto dimRef = level->getDimension(c.data->dimensionId);
+            if (!dimRef.expired()) {
+                auto dim = dimRef.lock();
+                if (dim) {
+                    out = dim->mName;
                 } else {
-                    out = "Level Not Available";
+                    out = "Invalid Dimension";
                 }
+            } else {
+                out = "Invalid Dimension";
             }
-        ),
-        owner
-    );
+        } else {
+            out = "Level Not Available";
+        }
+    });
 
     // {world_block_type_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_block_type_name}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                out = "N/A";
-                if (!c.data) return;
-                auto level = ll::service::getLevel();
-                if (level) {
-                    auto dimRef = level->getDimension(c.data->dimensionId);
-                    if (!dimRef.expired()) {
-                        auto dim = dimRef.lock();
-                        if (dim) {
-                            BlockSource& bs    = dim->getBlockSourceFromMainChunkSource();
-                            BlockPos     bp    = BlockPos(c.data->pos);
-                            const Block& block = bs.getBlock(bp);
-                            if (!block.isAir()) {
-                                out = block.getTypeName();
-                            }
-                        }
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_block_type_name}", {
+        out = "N/A";
+        if (!c.data) return;
+        auto level = ll::service::getLevel();
+        if (level) {
+            auto dimRef = level->getDimension(c.data->dimensionId);
+            if (!dimRef.expired()) {
+                auto dim = dimRef.lock();
+                if (dim) {
+                    BlockSource& bs    = dim->getBlockSourceFromMainChunkSource();
+                    BlockPos     bp    = BlockPos(c.data->pos);
+                    const Block& block = bs.getBlock(bp);
+                    if (!block.isAir()) {
+                        out = block.getTypeName();
                     }
                 }
             }
-        ),
-        owner
-    );
+        }
+    });
 
     // {world_block_actor_type_name}
-    svc->registerPlaceholder(
-        "",
-        std::make_shared<TypedLambdaPlaceholder<WorldCoordinateContext, void (*)(const WorldCoordinateContext&, std::string&)>>(
-            "{world_block_actor_type_name}",
-            +[](const WorldCoordinateContext& c, std::string& out) {
-                out = "N/A";
-                if (!c.data) return;
-                auto level = ll::service::getLevel();
-                if (level) {
-                    auto dimRef = level->getDimension(c.data->dimensionId);
-                    if (!dimRef.expired()) {
-                        auto dim = dimRef.lock();
-                        if (dim) {
-                            BlockSource& bs = dim->getBlockSourceFromMainChunkSource();
-                            BlockPos     bp = BlockPos(c.data->pos);
-                            BlockActor*  blockActor = bs.getBlockEntity(bp);
-                            if (blockActor) {
-                                out = blockActor->getName();
-                            }
-                        }
+    PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_block_actor_type_name}", {
+        out = "N/A";
+        if (!c.data) return;
+        auto level = ll::service::getLevel();
+        if (level) {
+            auto dimRef = level->getDimension(c.data->dimensionId);
+            if (!dimRef.expired()) {
+                auto dim = dimRef.lock();
+                if (dim) {
+                    BlockSource& bs = dim->getBlockSourceFromMainChunkSource();
+                    BlockPos     bp = BlockPos(c.data->pos);
+                    BlockActor*  blockActor = bs.getBlockEntity(bp);
+                    if (blockActor) {
+                        out = blockActor->getName();
                     }
                 }
             }
-        ),
-        owner
-    );
+        }
+    });
 
     // 注册上下文别名：{block:...}
     svc->registerContextAlias(
@@ -180,7 +124,7 @@ void registerWorldCoordinatePlaceholders(IPlaceholderService* svc) {
                                 BlockSource& bs    = dim->getBlockSourceFromMainChunkSource();
                                 BlockPos     bp    = BlockPos(worldCtx->data->pos);
                                 const Block& block = bs.getBlock(bp);
-                                return (void*)&block; 
+                                return (void*)&block;
                             } else {
                                 logger.debug("Dimension is expired or invalid for dimensionId {}.", static_cast<int>(worldCtx->data->dimensionId));
                             }
