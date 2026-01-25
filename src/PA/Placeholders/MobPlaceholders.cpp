@@ -2,7 +2,6 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/world/actor/Mob.h"
-#include "mc/world/actor/provider/ActorAttribute.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 
 namespace PA {
@@ -22,7 +21,7 @@ void registerMobPlaceholders(IPlaceholderService* svc) {
     PA_SIMPLE(svc, owner, MobContext, "{mob_health}", {
         out = "0";
         if (c.mob) {
-            auto h = ActorAttribute::getHealth(c.mob->getEntityContext());
+            auto h = c.mob->getHealth();
             out    = std::to_string(h);
         }
     });

@@ -3,24 +3,26 @@
 
 #include "ll/api/service/Bedrock.h"
 #include "mc/deps/core/platform/BuildPlatform.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/platform/UUID.h"
 #include "mc/server/ServerPlayer.h"
+#include "mc/world/Container.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/player/Player.h"
+#include "mc/world/actor/provider/ActorEquipment.h"
+#include "mc/world/attribute/AttributeInstance.h"
+#include "mc/world/attribute/AttributeInstanceConstRef.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/item/ItemStackBase.h"
 #include "mc/world/level/GameType.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/scores/Objective.h"
-#include <magic_enum.hpp>
 #include "mc/world/scores/ScoreInfo.h"
 #include "mc/world/scores/Scoreboard.h"
 #include "mc/world/scores/ScoreboardId.h"
-#include "mc/world/attribute/AttributeInstance.h"
-#include "mc/world/actor/provider/ActorEquipment.h"
-#include "mc/world/Container.h"
-#include "mc/world/item/ItemStack.h"
-#include "mc/world/item/ItemStackBase.h"
-#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
+#include <magic_enum.hpp>
+
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -195,25 +197,45 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
     // {player_hunger}
     PA_SIMPLE(svc, owner, PlayerContext, "{player_hunger}", {
         out.clear();
-        if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentValue);
+        if (c.player) {
+            auto attrRef = c.player->getAttribute(Player::HUNGER());
+            if (attrRef.mPtr) {
+                out = std::to_string(attrRef.mPtr->mCurrentValue);
+            }
+        }
     });
 
     // {player_max_hunger}
     PA_SIMPLE(svc, owner, PlayerContext, "{player_max_hunger}", {
         out.clear();
-        if (c.player) out = std::to_string(c.player->getAttribute(Player::HUNGER()).mCurrentMaxValue);
+        if (c.player) {
+            auto attrRef = c.player->getAttribute(Player::HUNGER());
+            if (attrRef.mPtr) {
+                out = std::to_string(attrRef.mPtr->mCurrentMaxValue);
+            }
+        }
     });
 
     // {player_saturation}
     PA_SIMPLE(svc, owner, PlayerContext, "{player_saturation}", {
         out.clear();
-        if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentValue);
+        if (c.player) {
+            auto attrRef = c.player->getAttribute(Player::SATURATION());
+            if (attrRef.mPtr) {
+                out = std::to_string(attrRef.mPtr->mCurrentValue);
+            }
+        }
     });
 
     // {player_max_saturation}
     PA_SIMPLE(svc, owner, PlayerContext, "{player_max_saturation}", {
         out.clear();
-        if (c.player) out = std::to_string(c.player->getAttribute(Player::SATURATION()).mCurrentMaxValue);
+        if (c.player) {
+            auto attrRef = c.player->getAttribute(Player::SATURATION());
+            if (attrRef.mPtr) {
+                out = std::to_string(attrRef.mPtr->mCurrentMaxValue);
+            }
+        }
     });
 
     // {player_gametype}
@@ -231,7 +253,12 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
     // {player_level}
     PA_SIMPLE(svc, owner, PlayerContext, "{player_level}", {
         out.clear();
-        if (c.player) out = std::to_string(c.player->getAttribute(Player::LEVEL()).mCurrentValue);
+        if (c.player) {
+            auto attrRef = c.player->getAttribute(Player::LEVEL());
+            if (attrRef.mPtr) {
+                out = std::to_string(static_cast<int>(attrRef.mPtr->mCurrentValue));
+            }
+        }
     });
 
     // {player_offhand_item:<inner_placeholder_spec>}

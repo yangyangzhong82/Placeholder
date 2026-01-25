@@ -345,27 +345,7 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         out = hasCustomColor ? "true" : "false";
     });
 
-    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_base_color_rgb}", {
-        out = "0,0,0,0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            mce::Color color = c.itemStackBase->getItem()->getBaseColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
-            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                  std::to_string(static_cast<int>(color.g * 255)) + "," +
-                  std::to_string(static_cast<int>(color.b * 255)) + "," +
-                  std::to_string(static_cast<int>(color.a * 255));
-        }
-    });
 
-    PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_secondary_color_rgb}", {
-        out = "0,0,0,0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            mce::Color color = c.itemStackBase->getItem()->getSecondaryColor(*reinterpret_cast<const ItemStack*>(c.itemStackBase));
-            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                  std::to_string(static_cast<int>(color.g * 255)) + "," +
-                  std::to_string(static_cast<int>(color.b * 255)) + "," +
-                  std::to_string(static_cast<int>(color.a * 255));
-        }
-    });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_can_be_charged}", {
         bool canBeCharged = false;

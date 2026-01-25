@@ -27,7 +27,7 @@ void registerBlockPlaceholders(IPlaceholderService* svc) {
     // {block_is_solid}
     PA_SIMPLE(svc, owner, BlockContext, "{block_is_solid}", {
         bool isSolid = false;
-        if (c.block) isSolid = c.block->_isSolid();
+        if (c.block) isSolid = c.block->mCachedComponentData->mIsSolid;
         out = isSolid ? "true" : "false";
     });
 

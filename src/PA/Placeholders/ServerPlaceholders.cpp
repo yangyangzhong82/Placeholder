@@ -1,6 +1,8 @@
 #include "PA/Placeholders/ServerPlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
+#include <unordered_set>
+
 #include "ll/api/Versions.h"
 #include "ll/api/mod/ModManagerRegistry.h"
 #include "ll/api/service/Bedrock.h"
@@ -32,7 +34,8 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
         out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
     });
 
-    // {total_entities} - 允许通过参数选择是否排除掉落物
+    // {total_entities} - 允许通过参数选择是否排除掉落物，或指定只计算特定类型
+    // 用法: {total_entities:type=minecraft:zombie,type=minecraft:skeleton,exclude_drops}
     PA_SERVER_WITH_ARGS(svc, owner, "{total_entities}", {
         auto level = ll::service::getLevel();
         if (!level) {
@@ -40,19 +43,28 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
             return;
         }
 
-        bool excludeDrops   = false;
-        bool excludePlayers = false;
+        bool                            excludeDrops   = false;
+        bool                            excludePlayers = false;
+        std::unordered_set<std::string> includeTypes;
         for (const auto& arg : args) {
             if (arg == "exclude_drops") {
                 excludeDrops = true;
             } else if (arg == "exclude_players") {
                 excludePlayers = true;
+            } else if (arg.starts_with("type=")) {
+                includeTypes.insert(std::string(arg.substr(5)));
             }
         }
 
         size_t total = 0;
         for (auto entityOwnerPtr : level->getEntities()) {
             if (auto* actor = Actor::tryGetFromEntity(*entityOwnerPtr, false)) {
+                if (!includeTypes.empty()) {
+                    auto const& typeName = actor->getTypeName();
+                    if (!includeTypes.contains(typeName)) {
+                        continue;
+                    }
+                }
                 if (excludeDrops && actor->getEntityTypeId() == ActorType::ItemEntity) {
                     continue;
                 }

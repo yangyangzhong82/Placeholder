@@ -58,23 +58,32 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
         std::string_view content_sv       = text.substr(start_pos + 1, end_pos - start_pos - 1);
         std::string      content(content_sv);
 
-        std::string                                  token;
-        std::string                                  param_part;
-        std::shared_ptr<const IPlaceholder>          ph;
-        const ::PA::CachedEntry*                     cachedEntry = nullptr; // 指向缓存条目，如果找到的话
+        std::string                         token;
+        std::string                         param_part;
+        std::shared_ptr<const IPlaceholder> ph;
+        const ::PA::CachedEntry*            cachedEntry = nullptr; // 指向缓存条目，如果找到的话
 
         // Find the longest registered placeholder that is a prefix of `content`.
-        for (size_t split_pos = content.length();;) {
-            std::string potential_token = content.substr(0, split_pos);
+        // First, check if there's a pipe '|' separator - if so, split there first
+        size_t      pipe_pos_in_content = content.find('|');
+        std::string token_search_part =
+            (pipe_pos_in_content != std::string::npos) ? content.substr(0, pipe_pos_in_content) : content;
+
+        for (size_t split_pos = token_search_part.length();;) {
+            std::string potential_token = token_search_part.substr(0, split_pos);
             auto        find_result     = registry.findPlaceholder(potential_token, ctx);
 
             if (find_result.placeholder) {
                 ph          = find_result.placeholder;
                 cachedEntry = find_result.entry;
                 token       = potential_token;
-                if (split_pos < content.length()) {
-                    if (content[split_pos] == ':') {
-                        param_part = content.substr(split_pos + 1);
+                if (split_pos < token_search_part.length()) {
+                    if (token_search_part[split_pos] == ':') {
+                        // Parameters before pipe
+                        param_part = token_search_part.substr(split_pos + 1);
+                        if (pipe_pos_in_content != std::string::npos) {
+                            param_part += "|" + content.substr(pipe_pos_in_content + 1);
+                        }
                     } else {
                         // The character after the potential token is not a parameter separator,
                         // so this is not a valid match.
@@ -82,6 +91,9 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                         token.clear();
                         cachedEntry = nullptr;
                     }
+                } else if (pipe_pos_in_content != std::string::npos) {
+                    // Token matches exactly, and there's a pipe with formatting params
+                    param_part = "|" + content.substr(pipe_pos_in_content + 1);
                 }
                 if (ph) {
                     break; // Found the longest valid match
@@ -91,14 +103,19 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
             if (split_pos == 0) {
                 break; // Reached the beginning of the string
             }
-            size_t prev_colon = content.rfind(':', split_pos - 1);
+            size_t prev_colon = token_search_part.rfind(':', split_pos - 1);
             if (prev_colon == std::string::npos) {
                 break; // No more colons to check for shorter prefixes
             }
             split_pos = prev_colon;
         }
 
-        logger.debug("1. Initial Parse: token='{}', param_part='{}', ctx_type_id={}", token, param_part, ctx ? ctx->typeId() : 0);
+        logger.debug(
+            "1. Initial Parse: token='{}', param_part='{}', ctx_type_id={}",
+            token,
+            param_part,
+            ctx ? ctx->typeId() : 0
+        );
         if (ph) {
             std::string evaluatedValue;
             // 占位符参数部分，用于生成缓存键和传递给占位符回调
@@ -115,16 +132,15 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 } else {
                     // 使用新的逻辑通过 key= 分离
                     std::vector<std::string> paramSegments = ParameterParser::splitParamString(param_part, ',');
-                    std::stringstream p_param_ss;
-                    std::stringstream f_param_ss;
-                    bool              first_p = true;
-                    bool              first_f = true;
+                    std::stringstream        p_param_ss;
+                    std::stringstream        f_param_ss;
+                    bool                     first_p = true;
+                    bool                     first_f = true;
 
                     for (const auto& p : paramSegments) {
-                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0
-                            || p.rfind("color_format=", 0) == 0 || p.rfind("bool_map=", 0) == 0
-                            || p.rfind("char_map=", 0) == 0 || p.rfind("regex_map=", 0) == 0
-                            || p.rfind("json_map=", 0) == 0) {
+                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0
+                            || p.rfind("bool_map=", 0) == 0 || p.rfind("char_map=", 0) == 0
+                            || p.rfind("regex_map=", 0) == 0 || p.rfind("json_map=", 0) == 0) {
                             if (!first_f) f_param_ss << ",";
                             f_param_ss << p;
                             first_f = false;
@@ -145,7 +161,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 std::string cacheKey   = contextKey + ":" + cache_param_part;
 
                 logger.debug(
-                    "Cache Check: token='{}', contextKey='{}', cache_param_part='{}', fullCacheKey='{}', cacheDuration={}",
+                    "Cache Check: token='{}', contextKey='{}', cache_param_part='{}', fullCacheKey='{}', "
+                    "cacheDuration={}",
                     token,
                     contextKey,
                     cache_param_part,
@@ -163,18 +180,24 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                         std::chrono::duration_cast<std::chrono::seconds>(now - it->second.lastEvaluated).count();
                     logger.debug(
                         "Cache Entry Found: lastEvaluated={}, now={}, elapsedSeconds={}, cacheDuration={}",
-                        std::chrono::duration_cast<std::chrono::seconds>(it->second.lastEvaluated.time_since_epoch()).count(),
+                        std::chrono::duration_cast<std::chrono::seconds>(it->second.lastEvaluated.time_since_epoch())
+                            .count(),
                         std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count(),
                         elapsedSeconds,
                         cachedEntry->cacheDuration
                     );
 
-                    if (elapsedSeconds < (cachedEntry->cacheDuration / 1000)) { // 将 cacheDuration 从毫秒转换为秒进行比较
+                    if (elapsedSeconds
+                        < (cachedEntry->cacheDuration / 1000)) { // 将 cacheDuration 从毫秒转换为秒进行比较
                         evaluatedValue = it->second.value;
                         useCachedValue = true;
                         logger.debug("3. Cache Hit: evaluatedValue='{}'", evaluatedValue);
                     } else {
-                        logger.debug("Cache Expired: elapsedSeconds={} >= cacheDuration={}", elapsedSeconds, cachedEntry->cacheDuration);
+                        logger.debug(
+                            "Cache Expired: elapsedSeconds={} >= cacheDuration={}",
+                            elapsedSeconds,
+                            cachedEntry->cacheDuration
+                        );
                     }
                 } else {
                     logger.debug("Cache Miss: No entry found for cacheKey='{}'", cacheKey);
@@ -218,7 +241,7 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                 // 更新缓存
                 if (cachedEntry) {
                     std::string contextKey = ctx ? ctx->getContextInstanceKey() : "";
-                    std::string cacheKey   = contextKey + ":" + cache_param_part; // 确保这里也使用 cache_param_part
+                    std::string cacheKey = contextKey + ":" + cache_param_part; // 确保这里也使用 cache_param_part
 
                     std::lock_guard<std::mutex> lock(cachedEntry->cacheMutex);
                     cachedEntry->cachedValues[cacheKey] = {evaluatedValue, std::chrono::steady_clock::now()};
