@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.5.0] 2026-01-27
+### Fixed
+- 适配bds版本1.21.132，并删除部分默认占位符
+
 ## [0.4.8] 2025-11-07
 ### Fixed
 - 修复了 `actor` 占位符在其他插件使用时返回无效值的问题，确保了 `ActorContext`、`MobContext` 和 `PlayerContext` 在别名占位符解析时能够正确创建和初始化。
