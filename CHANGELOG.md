@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+- 文档重构：`README.md` 改为项目总览与快速开始，并补充文档导航。
+- 文档对齐：`API_DOC.md` 新增 JavaScript RemoteCall API 章节，明确导出函数与回调签名（`args` 数组）。
+- 文档重写：`USAGE_GUIDE.md` 按当前实现更新参数分流、格式化执行顺序、`map`/颜色规则行为与排错示例。
+- 示例注释对齐：`ExamplePlugin.js` 的 JS 回调签名说明与实际实现保持一致。
 
 ## [0.5.0] 2026-01-27
 ### Fixed

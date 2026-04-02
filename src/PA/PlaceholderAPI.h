@@ -354,7 +354,7 @@ struct PA_API IPlaceholderService {
 
     // 注册“上下文别名适配器”
     // 例如：alias="look", from=PlayerContext::kTypeId, to=ActorContext::kTypeId, resolver=[](ctx)->Actor*
-    // 用户就能写 {look:mob_health} 直接复用 {mob_health}（Actor/Mob类占位符）
+    // 用户就能写 {look:actor_health} 直接复用 {actor_health}（Actor类占位符）
     virtual void registerContextAlias(
         std::string_view  alias,
         uint64_t          fromContextTypeId,

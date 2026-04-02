@@ -168,6 +168,11 @@ void registerActorPlaceholders(IPlaceholderService* svc) {
         out = c.actor ? std::to_string(c.actor->getMaxHealth()) : "0";
     });
 
+    // {actor_health}
+    PA_SIMPLE(svc, owner, ActorContext, "{actor_health}", {
+        out = c.actor ? std::to_string(c.actor->getHealth()) : "0";
+    });
+
     // {actor_name}
     PA_SIMPLE(svc, owner, ActorContext, "{actor_name}", {
         out = c.actor ? CommandUtils::getActorName(*c.actor) : "N/A";

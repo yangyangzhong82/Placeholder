@@ -54,7 +54,6 @@
 | 占位符            | 描述             | 示例输出 |
 | :---------------- | :--------------- | :------- |
 | `{mob_can_fly}`   | 生物是否能飞行   | `true`   |
-| `{mob_health}`    | 生物的生命值     | `20`     |
 | `{mob_armor_value}` | 生物的护甲值     | `5`      |
 
 ### Actor 上下文 (`ActorContext`)
@@ -81,6 +80,7 @@
 | `{actor_runtimeid}`    | Actor 的运行时 ID                          | `123`                        |
 | `{actor_effects}`      | Actor 的药水效果。无参数时列出所有效果名称；带一个参数时返回特定效果的详细信息；带两个参数时返回特定效果的指定属性 (level, duration, id, display_name)。 | `速度 (等级: 1, 持续时间: 30秒)` |
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
+| `{actor_health}`       | Actor 的生命值                             | `20`                         |
 | `{actor_name}`         | Actor 的名称                               | `Steve`                      |
 | `{score:objective_name}`   | Actor 在指定记分板上的分数           | `123`            |
 | `{entity_look_block:<params>:<inner_placeholder_spec>}` | 实体正在看的方块。可用于获取所看方块的属性。支持参数：`maxDistance` (浮点数), `includeLiquid` (布尔值), `solidOnly` (布尔值), `fullOnly` (布尔值)。例如 `{entity_look_block:maxDistance=10,includeLiquid=true:block_type_name}` | `minecraft:stone` |

@@ -17,15 +17,6 @@ void registerMobPlaceholders(IPlaceholderService* svc) {
         out = can ? "true" : "false";
     });
 
-    // {mob_health}
-    PA_SIMPLE(svc, owner, MobContext, "{mob_health}", {
-        out = "0";
-        if (c.mob) {
-            auto h = c.mob->getHealth();
-            out    = std::to_string(h);
-        }
-    });
-
     // {mob_armor_value}
     PA_SIMPLE(svc, owner, MobContext, "{mob_armor_value}", {
         out = "0";

@@ -50,26 +50,27 @@ setInterval(() => {
 // 回调命名空间
 const JS_CB_NS = 'JSPH';
 
-// 玩家上下文占位符回调签名：std::string(std::string token, std::string param,
+// 玩家上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args,
 // Player* player)
-ll.export((token, param, player) => {
+ll.export((token, args, player) => {
   // token 是注册时传入的 tokenName（不带花括号），例如 "hello"
-  // param 是占位符参数（如果用户写了 {js:hello:xxx}，param 为
-  // "xxx"，否则为空字符串）
-  const extra = param ? `（${param}）` : '';
+  // args 是占位符参数数组：
+  // {js:hello} -> []
+  // {js:hello:foo,bar} -> ["foo", "bar"]
+  const extra = args && args.length ? `（${args.join(',')}）` : '';
   const name = player ? player.name : '未知玩家';
   return `你好，${name}${extra}`;
 }, JS_CB_NS, 'helloPlayer');
 
-// 服务器级占位符回调签名：std::string(std::string token, std::string param)
-ll.export((token, param) => {
+// 服务器级占位符回调签名：std::string(std::string token, std::vector<std::string> args)
+ll.export((token, args) => {
   const now = new Date();
   return `服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, 'serverTime');
 
-// Actor 上下文占位符回调签名：std::string(std::string token, std::string param,
+// Actor 上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args,
 // Actor* actor)
-ll.export((token, param, actor) => {
+ll.export((token, args, actor) => {
   if (!actor) return '无实体';
   const pos = actor.pos;
   return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${
@@ -86,7 +87,7 @@ const ok3 =
     PA.registerActorPlaceholder('js', 'actor_pos', JS_CB_NS, 'actorPos', 5); // 恢复缓存时间为 5 秒
 
 // 注册一个缓存的服务器级占位符，缓存时间为 5 秒
-ll.export((token, param) => {
+ll.export((token, args) => {
   const now = new Date();
   return `缓存服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, 'cachedServerTime');

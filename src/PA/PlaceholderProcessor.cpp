@@ -138,7 +138,8 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                     bool                     first_f = true;
 
                     for (const auto& p : paramSegments) {
-                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("color_format=", 0) == 0
+                        if (p.rfind("precision=", 0) == 0 || p.rfind("map=", 0) == 0 || p.rfind("eq_eps=", 0) == 0
+                            || p.rfind("color_format=", 0) == 0
                             || p.rfind("bool_map=", 0) == 0 || p.rfind("char_map=", 0) == 0
                             || p.rfind("regex_map=", 0) == 0 || p.rfind("json_map=", 0) == 0) {
                             if (!first_f) f_param_ss << ",";

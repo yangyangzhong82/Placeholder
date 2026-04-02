@@ -154,6 +154,11 @@ PlaceholderParams parse(std::string_view paramPart) {
                 std::from_chars(epsilon_sv.data(), epsilon_sv.data() + epsilon_sv.size(), parsedEpsilon);
             if (eps_ec == std::errc()) {
                 params.conditional.default_epsilon = parsedEpsilon;
+                // Keep behavior stable regardless of parameter order:
+                // if map conditions were parsed before eq_eps, update them too.
+                for (auto& c : params.conditional.conditions) {
+                    c.epsilon = parsedEpsilon;
+                }
             }
         } else if (p.rfind("bool_map=", 0) == 0) {
             params.booleanMap.enabled = true;
