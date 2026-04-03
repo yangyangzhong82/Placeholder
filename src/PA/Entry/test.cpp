@@ -24,6 +24,11 @@ struct CustomDataContext : public IContext {
 
     uint64_t typeId() const noexcept override { return kTypeId; }
 
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
+    }
+
     std::string getContextInstanceKey() const noexcept override {
         // 提供一个唯一键，用于缓存。这里我们使用数据的内存地址。
         return data ? std::to_string(reinterpret_cast<uintptr_t>(data)) : "";

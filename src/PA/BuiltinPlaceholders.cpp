@@ -19,6 +19,19 @@ namespace PA {
 // 注册内置占位符
 // 注意：owner 指针用于跨模块卸载时反注册。建议使用模块内唯一地址作为 owner。
 void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
+    static int kBuiltinFactoryOwner = 0;
+    void*      factoryOwner         = &kBuiltinFactoryOwner;
+
+    // 注册所有内置上下文工厂，使别名占位符能通过工厂机制构造上下文
+    svc->registerContextFactory(ActorContext::kTypeId,          ActorContext::factory,          factoryOwner);
+    svc->registerContextFactory(MobContext::kTypeId,            MobContext::factory,            factoryOwner);
+    svc->registerContextFactory(PlayerContext::kTypeId,         PlayerContext::factory,         factoryOwner);
+    svc->registerContextFactory(BlockContext::kTypeId,          BlockContext::factory,          factoryOwner);
+    svc->registerContextFactory(ItemStackBaseContext::kTypeId,  ItemStackBaseContext::factory,  factoryOwner);
+    svc->registerContextFactory(ContainerContext::kTypeId,      ContainerContext::factory,      factoryOwner);
+    svc->registerContextFactory(BlockActorContext::kTypeId,     BlockActorContext::factory,     factoryOwner);
+    svc->registerContextFactory(WorldCoordinateContext::kTypeId, WorldCoordinateContext::factory, factoryOwner);
+
     registerActorPlaceholders(svc);
     registerContextAliasPlaceholders(svc);
     registerMobPlaceholders(svc);

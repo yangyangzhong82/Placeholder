@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- 为 `ActorContext`/`MobContext`/`PlayerContext` 添加 `from()` 静态便捷构造方法，避免手动赋值遗漏字段导致崩溃。
+- 新增带 prefix 的宏变体（`PA_SIMPLE_P`、`PA_CACHED_P`、`PA_WITH_ARGS_P`、`PA_SERVER_P`、`PA_SERVER_CACHED_P`、`PA_SERVER_WITH_ARGS_P`），支持第三方插件注册带命名空间前缀的占位符。
+
+### Fixed
+- 修复缓存时间 bug：`PlaceholderProcessor` 中错误地将 `cacheDuration` 除以 1000，导致缓存几乎立即过期。现在缓存时间正确按秒计算。
+
 ### Changed
+- 重构：拆分 `PlaceholderRegistry.cpp`、`ScriptExports.cpp`、`ParameterParser.cpp`、`SystemPlaceholders.cpp` 四个大文件为职责单一的模块。
+- 重构：注册表 key 统一转小写存储，消除运行时 `ci_hash`/`ci_equal` 开销。
+- 重构：提取 `buildKey()` 辅助函数，消除 4 处重复的 token 解析代码。
+- 注册重复 token 时输出 `logger.warn` 警告。
+- 标记 `registerCachedPlaceholder` 为废弃，`cacheDuration` 参数不再生效，实际缓存时间取决于 `IPlaceholder::getCacheDuration()` 返回值。
 - 文档重构：`README.md` 改为项目总览与快速开始，并补充文档导航。
 - 文档对齐：`API_DOC.md` 新增 JavaScript RemoteCall API 章节，明确导出函数与回调签名（`args` 数组）。
 - 文档重写：`USAGE_GUIDE.md` 按当前实现更新参数分流、格式化执行顺序、`map`/颜色规则行为与排错示例。

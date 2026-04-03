@@ -48,10 +48,8 @@ constexpr uint64_t TypeId(const char (&str)[N]) {
 struct PA_API IContext {
     virtual ~IContext()                      = default;
     virtual uint64_t typeId() const noexcept = 0;
-    // 方法：获取所有继承的上下文类型 ID 列表，包括自身
-    virtual std::vector<uint64_t> getInheritedTypeIds() const noexcept {
-        return {typeId()}; // 默认只返回自己的 typeId
-    }
+    // 方法：获取所有继承的上下文类型 ID 列表（派生类在前），返回静态引用避免分配
+    virtual const std::vector<uint64_t>& getInheritedTypeIds() const noexcept = 0;
     // 方法：获取上下文实例的唯一键（例如，玩家UUID，方块位置哈希）
     virtual std::string getContextInstanceKey() const noexcept { return ""; }
 };
@@ -66,8 +64,9 @@ struct PA_API ActorContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:Actor");
     Actor*                    actor{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId}; // Actor 不继承其他上下文
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
     }
     // 便捷构造：自动填充所有字段
     static ActorContext from(Actor* a) {
@@ -94,10 +93,9 @@ struct PA_API MobContext : public ActorContext { // Mob 继承自 Actor
     static constexpr uint64_t kTypeId = TypeId("ctx:Mob");
     Mob*                      mob{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        std::vector<uint64_t> inherited = ActorContext::getInheritedTypeIds();
-        inherited.push_back(kTypeId);
-        return inherited;
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId, ActorContext::kTypeId};
+        return ids;
     }
     // 便捷构造：自动填充 mob + actor
     static MobContext from(Mob* m) {
@@ -126,10 +124,9 @@ struct PA_API PlayerContext : public MobContext { //  Player 继承自 Mob
     static constexpr uint64_t kTypeId = TypeId("ctx:Player");
     Player*                   player{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
-        inherited.push_back(kTypeId);
-        return inherited;
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId, MobContext::kTypeId, ActorContext::kTypeId};
+        return ids;
     }
     // 便捷构造：自动填充 player + mob + actor
     static PlayerContext from(Player* p) {
@@ -158,10 +155,22 @@ struct PA_API PlayerContext : public MobContext { //  Player 继承自 Mob
 // 方块上下文
 struct PA_API BlockContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:Block");
-    const Block*              block{}; // Changed to const Block*
+    const Block*              block{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId}; // Block 不继承其他上下文
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
+    }
+    static BlockContext from(const Block* b) {
+        BlockContext ctx;
+        ctx.block = b;
+        return ctx;
+    }
+    static std::unique_ptr<IContext> factory(void* raw) {
+        if (!raw) return nullptr;
+        auto ctx = std::make_unique<BlockContext>();
+        ctx->block = static_cast<const Block*>(raw);
+        return ctx;
     }
     std::string getContextInstanceKey() const noexcept override {
         return block ? std::to_string(reinterpret_cast<uintptr_t>(block)) : "";
@@ -173,8 +182,20 @@ struct PA_API ItemStackBaseContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:ItemStackBase");
     const ItemStackBase*      itemStackBase{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId};
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
+    }
+    static ItemStackBaseContext from(const ItemStackBase* i) {
+        ItemStackBaseContext ctx;
+        ctx.itemStackBase = i;
+        return ctx;
+    }
+    static std::unique_ptr<IContext> factory(void* raw) {
+        if (!raw) return nullptr;
+        auto ctx = std::make_unique<ItemStackBaseContext>();
+        ctx->itemStackBase = static_cast<const ItemStackBase*>(raw);
+        return ctx;
     }
     std::string getContextInstanceKey() const noexcept override {
         return itemStackBase ? std::to_string(reinterpret_cast<uintptr_t>(itemStackBase)) : "";
@@ -186,8 +207,20 @@ struct PA_API ContainerContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:Container");
     Container*                container{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId};
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
+    }
+    static ContainerContext from(Container* c) {
+        ContainerContext ctx;
+        ctx.container = c;
+        return ctx;
+    }
+    static std::unique_ptr<IContext> factory(void* raw) {
+        if (!raw) return nullptr;
+        auto ctx = std::make_unique<ContainerContext>();
+        ctx->container = static_cast<Container*>(raw);
+        return ctx;
     }
     std::string getContextInstanceKey() const noexcept override {
         return container ? std::to_string(reinterpret_cast<uintptr_t>(container)) : "";
@@ -199,8 +232,20 @@ struct PA_API BlockActorContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:BlockActor");
     BlockActor*               blockActor{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId};
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
+    }
+    static BlockActorContext from(BlockActor* ba) {
+        BlockActorContext ctx;
+        ctx.blockActor = ba;
+        return ctx;
+    }
+    static std::unique_ptr<IContext> factory(void* raw) {
+        if (!raw) return nullptr;
+        auto ctx = std::make_unique<BlockActorContext>();
+        ctx->blockActor = static_cast<BlockActor*>(raw);
+        return ctx;
     }
     std::string getContextInstanceKey() const noexcept override {
         return blockActor ? std::to_string(reinterpret_cast<uintptr_t>(blockActor)) : "";
@@ -216,10 +261,11 @@ struct PA_API WorldCoordinateData {
 // 世界坐标上下文
 struct PA_API WorldCoordinateContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:WorldCoordinate");
-    std::shared_ptr<WorldCoordinateData> data; // 指向实际数据的指针
+    std::shared_ptr<WorldCoordinateData> data;
     uint64_t                  typeId() const noexcept override { return kTypeId; }
-    std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
-        return {kTypeId};
+    const std::vector<uint64_t>& getInheritedTypeIds() const noexcept override {
+        static const std::vector<uint64_t> ids = {kTypeId};
+        return ids;
     }
     std::string getContextInstanceKey() const noexcept override {
         return data ? (data->pos.toString() + "_" + std::to_string(static_cast<int>(data->dimensionId))) : "";

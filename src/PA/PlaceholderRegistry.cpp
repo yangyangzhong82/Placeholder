@@ -309,8 +309,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
     if (!ctx) return typedList;
 
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
-    std::vector<uint64_t>                                                inheritedTypeIds = ctx->getInheritedTypeIds();
-    std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end());
+    const auto& inheritedTypeIds = ctx->getInheritedTypeIds(); // 已按派生优先排序
 
     for (uint64_t id : inheritedTypeIds) {
         auto tit = snapshot->typed.find(id);
@@ -370,8 +369,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
     }
 
     if (ctx) {
-        auto inheritedTypeIds = ctx->getInheritedTypeIds();
-        std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end());
+        const auto& inheritedTypeIds = ctx->getInheritedTypeIds(); // 已按派生优先排序
 
         // 2.5 Check context alias (adapter) by token == alias
         {
