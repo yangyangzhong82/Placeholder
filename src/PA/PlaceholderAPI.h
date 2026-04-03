@@ -62,12 +62,18 @@ inline constexpr uint64_t kServerContextId = 0;
 // 预定义的一些上下文（如需更多上下文，请扩展此处并保持 ID 字符串常量不变）
 
 // Actor 上下文
-struct PA_API ActorContext : public IContext { 
+struct PA_API ActorContext : public IContext {
     static constexpr uint64_t kTypeId = TypeId("ctx:Actor");
     Actor*                    actor{};
     uint64_t                  typeId() const noexcept override { return kTypeId; }
     std::vector<uint64_t>     getInheritedTypeIds() const noexcept override {
         return {kTypeId}; // Actor 不继承其他上下文
+    }
+    // 便捷构造：自动填充所有字段
+    static ActorContext from(Actor* a) {
+        ActorContext ctx;
+        ctx.actor = a;
+        return ctx;
     }
     // 确保 ActorContext 也能从 PlayerContext 构造
     static std::unique_ptr<IContext> factory(void* rawObject) {
@@ -93,6 +99,13 @@ struct PA_API MobContext : public ActorContext { // Mob 继承自 Actor
         inherited.push_back(kTypeId);
         return inherited;
     }
+    // 便捷构造：自动填充 mob + actor
+    static MobContext from(Mob* m) {
+        MobContext ctx;
+        ctx.mob = m;
+        ctx.actor = static_cast<Actor*>(static_cast<void*>(m));
+        return ctx;
+    }
     // 确保 MobContext 也能从 PlayerContext 构造
     static std::unique_ptr<IContext> factory(void* rawObject) {
         if (rawObject) {
@@ -117,6 +130,14 @@ struct PA_API PlayerContext : public MobContext { //  Player 继承自 Mob
         std::vector<uint64_t> inherited = MobContext::getInheritedTypeIds();
         inherited.push_back(kTypeId);
         return inherited;
+    }
+    // 便捷构造：自动填充 player + mob + actor
+    static PlayerContext from(Player* p) {
+        PlayerContext ctx;
+        ctx.player = p;
+        ctx.mob = static_cast<Mob*>(static_cast<void*>(p));
+        ctx.actor = static_cast<Actor*>(static_cast<void*>(p));
+        return ctx;
     }
     // 确保 PlayerContext 也能从 PlayerContext 构造
     static std::unique_ptr<IContext> factory(void* rawObject) {
@@ -305,11 +326,8 @@ struct PA_API IPlaceholderService {
     // 若 prefix 为空，则 token 保持不变。
     virtual void registerPlaceholder(std::string_view prefix, std::shared_ptr<const IPlaceholder> p, void* owner) = 0;
 
-    // 注册缓存占位符：通过 shared_ptr 共享所有权，由 owner 标识归属模块
-    // prefix 为占位符前缀，用于解决命名冲突。
-    // 最终 token 形式为 "{prefix:token_name}"，其中 "token_name" 来自 IPlaceholder::token() (去除 '{}')。
-    // 若 prefix 为空，则 token 保持不变。
-    // cacheDuration 为缓存持续时间（秒）。
+    // [已废弃] 请改用 registerPlaceholder + IPlaceholder::getCacheDuration()。
+    // cacheDuration 参数不再生效，实际缓存时间取决于占位符自身的 getCacheDuration() 返回值。
     virtual void registerCachedPlaceholder(
         std::string_view                    prefix,
         std::shared_ptr<const IPlaceholder> p,

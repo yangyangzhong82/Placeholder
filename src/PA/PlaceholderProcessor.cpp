@@ -189,7 +189,7 @@ PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const 
                     );
 
                     if (elapsedSeconds
-                        < (cachedEntry->cacheDuration / 1000)) { // 将 cacheDuration 从毫秒转换为秒进行比较
+                        < cachedEntry->cacheDuration) { // cacheDuration 单位为秒
                         evaluatedValue = it->second.value;
                         useCachedValue = true;
                         logger.debug("3. Cache Hit: evaluatedValue='{}'", evaluatedValue);

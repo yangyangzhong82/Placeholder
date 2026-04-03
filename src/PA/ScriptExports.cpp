@@ -77,11 +77,8 @@ void install() {
                          logger.debug("[PA::replaceForPlayer] out='{}'", truncateForLog(out));
                          return out;
                      }
-                     PlayerContext ctx;
-                     ctx.player = player;
-                     ctx.mob    = player;
-                     ctx.actor  = player;
-                     auto out   = svc->replace(text, &ctx);
+                     auto ctx = PlayerContext::from(player);
+                     auto out = svc->replace(text, &ctx);
                      logger.debug("[PA::replaceForPlayer] out='{}'", truncateForLog(out));
                      return out;
                  }
@@ -100,9 +97,8 @@ void install() {
                          logger.debug("[PA::replaceForActor] out='{}'", truncateForLog(out));
                          return out;
                      }
-                     ActorContext ctx;
-                     ctx.actor = actor;
-                     auto out  = svc->replace(text, &ctx);
+                     auto ctx = ActorContext::from(actor);
+                     auto out = svc->replace(text, &ctx);
                      logger.debug("[PA::replaceForActor] out='{}'", truncateForLog(out));
                      return out;
                  }
@@ -137,10 +133,7 @@ void install() {
                          for (auto const& t : texts) outs.emplace_back(svc->replaceServer(t));
                          return outs;
                      }
-                     PlayerContext ctx;
-                     ctx.player = player;
-                     ctx.mob    = player;
-                     ctx.actor  = player;
+                     auto ctx = PlayerContext::from(player);
                      for (auto const& t : texts) {
                          outs.emplace_back(svc->replace(t, &ctx));
                      }
@@ -182,10 +175,7 @@ void install() {
                          for (auto const& [k, v] : kv) out.emplace(k, svc->replaceServer(v));
                          return out;
                      }
-                     PlayerContext ctx;
-                     ctx.player = player;
-                     ctx.mob    = player;
-                     ctx.actor  = player;
+                     auto ctx = PlayerContext::from(player);
                      for (auto const& [k, v] : kv) {
                          out.emplace(k, svc->replace(v, &ctx));
                      }

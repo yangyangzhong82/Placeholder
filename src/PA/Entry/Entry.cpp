@@ -36,7 +36,6 @@ bool Entry::enable() {
 
 bool Entry::disable() {
     getSelf().getLogger().debug("Disabling...");
-    ScriptExports::uninstall();
 
     return true;
 }

@@ -259,4 +259,71 @@ inline std::tm local_tm(std::time_t t) {
 #define PA_REGISTER_ARGS_PLACEHOLDER(svc, owner, ctx_type, token_str, lambda_body)                                     \
     PA_WITH_ARGS(svc, owner, ctx_type, token_str, lambda_body)
 
+// ========== 带 prefix 的占位符注册宏 ==========
+// 用于第三方插件注册带命名空间前缀的占位符，例如 PA_SIMPLE_P(svc, owner, "myplugin", PlayerContext, "{score}", { ... })
+
+#define PA_SIMPLE_P(svc, owner, prefix, ctx_type, token_str, lambda_body)                                              \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<TypedLambdaPlaceholder<ctx_type, void (*)(const ctx_type&, std::string&)>>(                   \
+            token_str,                                                                                                 \
+            +[](const ctx_type& c, std::string& out) lambda_body                                                       \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_CACHED_P(svc, owner, prefix, ctx_type, token_str, cache_duration, lambda_body)                              \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<TypedLambdaPlaceholder<ctx_type, void (*)(const ctx_type&, std::string&)>>(                   \
+            token_str,                                                                                                 \
+            +[](const ctx_type& c, std::string& out) lambda_body,                                                      \
+            cache_duration                                                                                             \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_WITH_ARGS_P(svc, owner, prefix, ctx_type, token_str, lambda_body)                                           \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<TypedLambdaPlaceholder<                                                                       \
+            ctx_type,                                                                                                  \
+            void (*)(const ctx_type&, const std::vector<std::string_view>&, std::string&)>>(                           \
+            token_str,                                                                                                 \
+            +[](const ctx_type& c, const std::vector<std::string_view>& args, std::string& out) lambda_body            \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_SERVER_P(svc, owner, prefix, token_str, lambda_body)                                                        \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(                                             \
+            token_str,                                                                                                 \
+            +[](std::string & out) lambda_body                                                                         \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_SERVER_CACHED_P(svc, owner, prefix, token_str, cache_duration, lambda_body)                                 \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&)>>(                                             \
+            token_str,                                                                                                 \
+            +[](std::string & out) lambda_body,                                                                        \
+            cache_duration                                                                                             \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
+#define PA_SERVER_WITH_ARGS_P(svc, owner, prefix, token_str, lambda_body)                                              \
+    (svc)->registerPlaceholder(                                                                                        \
+        prefix,                                                                                                        \
+        std::make_shared<ServerLambdaPlaceholder<void (*)(std::string&, const std::vector<std::string_view>&)>>(       \
+            token_str,                                                                                                 \
+            +[](std::string & out, const std::vector<std::string_view>& args) lambda_body                              \
+        ),                                                                                                             \
+        owner                                                                                                          \
+    )
+
 } // namespace PA
