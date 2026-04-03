@@ -2,12 +2,9 @@
 #pragma once
 
 #include "PA/PlaceholderAPI.h"
-#include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <memory>
 #include <mutex>
-#include <string.h>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -176,38 +173,29 @@ private:
         std::string token; // 对于适配器，这里存 alias; 对于工厂，这里存 ctxId 的字符串形式
     };
 
-    struct ci_hash {
-        size_t operator()(const std::string& s) const {
-            std::string lower_s;
-            lower_s.resize(s.size());
-            std::transform(s.begin(), s.end(), lower_s.begin(), [](unsigned char c) { return std::tolower(c); });
-            return std::hash<std::string>()(lower_s);
-        }
-    };
+    // 构建注册表 key：去花括号 + 拼 prefix + 转小写
+    static std::string buildKey(std::string_view prefix, std::string_view token);
 
-    struct ci_equal {
-        bool operator()(const std::string& s1, const std::string& s2) const {
-            return _stricmp(s1.c_str(), s2.c_str()) == 0;
-        }
-    };
+    // 将字符串转为小写（用于大小写不敏感查找）
+    static std::string toLowerKey(std::string_view s);
 
     struct Snapshot {
-        std::unordered_map<uint64_t, std::unordered_map<std::string, Entry, ci_hash, ci_equal>> typed;
+        std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>> typed;
         std::unordered_map<
             uint64_t,
-            std::unordered_map<uint64_t, std::unordered_map<std::string, Entry, ci_hash, ci_equal>>>
-                                                                  relational;
-        std::unordered_map<std::string, Entry, ci_hash, ci_equal> server;
-        std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>
+            std::unordered_map<uint64_t, std::unordered_map<std::string, Entry>>>
+                                                  relational;
+        std::unordered_map<std::string, Entry>    server;
+        std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry>>
             cached_typed; // 缓存的 Typed 占位符
         std::unordered_map<
             uint64_t,
-            std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal>>>
+            std::unordered_map<uint64_t, std::unordered_map<std::string, CachedEntry>>>
             cached_relational; // 缓存的关系型占位符
-        std::unordered_map<std::string, CachedEntry, ci_hash, ci_equal> cached_server; // 缓存的 Server 占位符
+        std::unordered_map<std::string, CachedEntry> cached_server; // 缓存的 Server 占位符
 
-        // alias -> adapters（大小写不敏感）
-        std::unordered_map<std::string, std::vector<Adapter>, ci_hash, ci_equal> adapters;
+        // alias -> adapters（key 已预规范化为小写）
+        std::unordered_map<std::string, std::vector<Adapter>> adapters;
 
         // contextTypeId -> factory
         struct FactoryEntry {

@@ -36,7 +36,7 @@ bool Entry::enable() {
 
 bool Entry::disable() {
     getSelf().getLogger().debug("Disabling...");
-    // Code for disabling the mod goes here.
+    ScriptExports::uninstall();
 
     return true;
 }

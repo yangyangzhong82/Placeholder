@@ -1,10 +1,46 @@
 // src/PA/PlaceholderRegistry.cpp
 #include "PA/PlaceholderRegistry.h"
 #include "PA/AdapterAliasPlaceholder.h"
+#include "PA/logger.h"
+
+#include <algorithm>
+#include <cctype>
 
 namespace PA {
 
 PlaceholderRegistry::PlaceholderRegistry() : mSnapshot(std::make_shared<const Snapshot>()) {}
+
+std::string PlaceholderRegistry::toLowerKey(std::string_view s) {
+    std::string result(s);
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return result;
+}
+
+std::string PlaceholderRegistry::buildKey(std::string_view prefix, std::string_view token) {
+    // 去花括号
+    std::string_view inner = token;
+    if (inner.length() > 2 && inner.front() == '{' && inner.back() == '}') {
+        inner = inner.substr(1, inner.length() - 2);
+    }
+
+    std::string key;
+    if (prefix.empty()) {
+        key = inner;
+    } else {
+        key.reserve(prefix.size() + 1 + inner.size());
+        key.append(prefix);
+        key.push_back(':');
+        key.append(inner);
+    }
+
+    // 预规范化为小写
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return key;
+}
 
 void PlaceholderRegistry::registerPlaceholder(
     std::string_view                    prefix,
@@ -14,22 +50,7 @@ void PlaceholderRegistry::registerPlaceholder(
     if (!p) return;
 
     unsigned int cacheDuration = p->getCacheDuration();
-
-    std::string      key;
-    std::string_view token_sv = p->token();
-
-    std::string inner_token_str;
-    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
-    } else {
-        inner_token_str = token_sv;
-    }
-
-    if (prefix.empty()) {
-        key = inner_token_str;
-    } else {
-        key = std::string(prefix) + ":" + inner_token_str;
-    }
+    std::string  key           = buildKey(prefix, p->token());
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
     auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
@@ -41,17 +62,29 @@ void PlaceholderRegistry::registerPlaceholder(
         entry.owner = owner;
         entry.cacheDuration = cacheDuration;
         if (ctxId == kServerContextId) {
+            if (newSnapshot->cached_server.count(key)) {
+                logger.warn("[PA::Registry] Overwriting cached server placeholder '{}'", key);
+            }
             newSnapshot->cached_server.emplace(key, std::move(entry));
             newSnapshot->ownerIndex[owner].push_back({true, false, true, false, false, 0, 0, 0, key});
         } else {
+            if (newSnapshot->cached_typed[ctxId].count(key)) {
+                logger.warn("[PA::Registry] Overwriting cached typed placeholder '{}' for ctxId={}", key, ctxId);
+            }
             newSnapshot->cached_typed[ctxId].emplace(key, std::move(entry));
             newSnapshot->ownerIndex[owner].push_back({false, false, true, false, false, 0, 0, ctxId, key});
         }
     } else {
         if (ctxId == kServerContextId) {
+            if (newSnapshot->server.count(key)) {
+                logger.warn("[PA::Registry] Overwriting server placeholder '{}'", key);
+            }
             newSnapshot->server[key] = {p, owner};
             newSnapshot->ownerIndex[owner].push_back({true, false, false, false, false, 0, 0, 0, key});
         } else {
+            if (newSnapshot->typed[ctxId].count(key)) {
+                logger.warn("[PA::Registry] Overwriting typed placeholder '{}' for ctxId={}", key, ctxId);
+            }
             newSnapshot->typed[ctxId][key] = {p, owner};
             newSnapshot->ownerIndex[owner].push_back({false, false, false, false, false, 0, 0, ctxId, key});
         }
@@ -65,19 +98,8 @@ void PlaceholderRegistry::registerCachedPlaceholder(
     void*                               owner,
     unsigned int /* cacheDuration */
 ) {
-    // This is now a convenience function that forwards to the main registration logic.
-    // Note: The `cacheDuration` parameter here is technically redundant if the placeholder
-    // itself returns a valid duration from `getCacheDuration()`. The primary mechanism
-    // should be the placeholder's own method. This API is kept for compatibility.
     if (!p) return;
-    if (p->getCacheDuration() > 0) {
-        registerPlaceholder(prefix, p, owner);
-    } else {
-        // If the placeholder itself doesn't specify a cache duration, we can't treat it as cached.
-        // Forcing it into the cached map would be inconsistent.
-        // We will register it as a normal placeholder instead.
-        registerPlaceholder(prefix, p, owner);
-    }
+    registerPlaceholder(prefix, p, owner);
 }
 
 
@@ -90,21 +112,7 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
 ) {
     if (!p) return;
 
-    std::string      key;
-    std::string_view token_sv = p->token();
-
-    std::string inner_token_str;
-    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
-    } else {
-        inner_token_str = token_sv;
-    }
-
-    if (prefix.empty()) {
-        key = inner_token_str;
-    } else {
-        key = std::string(prefix) + ":" + inner_token_str;
-    }
+    std::string key = buildKey(prefix, p->token());
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
     auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
@@ -112,7 +120,7 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
     newSnapshot->relational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
     newSnapshot->ownerIndex[owner].push_back(
         {false, true, false, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
-    ); // isServer, isRelational, isCached, isAdapter, isFactory
+    );
     mSnapshot.store(newSnapshot);
 }
 
@@ -126,21 +134,7 @@ void PlaceholderRegistry::registerCachedRelationalPlaceholder(
 ) {
     if (!p) return;
 
-    std::string      key;
-    std::string_view token_sv = p->token();
-
-    std::string inner_token_str;
-    if (token_sv.length() > 2 && token_sv.front() == '{' && token_sv.back() == '}') {
-        inner_token_str = token_sv.substr(1, token_sv.length() - 2);
-    } else {
-        inner_token_str = token_sv;
-    }
-
-    if (prefix.empty()) {
-        key = inner_token_str;
-    } else {
-        key = std::string(prefix) + ":" + inner_token_str;
-    }
+    std::string key = buildKey(prefix, p->token());
 
     std::lock_guard<std::mutex> lk(mWriteMutex);
     auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
@@ -153,7 +147,7 @@ void PlaceholderRegistry::registerCachedRelationalPlaceholder(
     newSnapshot->cached_relational[mainContextTypeId][relationalContextTypeId].emplace(key, std::move(entry));
     newSnapshot->ownerIndex[owner].push_back(
         {false, true, true, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
-    ); // isServer, isRelational, isCached, isAdapter, isFactory
+    );
     mSnapshot.store(newSnapshot);
 }
 
@@ -166,14 +160,15 @@ void PlaceholderRegistry::registerContextAlias(
 ) {
     if (alias.empty() || !resolver) return;
 
+    std::string key = toLowerKey(alias);
+
     std::lock_guard<std::mutex> lk(mWriteMutex);
     auto                        current = mSnapshot.load();
     auto                        snap    = std::make_shared<Snapshot>(*current);
 
-    auto& vec = snap->adapters[std::string(alias)];
+    auto& vec = snap->adapters[key];
     vec.push_back(Adapter{fromContextTypeId, toContextTypeId, resolver, owner});
 
-    // 记录 owner -> handle
     snap->ownerIndex[owner].push_back(
         {false, // isServer
          false, // isRelational
@@ -183,7 +178,7 @@ void PlaceholderRegistry::registerContextAlias(
          fromContextTypeId,
          toContextTypeId,
          0,
-         std::string(alias)}
+         key}
     );
 
     mSnapshot.store(snap);
@@ -198,7 +193,6 @@ void PlaceholderRegistry::registerContextFactory(uint64_t contextTypeId, Context
 
     snap->contextFactories[contextTypeId] = {factory, owner};
 
-    // 记录 owner -> handle
     snap->ownerIndex[owner].push_back(
         {false, // isServer
          false, // isRelational
@@ -316,7 +310,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
 
     std::unordered_map<std::string, std::shared_ptr<const IPlaceholder>> tempTypedMap;
     std::vector<uint64_t>                                                inheritedTypeIds = ctx->getInheritedTypeIds();
-    std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end()); // 反转顺序，派生类在前
+    std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end());
 
     for (uint64_t id : inheritedTypeIds) {
         auto tit = snapshot->typed.find(id);
@@ -330,7 +324,7 @@ PlaceholderRegistry::getTypedPlaceholders(const IContext* ctx) const {
     uint64_t mainCtxId = ctx->typeId();
     auto     mainIt    = snapshot->relational.find(mainCtxId);
     if (mainIt != snapshot->relational.end()) {
-        for (uint64_t relId : inheritedTypeIds) { // 这里也需要反转，因为 relId 也是继承类型
+        for (uint64_t relId : inheritedTypeIds) {
             auto relIt = mainIt->second.find(relId);
             if (relIt != mainIt->second.end()) {
                 for (auto& kv : relIt->second) {
@@ -360,29 +354,29 @@ PlaceholderRegistry::getServerPlaceholders() const {
 }
 
 LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
-    auto snapshot = mSnapshot.load();
+    auto        snapshot  = mSnapshot.load();
+    std::string lowerToken = toLowerKey(token);
 
     // 1. Check cached server placeholders
-    auto cachedServerIt = snapshot->cached_server.find(token);
+    auto cachedServerIt = snapshot->cached_server.find(lowerToken);
     if (cachedServerIt != snapshot->cached_server.end()) {
         return {cachedServerIt->second.ptr, &cachedServerIt->second, snapshot};
     }
 
     // 2. Check non-cached server placeholders
-    auto serverIt = snapshot->server.find(token);
+    auto serverIt = snapshot->server.find(lowerToken);
     if (serverIt != snapshot->server.end()) {
         return {serverIt->second.ptr, nullptr, snapshot};
     }
 
     if (ctx) {
         auto inheritedTypeIds = ctx->getInheritedTypeIds();
-        std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end()); // 反转顺序，派生类在前
+        std::reverse(inheritedTypeIds.begin(), inheritedTypeIds.end());
 
         // 2.5 Check context alias (adapter) by token == alias
         {
-            auto ait = snapshot->adapters.find(token);
+            auto ait = snapshot->adapters.find(lowerToken);
             if (ait != snapshot->adapters.end()) {
-                // 选择与当前上下文匹配的 fromCtxId（最派生优先）
                 for (uint64_t id : inheritedTypeIds) {
                     for (const auto& ad : ait->second) {
                         if (ad.fromCtxId == id) {
@@ -404,7 +398,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->cached_typed.find(id);
             if (it != snapshot->cached_typed.end()) {
-                auto placeholderIt = it->second.find(token);
+                auto placeholderIt = it->second.find(lowerToken);
                 if (placeholderIt != it->second.end()) {
                     return {placeholderIt->second.ptr, &placeholderIt->second, snapshot};
                 }
@@ -415,7 +409,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->typed.find(id);
             if (it != snapshot->typed.end()) {
-                auto placeholderIt = it->second.find(token);
+                auto placeholderIt = it->second.find(lowerToken);
                 if (placeholderIt != it->second.end()) {
                     return {placeholderIt->second.ptr, nullptr, snapshot};
                 }
@@ -429,7 +423,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainIt->second.find(relId);
                 if (relIt != mainIt->second.end()) {
-                    auto placeholderIt = relIt->second.find(token);
+                    auto placeholderIt = relIt->second.find(lowerToken);
                     if (placeholderIt != relIt->second.end()) {
                         return {placeholderIt->second.ptr, &placeholderIt->second, snapshot};
                     }
@@ -443,7 +437,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             for (uint64_t relId : inheritedTypeIds) {
                 auto relIt = mainItNonCached->second.find(relId);
                 if (relIt != mainItNonCached->second.end()) {
-                    auto placeholderIt = relIt->second.find(token);
+                    auto placeholderIt = relIt->second.find(lowerToken);
                     if (placeholderIt != relIt->second.end()) {
                         return {placeholderIt->second.ptr, nullptr, snapshot};
                     }
@@ -452,20 +446,13 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
         }
     }
 
-    // 7. Check for ContainerContext (if applicable)
-    if (ctx && ctx->typeId() == ContainerContext::kTypeId) {
-        auto containerCtx = static_cast<const ContainerContext*>(ctx);
-        // Add specific logic for ContainerContext if needed, e.g., looking up placeholders
-        // related to the container's properties or contents.
-        // For now, we'll just let it fall through to the default.
-    }
-
     return {nullptr, nullptr, nullptr};
 }
 
 const Adapter* PlaceholderRegistry::findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const {
-    auto snapshot = mSnapshot.load();
-    auto it       = snapshot->adapters.find(std::string(alias)); // adapters 使用 std::string 作为 key
+    auto        snapshot   = mSnapshot.load();
+    std::string lowerAlias = toLowerKey(alias);
+    auto        it         = snapshot->adapters.find(lowerAlias);
     if (it != snapshot->adapters.end()) {
         for (const auto& adapter : it->second) {
             if (adapter.fromCtxId == fromContextTypeId) {
