@@ -1,6 +1,7 @@
 // src/PA/ScriptExports.cpp
 #include "PA/ScriptExports.h"
 
+#include "PA/JsPlaceholder.h"
 #include "PA/PlaceholderAPI.h"
 #include "PA/logger.h"
 #include "RemoteCallAPI.h"
@@ -10,9 +11,7 @@
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/level/BlockPos.h"
 
-#include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <fmt/core.h>
 #include <mutex>
 #include <string>
@@ -35,212 +34,6 @@ static std::string truncateForLog(std::string const& s, size_t maxLen = 256) {
 static std::string safeNullPtr(void const* p) {
     return p ? fmt::format("0x{:X}", reinterpret_cast<uintptr_t>(p)) : "null";
 }
-
-// ========== JS 占位符适配 ==========
-
-namespace {
-
-// 一个“所有权桶”，用来把同一 JS 命名空间注册的占位符归为一组，便于批量卸载
-struct OwnerBucket {
-    std::string key; // 一般使用 JS 回调命名空间作为 key
-};
-
-static std::mutex                                                    gOwnerMutex;
-static std::unordered_map<std::string, std::unique_ptr<OwnerBucket>> gOwners;
-
-static void* getOrCreateOwner(std::string const& key) {
-    std::scoped_lock lk(gOwnerMutex);
-    auto             it = gOwners.find(key);
-    if (it != gOwners.end()) return it->second.get();
-    auto node = std::make_unique<OwnerBucket>();
-    node->key = key;
-    void* ptr = node.get();
-    gOwners.emplace(key, std::move(node));
-    return ptr;
-}
-
-static bool unregisterByOwnerKey(std::string const& key) {
-    auto* svc = PA_GetPlaceholderService();
-    if (!svc) return false;
-
-    std::unique_ptr<OwnerBucket> node;
-    {
-        std::scoped_lock lk(gOwnerMutex);
-        auto             it = gOwners.find(key);
-        if (it == gOwners.end()) return false;
-        void* owner = it->second.get();
-        // 卸载该 owner 下的全部占位符
-        svc->unregisterByOwner(owner);
-        node = std::move(it->second);
-        gOwners.erase(it);
-    }
-    return true;
-}
-
-// 将上下文类型名转成 ID（方便 JS 传字符串）
-static uint64_t parseContextKind(std::string kind) {
-    auto toLower = [](std::string& s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    };
-    toLower(kind);
-    if (kind == "server" || kind == "srv" || kind == "none") return kServerContextId;
-    if (kind == "actor") return ActorContext::kTypeId;
-    if (kind == "mob") return MobContext::kTypeId;
-    if (kind == "player" || kind == "pl" || kind == "p") return PlayerContext::kTypeId;
-    return kServerContextId;
-}
-
-// IPlaceholder 适配器：将求值回调转发给 JS（通过 RemoteCall）
-class JsPlaceholder final : public IPlaceholder {
-public:
-    JsPlaceholder(
-        std::string  tokenNameNoBraces,
-        uint64_t     ctxId,
-        std::string  cbNamespace,
-        std::string  cbName,
-        unsigned int cacheDuration = 0
-    )
-    : mTokenNoBraces(std::move(tokenNameNoBraces)),
-      mTokenBraced("{" + mTokenNoBraces + "}"),
-      mCtxId(ctxId),
-      mCbNS(std::move(cbNamespace)),
-      mCbName(std::move(cbName)),
-      mCacheDuration(cacheDuration) {}
-
-    std::string_view token() const noexcept override { return mTokenBraced; }
-    uint64_t         contextTypeId() const noexcept override { return mCtxId; }
-    unsigned int     getCacheDuration() const noexcept override { return mCacheDuration; }
-
-    void evaluate(const IContext* ctx, std::string& out) const override {
-        evaluateWithArgs(ctx, {}, out); // No args
-    }
-
-    void evaluateWithArgs(
-        const IContext*                      ctx,
-        const std::vector<std::string_view>& args,
-        std::string&                         out
-    ) const override {
-        try {
-            // 将 tokenName（不带花括号）与 args 传给 JS
-            std::vector<std::string> args_str;
-            args_str.reserve(args.size());
-            for (const auto& sv : args) {
-                args_str.emplace_back(sv);
-            }
-
-            if (mCtxId == kServerContextId) {
-                // JS 回调签名：std::string(std::string token, std::vector<std::string> args)
-                auto fn  = RemoteCall::importAs<std::string(std::string, std::vector<std::string>)>(mCbNS, mCbName);
-                auto res = fn(mTokenNoBraces, args_str);
-                out.append(res);
-            } else if (mCtxId == PlayerContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
-                auto fn =
-                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Player*)>(mCbNS, mCbName);
-                auto    pctx = static_cast<PlayerContext const*>(ctx);
-                Player* p    = pctx ? pctx->player : nullptr;
-                auto    res  = fn(mTokenNoBraces, args_str, p);
-                out.append(res);
-            } else if (mCtxId == MobContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
-                auto fn =
-                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Actor*)>(mCbNS, mCbName);
-                auto   mctx = static_cast<MobContext const*>(ctx);
-                Actor* a    = mctx ? static_cast<Actor*>(mctx->mob) : nullptr;
-                auto   res  = fn(mTokenNoBraces, args_str, a);
-                out.append(res);
-            } else if (mCtxId == ActorContext::kTypeId) {
-                // JS 回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
-                auto fn =
-                    RemoteCall::importAs<std::string(std::string, std::vector<std::string>, Actor*)>(mCbNS, mCbName);
-                auto   actx = static_cast<ActorContext const*>(ctx);
-                Actor* a    = actx ? actx->actor : nullptr;
-                auto   res  = fn(mTokenNoBraces, args_str, a);
-                out.append(res);
-            } else {
-                // 未知上下文，回退为服务器级
-                auto fn  = RemoteCall::importAs<std::string(std::string, std::vector<std::string>)>(mCbNS, mCbName);
-                auto res = fn(mTokenNoBraces, args_str);
-                out.append(res);
-            }
-        } catch (std::exception const& e) {
-            logger.error(
-                "[PA::JsPlaceholder] evaluate error for token '{}', cb='{}::{}': {}",
-                mTokenBraced,
-                mCbNS,
-                mCbName,
-                e.what()
-            );
-        }
-    }
-
-private:
-    std::string  mTokenNoBraces;
-    std::string  mTokenBraced;
-    uint64_t     mCtxId;
-    std::string  mCbNS;
-    std::string  mCbName;
-    unsigned int mCacheDuration;
-};
-
-static bool registerJsPlaceholder(
-    std::string  prefix,
-    std::string  tokenNameNoBraces,
-    uint64_t     ctxId,
-    std::string  cbNamespace,
-    std::string  cbName,
-    unsigned int cacheDuration = 0 // 参数
-) {
-    auto* svc = PA_GetPlaceholderService();
-    if (!svc) {
-        logger.error("[PA::registerJsPlaceholder] PlaceholderService is null");
-        return false;
-    }
-    if (tokenNameNoBraces.empty()) {
-        logger.warn("[PA::registerJsPlaceholder] tokenName is empty");
-        return false;
-    }
-
-    auto  p     = std::make_shared<JsPlaceholder>(tokenNameNoBraces, ctxId, cbNamespace, cbName, cacheDuration);
-    void* owner = getOrCreateOwner(cbNamespace);
-
-    svc->registerPlaceholder(prefix, p, owner);
-
-    logger.info(
-        "[PA] JS placeholder registered: prefix='{}', token='{}', ctxId={}, cb='{}::{}', cacheDuration={}",
-        prefix,
-        tokenNameNoBraces,
-        ctxId,
-        cbNamespace,
-        cbName,
-        cacheDuration
-    );
-    return true;
-}
-
-// registerJsCachedPlaceholder 现在只是一个兼容性函数，直接调用 registerJsPlaceholder
-static bool registerJsCachedPlaceholder(
-    std::string prefix,
-    std::string tokenNameNoBraces,
-    uint64_t    ctxId,
-    std::string cbNamespace,
-    std::string cbName,
-    unsigned int cacheDuration
-) {
-    if (cacheDuration == 0) {
-        logger.warn("[PA::registerJsCachedPlaceholder] cacheDuration is 0, registering as non-cached placeholder.");
-    }
-    return registerJsPlaceholder(
-        std::move(prefix),
-        std::move(tokenNameNoBraces),
-        ctxId,
-        std::move(cbNamespace),
-        std::move(cbName),
-        cacheDuration
-    );
-}
-
-} // anonymous namespace
 
 // ========== 现有导出 ==========
 
@@ -426,7 +219,7 @@ void install() {
             "registerPlaceholderByContextId",
             [](std::string prefix,
                std::string tokenName,
-               std::string ctxTypeIdStr, // Use string for JS compatibility
+               std::string ctxTypeIdStr,
                std::string cbNS,
                std::string cbName,
                unsigned int cacheDuration = 0) -> bool {
@@ -565,11 +358,6 @@ void install() {
                      };
                  }
           );
-
-        // ========== 移除旧的缓存占位符导出，统一使用带 cacheDuration 的注册函数 ==========
-        // F) 直接按上下文 ID 注册缓存占位符 (已移除)
-        // G) 按上下文名字注册缓存占位符 (已移除)
-        // H) 便捷函数：固定上下文缓存占位符 (已移除)
 
         // 调试日志：打印最终的 ok 状态
         logger.debug("[PA::ScriptExports] Final export status: {}", ok);
