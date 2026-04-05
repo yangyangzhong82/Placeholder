@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 #if defined(_WIN32)
-#ifdef PA_BUILD
+#if defined(Placeholder_EXPORTS) || defined(PA_BUILD)
 #define PA_API __declspec(dllexport)
 #else
 #define PA_API __declspec(dllimport)

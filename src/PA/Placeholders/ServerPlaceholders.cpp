@@ -68,7 +68,7 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
                 if (excludeDrops && actor->getEntityTypeId() == ActorType::ItemEntity) {
                     continue;
                 }
-                if (excludePlayers && actor->isPlayer()) {
+                if (excludePlayers && actor->getEntityTypeId() == ActorType::Player) {
                     continue;
                 }
                 ++total;

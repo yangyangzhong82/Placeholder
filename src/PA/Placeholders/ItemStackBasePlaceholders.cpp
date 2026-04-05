@@ -1,14 +1,15 @@
 #include "PA/Placeholders/ItemStackBasePlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
-#include "mc/world/item/ItemStackBase.h"
-#include "mc/world/item/Item.h"
-#include "mc/world/item/ItemStack.h"
 #include "mc/deps/core/math/Color.h"
-#include "mc/world/item/ItemColor.h"
-#include "mc/world/item/Rarity.h"
 #include "mc/deps/core/string/HashedString.h"
+#include "mc/world/item/Item.h"
+#include "mc/world/item/ItemColor.h"
+#include "mc/world/item/ItemStack.h"
+#include "mc/world/item/ItemStackBase.h"
+#include "mc/world/item/Rarity.h"
 #include <magic_enum.hpp>
+
 
 namespace PA {
 
@@ -86,7 +87,7 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_block}", {
         bool isBlock = false;
-        if (c.itemStackBase) isBlock = c.itemStackBase->isBlock();
+        if (c.itemStackBase) isBlock = static_cast<bool>(c.itemStackBase->getBlockType());
         out = isBlock ? "true" : "false";
     });
 
@@ -116,10 +117,10 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         out = "0,0,0,0";
         if (c.itemStackBase) {
             mce::Color color = c.itemStackBase->getColor();
-            out = std::to_string(static_cast<int>(color.r * 255)) + "," +
-                  std::to_string(static_cast<int>(color.g * 255)) + "," +
-                  std::to_string(static_cast<int>(color.b * 255)) + "," +
-                  std::to_string(static_cast<int>(color.a * 255));
+            out              = std::to_string(static_cast<int>(color.r * 255)) + ","
+                + std::to_string(static_cast<int>(color.g * 255)) + ","
+                + std::to_string(static_cast<int>(color.b * 255)) + ","
+                + std::to_string(static_cast<int>(color.a * 255));
         }
     });
 
@@ -344,7 +345,6 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
         }
         out = hasCustomColor ? "true" : "false";
     });
-
 
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_can_be_charged}", {

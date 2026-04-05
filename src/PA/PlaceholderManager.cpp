@@ -1,5 +1,4 @@
 // PlaceholderManager.cpp
-#define PA_BUILD
 #include "PA/PlaceholderAPI.h"
 #include "PA/PlaceholderProcessor.h"
 #include "PA/PlaceholderRegistry.h"
