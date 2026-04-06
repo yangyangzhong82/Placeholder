@@ -3,7 +3,72 @@
 #include "PA/ParameterParser.h"
 #include "PA/PlaceholderProcessor.h"
 
+#include <string>
+#include <vector>
+
 namespace PA {
+
+namespace {
+
+enum class CandidateResult {
+    Matched,
+    MissingTarget,
+    NoMatch,
+};
+
+std::string joinSegments(const std::vector<std::string>& segments, size_t begin, size_t end, char delimiter) {
+    std::string joined;
+    for (size_t i = begin; i < end; ++i) {
+        if (!joined.empty()) {
+            joined.push_back(delimiter);
+        }
+        joined.append(segments[i]);
+    }
+    return joined;
+}
+
+std::vector<std::string_view> makeStringViews(const std::vector<std::string>& storage) {
+    std::vector<std::string_view> views;
+    views.reserve(storage.size());
+    for (const auto& value : storage) {
+        views.emplace_back(value);
+    }
+    return views;
+}
+
+bool canResolveInnerSpec(std::string_view innerSpec, const IContext* targetCtx, const PlaceholderRegistry& registry) {
+    if (!targetCtx || innerSpec.empty()) {
+        return false;
+    }
+
+    std::string content(innerSpec);
+    size_t      pipePos         = content.find('|');
+    std::string tokenSearchPart = pipePos == std::string::npos ? content : content.substr(0, pipePos);
+
+    for (size_t splitPos = tokenSearchPart.length();;) {
+        std::string potentialToken = tokenSearchPart.substr(0, splitPos);
+        auto        lookup         = registry.findPlaceholder(potentialToken, targetCtx);
+
+        if (lookup.placeholder) {
+            if (splitPos == tokenSearchPart.length() || tokenSearchPart[splitPos] == ':') {
+                return true;
+            }
+        }
+
+        if (splitPos == 0) {
+            break;
+        }
+        size_t prevColon = tokenSearchPart.rfind(':', splitPos - 1);
+        if (prevColon == std::string::npos) {
+            break;
+        }
+        splitPos = prevColon;
+    }
+
+    return false;
+}
+
+} // namespace
 
 AdapterAliasPlaceholder::AdapterAliasPlaceholder(
     std::string                alias,
@@ -39,6 +104,11 @@ void AdapterAliasPlaceholder::evaluateWithArgs(
         return;
     }
 
+    ContextFactoryFn factory = mReg.findContextFactory(mTo);
+    if (!factory) {
+        return;
+    }
+
     // 合并所有参数为一个字符串，因为原始参数部分可能包含逗号
     std::string full_param_part;
     for (size_t i = 0; i < args.size(); ++i) {
@@ -48,55 +118,59 @@ void AdapterAliasPlaceholder::evaluateWithArgs(
         }
     }
 
-    std::string_view              innerSpec_sv;
-    std::vector<std::string_view> resolver_args;
-
-    // Heuristic to distinguish parameter-less aliases from those with parameters.
-    // Parameter-less aliases pass the entire parameter string as the inner spec.
-    if (mAlias == "player_inventory" || mAlias == "player_enderchest" || mAlias == "player_hand"
-        || mAlias == "player_riding" || mAlias == "item_block" || mAlias == "player_world_coordinate"
-        || mAlias == "block" || mAlias == "block_actor") {
-        innerSpec_sv = full_param_part;
-    } else {
-        size_t last_colon_pos = full_param_part.rfind(':');
-        if (last_colon_pos != std::string::npos) {
-            std::string_view resolver_param_part = std::string_view(full_param_part).substr(0, last_colon_pos);
-            innerSpec_sv                         = std::string_view(full_param_part).substr(last_colon_pos + 1);
-
-            // 使用 splitParamString 来解析 resolver 的参数
-            std::vector<std::string> resolver_params_str =
-                ParameterParser::splitParamString(resolver_param_part, ',');
-            // 注意：这里需要一个临时的 vector 来存储 string_view，因为 splitParamString 返回 vector<string>
-            // 这是一个简化的处理，理想情况下需要避免 string 拷贝
-            static thread_local std::vector<std::string> arg_storage;
-            arg_storage = std::move(resolver_params_str);
-            for (const auto& s : arg_storage) {
-                resolver_args.push_back(s);
-            }
-
-        } else {
-            innerSpec_sv = full_param_part;
+    bool sawMissingTarget = false;
+    auto tryCandidate = [&](std::string resolverParamPart, std::string innerSpec) -> CandidateResult {
+        if (innerSpec.empty()) {
+            return CandidateResult::NoMatch;
         }
+
+        std::vector<std::string> resolverArgStorage;
+        if (!resolverParamPart.empty()) {
+            resolverArgStorage = ParameterParser::splitParamString(resolverParamPart, ',');
+        }
+        auto resolverArgs = makeStringViews(resolverArgStorage);
+
+        void* raw = mResolver(ctx, resolverArgs);
+        if (!raw) {
+            return CandidateResult::MissingTarget;
+        }
+
+        std::unique_ptr<IContext> targetCtx = factory(raw);
+        if (!targetCtx || !canResolveInnerSpec(innerSpec, targetCtx.get(), mReg)) {
+            return CandidateResult::NoMatch;
+        }
+
+        out = PlaceholderProcessor::process("{" + innerSpec + "}", targetCtx.get(), mReg);
+        return CandidateResult::Matched;
+    };
+
+    std::vector<std::string> pipeSegments = ParameterParser::splitParamString(full_param_part, '|');
+    if (pipeSegments.size() >= 2) {
+        auto result = tryCandidate(pipeSegments.front(), joinSegments(pipeSegments, 1, pipeSegments.size(), '|'));
+        if (result == CandidateResult::Matched) {
+            return;
+        }
+        sawMissingTarget = sawMissingTarget || result == CandidateResult::MissingTarget;
     }
 
-    // 1) 解析来源上下文 -> 目标底层对象指针
-    void* raw = mResolver(ctx, resolver_args);
-    if (!raw) {
+    std::vector<std::string> colonSegments = ParameterParser::splitParamString(full_param_part, ':');
+    for (size_t boundary = 0; boundary < colonSegments.size(); ++boundary) {
+        auto result = tryCandidate(
+            joinSegments(colonSegments, 0, boundary, ':'),
+            joinSegments(colonSegments, boundary, colonSegments.size(), ':')
+        );
+        if (result == CandidateResult::Matched) {
+            return;
+        }
+        sawMissingTarget = sawMissingTarget || result == CandidateResult::MissingTarget;
+    }
+
+    if (sawMissingTarget) {
+        out.clear();
         return;
     }
 
-    // 2) 查找上下文工厂并构造目标上下文
-    // 3) 在目标上下文下对"内层占位符表达式"做一次完整解析
-    std::string innerSpec(innerSpec_sv);
-    std::string wrapped = "{" + innerSpec + "}";
-
-    ContextFactoryFn factory = mReg.findContextFactory(mTo);
-    if (factory) {
-        std::unique_ptr<IContext> targetCtx = factory(raw);
-        if (targetCtx) {
-            out = PlaceholderProcessor::process(wrapped, targetCtx.get(), mReg);
-        }
-    }
+    out = PA_COLOR_RED "Usage: {" + mAlias + ":<inner_placeholder_spec>}" PA_COLOR_RESET;
 }
 
 } // namespace PA

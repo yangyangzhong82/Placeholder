@@ -58,34 +58,50 @@ void PlaceholderRegistry::registerPlaceholder(
     const uint64_t ctxId = p->contextTypeId();
     if (cacheDuration > 0) {
         CachedEntry entry;
-        entry.ptr = p;
-        entry.owner = owner;
+        entry.ptr           = p;
+        entry.owner         = owner;
         entry.cacheDuration = cacheDuration;
         if (ctxId == kServerContextId) {
-            if (newSnapshot->cached_server.count(key)) {
-                logger.warn("[PA::Registry] Overwriting cached server placeholder '{}'", key);
+            bool hadExisting = newSnapshot->cached_server.contains(key);
+            hadExisting      = newSnapshot->server.erase(key) > 0 || hadExisting;
+            if (hadExisting) {
+                logger.warn("[PA::Registry] Overwriting server placeholder '{}'", key);
             }
-            newSnapshot->cached_server.emplace(key, std::move(entry));
+            newSnapshot->cached_server[key] = std::move(entry);
             newSnapshot->ownerIndex[owner].push_back({true, false, true, false, false, 0, 0, 0, key});
         } else {
-            if (newSnapshot->cached_typed[ctxId].count(key)) {
-                logger.warn("[PA::Registry] Overwriting cached typed placeholder '{}' for ctxId={}", key, ctxId);
+            auto& cachedMap   = newSnapshot->cached_typed[ctxId];
+            bool  hadExisting = cachedMap.contains(key);
+            hadExisting       = newSnapshot->typed[ctxId].erase(key) > 0 || hadExisting;
+            if (hadExisting) {
+                logger.warn("[PA::Registry] Overwriting typed placeholder '{}' for ctxId={}", key, ctxId);
             }
-            newSnapshot->cached_typed[ctxId].emplace(key, std::move(entry));
+            cachedMap[key] = std::move(entry);
             newSnapshot->ownerIndex[owner].push_back({false, false, true, false, false, 0, 0, ctxId, key});
         }
     } else {
         if (ctxId == kServerContextId) {
-            if (newSnapshot->server.count(key)) {
+            bool hadExisting = newSnapshot->server.contains(key);
+            hadExisting      = newSnapshot->cached_server.erase(key) > 0 || hadExisting;
+            if (hadExisting) {
                 logger.warn("[PA::Registry] Overwriting server placeholder '{}'", key);
             }
             newSnapshot->server[key] = {p, owner};
             newSnapshot->ownerIndex[owner].push_back({true, false, false, false, false, 0, 0, 0, key});
         } else {
-            if (newSnapshot->typed[ctxId].count(key)) {
+            auto& typedMap    = newSnapshot->typed[ctxId];
+            bool  hadExisting = typedMap.contains(key);
+            auto  cachedIt    = newSnapshot->cached_typed.find(ctxId);
+            if (cachedIt != newSnapshot->cached_typed.end()) {
+                hadExisting = cachedIt->second.erase(key) > 0 || hadExisting;
+                if (cachedIt->second.empty()) {
+                    newSnapshot->cached_typed.erase(cachedIt);
+                }
+            }
+            if (hadExisting) {
                 logger.warn("[PA::Registry] Overwriting typed placeholder '{}' for ctxId={}", key, ctxId);
             }
-            newSnapshot->typed[ctxId][key] = {p, owner};
+            typedMap[key] = {p, owner};
             newSnapshot->ownerIndex[owner].push_back({false, false, false, false, false, 0, 0, ctxId, key});
         }
     }
@@ -117,7 +133,29 @@ void PlaceholderRegistry::registerRelationalPlaceholder(
     std::lock_guard<std::mutex> lk(mWriteMutex);
     auto                        newSnapshot = std::make_shared<Snapshot>(*mSnapshot.load());
 
-    newSnapshot->relational[mainContextTypeId][relationalContextTypeId][key] = {p, owner};
+    auto& relationalMap = newSnapshot->relational[mainContextTypeId][relationalContextTypeId];
+    bool  hadExisting   = relationalMap.contains(key);
+
+    auto cachedMainIt = newSnapshot->cached_relational.find(mainContextTypeId);
+    if (cachedMainIt != newSnapshot->cached_relational.end()) {
+        auto cachedRelIt = cachedMainIt->second.find(relationalContextTypeId);
+        if (cachedRelIt != cachedMainIt->second.end()) {
+            hadExisting = cachedRelIt->second.erase(key) > 0 || hadExisting;
+            if (cachedRelIt->second.empty()) cachedMainIt->second.erase(cachedRelIt);
+            if (cachedMainIt->second.empty()) newSnapshot->cached_relational.erase(cachedMainIt);
+        }
+    }
+
+    if (hadExisting) {
+        logger.warn(
+            "[PA::Registry] Overwriting relational placeholder '{}' for mainCtxId={}, relCtxId={}",
+            key,
+            mainContextTypeId,
+            relationalContextTypeId
+        );
+    }
+
+    relationalMap[key] = {p, owner};
     newSnapshot->ownerIndex[owner].push_back(
         {false, true, false, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
     );
@@ -144,7 +182,29 @@ void PlaceholderRegistry::registerCachedRelationalPlaceholder(
     entry.owner         = owner;
     entry.cacheDuration = cacheDuration;
 
-    newSnapshot->cached_relational[mainContextTypeId][relationalContextTypeId].emplace(key, std::move(entry));
+    auto& cachedRelationalMap = newSnapshot->cached_relational[mainContextTypeId][relationalContextTypeId];
+    bool  hadExisting         = cachedRelationalMap.contains(key);
+
+    auto relationalMainIt = newSnapshot->relational.find(mainContextTypeId);
+    if (relationalMainIt != newSnapshot->relational.end()) {
+        auto relationalIt = relationalMainIt->second.find(relationalContextTypeId);
+        if (relationalIt != relationalMainIt->second.end()) {
+            hadExisting = relationalIt->second.erase(key) > 0 || hadExisting;
+            if (relationalIt->second.empty()) relationalMainIt->second.erase(relationalIt);
+            if (relationalMainIt->second.empty()) newSnapshot->relational.erase(relationalMainIt);
+        }
+    }
+
+    if (hadExisting) {
+        logger.warn(
+            "[PA::Registry] Overwriting relational placeholder '{}' for mainCtxId={}, relCtxId={}",
+            key,
+            mainContextTypeId,
+            relationalContextTypeId
+        );
+    }
+
+    cachedRelationalMap[key] = std::move(entry);
     newSnapshot->ownerIndex[owner].push_back(
         {false, true, true, false, false, mainContextTypeId, relationalContextTypeId, 0, key}
     );
@@ -353,25 +413,13 @@ PlaceholderRegistry::getServerPlaceholders() const {
 }
 
 LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, const IContext* ctx) const {
-    auto        snapshot  = mSnapshot.load();
+    auto        snapshot   = mSnapshot.load();
     std::string lowerToken = toLowerKey(token);
-
-    // 1. Check cached server placeholders
-    auto cachedServerIt = snapshot->cached_server.find(lowerToken);
-    if (cachedServerIt != snapshot->cached_server.end()) {
-        return {cachedServerIt->second.ptr, &cachedServerIt->second, snapshot};
-    }
-
-    // 2. Check non-cached server placeholders
-    auto serverIt = snapshot->server.find(lowerToken);
-    if (serverIt != snapshot->server.end()) {
-        return {serverIt->second.ptr, nullptr, snapshot};
-    }
 
     if (ctx) {
         const auto& inheritedTypeIds = ctx->getInheritedTypeIds(); // 已按派生优先排序
 
-        // 2.5 Check context alias (adapter) by token == alias
+        // 1. Check context alias (adapter) by token == alias
         {
             auto ait = snapshot->adapters.find(lowerToken);
             if (ait != snapshot->adapters.end()) {
@@ -392,7 +440,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             }
         }
 
-        // 3. Check cached typed placeholders
+        // 2. Check cached typed placeholders
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->cached_typed.find(id);
             if (it != snapshot->cached_typed.end()) {
@@ -403,7 +451,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             }
         }
 
-        // 4. Check non-cached typed placeholders
+        // 3. Check non-cached typed placeholders
         for (uint64_t id : inheritedTypeIds) {
             auto it = snapshot->typed.find(id);
             if (it != snapshot->typed.end()) {
@@ -414,7 +462,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             }
         }
 
-        // 5. Check cached relational placeholders
+        // 4. Check cached relational placeholders
         uint64_t mainCtxId = ctx->typeId();
         auto     mainIt    = snapshot->cached_relational.find(mainCtxId);
         if (mainIt != snapshot->cached_relational.end()) {
@@ -429,7 +477,7 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
             }
         }
 
-        // 6. Check non-cached relational placeholders
+        // 5. Check non-cached relational placeholders
         auto mainItNonCached = snapshot->relational.find(mainCtxId);
         if (mainItNonCached != snapshot->relational.end()) {
             for (uint64_t relId : inheritedTypeIds) {
@@ -442,6 +490,18 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
                 }
             }
         }
+    }
+
+    // 6. Check cached server placeholders
+    auto cachedServerIt = snapshot->cached_server.find(lowerToken);
+    if (cachedServerIt != snapshot->cached_server.end()) {
+        return {cachedServerIt->second.ptr, &cachedServerIt->second, snapshot};
+    }
+
+    // 7. Check non-cached server placeholders
+    auto serverIt = snapshot->server.find(lowerToken);
+    if (serverIt != snapshot->server.end()) {
+        return {serverIt->second.ptr, nullptr, snapshot};
     }
 
     return {nullptr, nullptr, nullptr};

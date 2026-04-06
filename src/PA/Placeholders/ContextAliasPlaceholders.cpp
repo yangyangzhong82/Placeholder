@@ -380,14 +380,11 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
                 return nullptr;
             }
 
-            // 创建一个 WorldCoordinateData 实例，并返回其指针
-            // 创建一个 WorldCoordinateData 实例，并返回其指针
-            auto data         = std::make_shared<WorldCoordinateData>();
-            data->pos         = playerCtx->player->getPosition();
-            data->dimensionId = playerCtx->player->getDimensionId();
-
-            // 使用 WorldCoordinateContext 的工厂方法创建上下文
-            return WorldCoordinateContext::factory(data.get()).release();
+            // 解析器返回底层对象，随后由上下文工厂立即复制成临时上下文。
+            static thread_local WorldCoordinateData data;
+            data.pos         = playerCtx->player->getPosition();
+            data.dimensionId = playerCtx->player->getDimensionId();
+            return &data;
         },
         owner
     );
