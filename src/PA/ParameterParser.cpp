@@ -118,25 +118,21 @@ PlaceholderParams parse(std::string_view paramPart) {
             };
 
             std::vector<std::string> ruleSegments = splitParamString(rules_sv, ';');
-            for (const auto& rule : ruleSegments) {
-                if (!rule.empty()) {
-                    parse_condition(rule);
+            for (size_t i = 0; i < ruleSegments.size(); ++i) {
+                std::string_view rule = ruleSegments[i];
+                if (rule.empty()) {
+                    if (i + 1 == ruleSegments.size()) {
+                        params.conditional.hasElse    = true;
+                        params.conditional.elseOutput = "";
+                    }
+                    continue;
                 }
-            }
 
-            // Check for else condition if the last segment was not a valid condition
-            if (!ruleSegments.empty()) {
-                std::string_view last_part = ruleSegments.back();
-                if (last_part.empty()) {
+                bool parsed = parse_condition(rule);
+                if (!parsed && i + 1 == ruleSegments.size()) {
                     params.conditional.hasElse    = true;
-                    params.conditional.elseOutput = "";
-                } else if (!parse_condition(last_part)) {
-                    params.conditional.hasElse    = true;
-                    params.conditional.elseOutput = last_part;
+                    params.conditional.elseOutput = rule;
                 }
-            } else if (rules_sv.length() > 0 && rules_sv[rules_sv.length() - 1] == ';') {
-                params.conditional.hasElse    = true;
-                params.conditional.elseOutput = "";
             }
         } else if (p.rfind("eq_eps=", 0) == 0) {
             std::string_view epsilon_sv = std::string_view(p).substr(7); // "eq_eps=".length()

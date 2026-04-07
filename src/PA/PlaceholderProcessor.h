@@ -25,6 +25,9 @@ struct PlaceholderMatch {
     std::string_view content;     // 内容部分 xxx
     std::string      token;       // token部分
     std::string      param_part;  // 参数部分
+    std::shared_ptr<const IPlaceholder> placeholder;
+    const CachedEntry*                  cached_entry = nullptr;
+    std::shared_ptr<const void>         snapshot_guard;
 
     bool isValid() const noexcept { return end_pos > start_pos; }
 };
@@ -127,6 +130,7 @@ private:
     static void evaluateWithContext(
         const IPlaceholder* placeholder,
         const IContext*     ctx,
+        std::string_view    raw_param_part,
         const std::string&  cache_param_part,
         std::string&        out
     );
