@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.7.0] 2026-04-07
+### Fixed
+- 修复 `map=` 条件输出解析中最后一段规则会被重复解析的问题，并正确处理尾部分号表示的空 `else` 输出。
+- 修复 `PlaceholderProcessor` 在查找缓存占位符后未持有注册表快照的问题，避免并发场景下 `CachedEntry*` 变为悬垂指针。
+
+### Changed
+- 重构 `PlaceholderProcessor`：拆分占位符查找、参数分流、缓存读取/更新、求值与格式化流程，降低重复逻辑并明确上下文别名与普通占位符的参数处理路径。
+- 适配LL 26.10.0
+
 ## [0.6.0] 2026-04-04
 ### Added
 - 为 `ActorContext`/`MobContext`/`PlayerContext` 添加 `from()` 静态便捷构造方法，避免手动赋值遗漏字段导致崩溃。
