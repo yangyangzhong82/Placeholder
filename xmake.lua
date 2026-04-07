@@ -16,7 +16,7 @@ add_requires("levibuildscript")
 add_requires("fast_float")
 add_requires("icu4c")
 add_requires("sol2")
-add_requires("legacyremotecall")
+add_requires("legacyremotecall 0.18.0")
 add_requires("magic_enum")
 if not has_config("vs_runtime") then
     set_runtimes("MD")
