@@ -507,18 +507,18 @@ LookupResult PlaceholderRegistry::findPlaceholder(const std::string& token, cons
     return {nullptr, nullptr, nullptr};
 }
 
-const Adapter* PlaceholderRegistry::findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const {
+std::optional<Adapter> PlaceholderRegistry::findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const {
     auto        snapshot   = mSnapshot.load();
     std::string lowerAlias = toLowerKey(alias);
     auto        it         = snapshot->adapters.find(lowerAlias);
     if (it != snapshot->adapters.end()) {
         for (const auto& adapter : it->second) {
             if (adapter.fromCtxId == fromContextTypeId) {
-                return &adapter;
+                return adapter; // 返回值拷贝，snapshot 生命周期不再影响调用方
             }
         }
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 ContextFactoryFn PlaceholderRegistry::findContextFactory(uint64_t contextTypeId) const {

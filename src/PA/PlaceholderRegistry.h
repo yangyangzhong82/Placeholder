@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -149,8 +150,8 @@ public:
     // 修改 findPlaceholder 的返回类型，以支持缓存
     LookupResult findPlaceholder(const std::string& token, const IContext* ctx) const;
 
-    // 查找上下文别名
-    const Adapter* findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;
+    // 查找上下文别名（返回值拷贝，避免 snapshot 生命周期问题）
+    std::optional<Adapter> findContextAlias(std::string_view alias, uint64_t fromContextTypeId) const;
 
     // 查找上下文工厂
     ContextFactoryFn findContextFactory(uint64_t contextTypeId) const;
@@ -221,6 +222,10 @@ private:
                     new_entry.ptr           = inner_pair.second.ptr;
                     new_entry.owner         = inner_pair.second.owner;
                     new_entry.cacheDuration = inner_pair.second.cacheDuration;
+                    {
+                        std::lock_guard<std::mutex> lock(inner_pair.second.cacheMutex);
+                        new_entry.cachedValues = inner_pair.second.cachedValues;
+                    }
                     cached_typed[pair.first].emplace(inner_pair.first, std::move(new_entry));
                 }
             }
@@ -231,6 +236,10 @@ private:
                         new_entry.ptr           = final_pair.second.ptr;
                         new_entry.owner         = final_pair.second.owner;
                         new_entry.cacheDuration = final_pair.second.cacheDuration;
+                        {
+                            std::lock_guard<std::mutex> lock(final_pair.second.cacheMutex);
+                            new_entry.cachedValues = final_pair.second.cachedValues;
+                        }
                         cached_relational[pair.first][inner_pair.first].emplace(final_pair.first, std::move(new_entry));
                     }
                 }
@@ -240,6 +249,10 @@ private:
                 new_entry.ptr           = pair.second.ptr;
                 new_entry.owner         = pair.second.owner;
                 new_entry.cacheDuration = pair.second.cacheDuration;
+                {
+                    std::lock_guard<std::mutex> lock(pair.second.cacheMutex);
+                    new_entry.cachedValues = pair.second.cachedValues;
+                }
                 cached_server.emplace(pair.first, std::move(new_entry));
             }
         }
