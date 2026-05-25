@@ -1,9 +1,11 @@
 // src/PA/PlaceholderProcessor.cpp
 #include "PA/PlaceholderProcessor.h"
+#include "PA/Config/ConfigManager.h"
 #include "PA/ParameterParser.h"
 #include "PA/PlaceholderRegistry.h"
 #include "PA/logger.h"
 #include <array>
+#include <iterator>
 #include <sstream>
 #include <vector>
 
@@ -36,6 +38,46 @@ std::string buildCacheKey(const IContext* ctx, const std::string& cacheParamPart
     return contextKey + ":" + cacheParamPart;
 }
 
+size_t getCacheSizeLimit() {
+    int configuredLimit = ConfigManager::getInstance().get().globalCacheSize;
+    return configuredLimit > 0 ? static_cast<size_t>(configuredLimit) : 0;
+}
+
+bool isCacheValueExpired(
+    const CachedEntry::Value& value,
+    std::chrono::steady_clock::time_point now,
+    unsigned int cacheDuration
+) {
+    auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - value.lastEvaluated).count();
+    return elapsedSeconds >= cacheDuration;
+}
+
+void pruneExpiredCacheValues(const CachedEntry& entry, std::chrono::steady_clock::time_point now) {
+    for (auto it = entry.cachedValues.begin(); it != entry.cachedValues.end();) {
+        if (isCacheValueExpired(it->second, now, entry.cacheDuration)) {
+            it = entry.cachedValues.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void trimCacheSize(const CachedEntry& entry, size_t maxSize) {
+    if (maxSize == 0) {
+        return;
+    }
+
+    while (entry.cachedValues.size() > maxSize) {
+        auto oldestIt = entry.cachedValues.begin();
+        for (auto it = std::next(entry.cachedValues.begin()); it != entry.cachedValues.end(); ++it) {
+            if (it->second.lastEvaluated < oldestIt->second.lastEvaluated) {
+                oldestIt = it;
+            }
+        }
+        entry.cachedValues.erase(oldestIt);
+    }
+}
+
 } // namespace
 
 size_t PlaceholderProcessor::findMatchingDelimiter(
@@ -63,7 +105,7 @@ size_t PlaceholderProcessor::findMatchingDelimiter(
 }
 
 std::optional<PlaceholderMatch> PlaceholderProcessor::findNextPlaceholder(std::string_view text, size_t start_pos) {
-    size_t placeholder_start = text.find_first_of("%{", start_pos);
+    size_t placeholder_start = text.find('{', start_pos);
     if (placeholder_start == std::string_view::npos) {
         return std::nullopt;
     }
@@ -71,9 +113,7 @@ std::optional<PlaceholderMatch> PlaceholderProcessor::findNextPlaceholder(std::s
     PlaceholderMatch match;
     match.start_pos = placeholder_start;
 
-    char   open_delim = text[placeholder_start];
-    char   close_delim = (open_delim == '{') ? '}' : '%';
-    size_t end_pos = findMatchingDelimiter(text, placeholder_start, open_delim, close_delim);
+    size_t end_pos = findMatchingDelimiter(text, placeholder_start, '{', '}');
     if (end_pos == std::string_view::npos) {
         return match;
     }
@@ -219,6 +259,7 @@ bool PlaceholderProcessor::tryGetCachedValue(
 
     if (elapsedSeconds >= entry->cacheDuration) {
         logger.debug("Cache Expired: elapsedSeconds={} >= cacheDuration={}", elapsedSeconds, entry->cacheDuration);
+        entry->cachedValues.erase(it);
         return false;
     }
 
@@ -269,9 +310,12 @@ void PlaceholderProcessor::updateCache(
     }
 
     std::string cacheKey = buildCacheKey(ctx, cache_param_part);
+    auto        now      = std::chrono::steady_clock::now();
 
     std::lock_guard<std::mutex> lock(entry->cacheMutex);
-    entry->cachedValues[cacheKey] = {value, std::chrono::steady_clock::now()};
+    pruneExpiredCacheValues(*entry, now);
+    entry->cachedValues[cacheKey] = {value, now};
+    trimCacheSize(*entry, getCacheSizeLimit());
     logger.debug("3.5. Cache Updated: cacheKey='{}', evaluatedValue='{}'", cacheKey, value);
 }
 
