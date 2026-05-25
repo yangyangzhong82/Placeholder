@@ -21,7 +21,7 @@ const PA = {
 // 更新玩家侧边栏信息
 function update(player) {
   // 获取玩家名称
-  const playerName = PA.replaceForPlayer('{player_name}', player);
+  const playerName = PA.replaceForPlayer('{player_realname}', player);
   logger.info(`[JS Debug] 玩家名称: ${playerName}`);
   const b = PA.replaceForPlayer('{entity_look_block:block_type_name}', player);
   logger.info(`[JS Debug] 方块名称: ${b}`);
@@ -106,7 +106,7 @@ if (!ok1 || !ok2 || !ok3 || !ok4) {
 
 mc.listen('onJoin', (player) => {
   const msg =
-      '欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}';
+      '欢迎, {player_realname}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}';
   const processedMessage = PA.replaceForPlayer(msg, player);
   player.tell(processedMessage);
   logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);

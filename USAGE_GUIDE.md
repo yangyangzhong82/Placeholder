@@ -14,12 +14,11 @@
 
 ## 1. 基础用法
 
-支持两种占位符包裹形式：
+支持以下占位符包裹形式：
 - `{placeholder_name}`
-- `%placeholder_name%`
 
 示例：
-- 输入：`你好, {player_name}!`
+- 输入：`你好, {player_realname}!`
 - 输出：`你好, Steve!`
 
 ---

@@ -4,7 +4,7 @@
 
 ## 功能简介
 
-该插件会在每一位玩家加入游戏时，向其发送一条个性化的欢迎消息。这条消息利用了 PlaceholderAPI 的强大功能，将预设文本中的占位符（如 `{player_name}`）替换为玩家的实际信息。
+该插件会在每一位玩家加入游戏时，向其发送一条个性化的欢迎消息。这条消息利用了 PlaceholderAPI 的强大功能，将预设文本中的占位符（如 `{player_realname}`）替换为玩家的实际信息。
 
 **新功能**: 本插件现在还演示了如何在 JavaScript 中注册自定义占位符，并与 PlaceholderAPI 配合使用，例如 `{js:hello}`、`{js:server_time}` 和 `{js:actor_pos}`。
 
@@ -45,30 +45,30 @@ const PA = {
 // 回调命名空间
 const JS_CB_NS = "JSPH";
 
-// 玩家上下文占位符回调签名：std::string(std::string token, std::string param, Player* player)
-ll.export((token, param, player) => {
+// 玩家上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
+ll.export((token, args, player) => {
     // token 是注册时传入的 tokenName（不带花括号），例如 "hello"
-    // param 是占位符参数（如果用户写了 {js:hello:xxx}，param 为 "xxx"，否则为空字符串）
-    const extra = param ? `（${param}）` : "";
+    // args 是占位符参数数组（如果用户写了 {js:hello:xxx}，args 为 ["xxx"]，否则为空数组）
+    const extra = args.length > 0 ? `（${args.join(",")}）` : "";
     const name = player ? player.name : "未知玩家";
     return `你好，${name}${extra}`;
 }, JS_CB_NS, "helloPlayer");
 
-// 服务器级占位符回调签名：std::string(std::string token, std::string param)
-ll.export((token, param) => {
+// 服务器级占位符回调签名：std::string(std::string token, std::vector<std::string> args)
+ll.export((token, args) => {
     const now = new Date();
     return `服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, "serverTime");
 
-// Actor 上下文占位符回调签名：std::string(std::string token, std::string param, Actor* actor)
-ll.export((token, param, actor) => {
+// Actor 上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
+ll.export((token, args, actor) => {
     if (!actor) return "无实体";
     const pos = actor.pos;
     return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
 }, JS_CB_NS, "actorPos");
 
 // 注册一个缓存的服务器级占位符，缓存时间为 5 秒
-ll.export((token, param) => {
+ll.export((token, args) => {
     const now = new Date();
     return `缓存服务器时间：${now.toLocaleString()}`;
 }, JS_CB_NS, "cachedServerTime");
@@ -88,7 +88,7 @@ if (!ok1 || !ok2 || !ok3 || !ok4) {
 }
 
 mc.listen("onJoin", (player) => {
-    const msg = "欢迎, {player_name}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}";
+    const msg = "欢迎, {player_realname}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}";
     const processedMessage = PA.replaceForPlayer(msg, player);
     player.tell(processedMessage);
     logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);
@@ -108,7 +108,7 @@ logger.info("PlaceholderAPI JS 示例插件已加载，正在监听 onJoin 事�
 3.  **注册占位符**: 接着，插件使用 `PA.registerPlayerPlaceholder`、`PA.registerServerPlaceholder` 和 `PA.registerActorPlaceholder` 等函数向 PlaceholderAPI 注册自定义占位符，将它们与之前导出的 JS 回调函数关联起来。
 4.  **监听事件**: 插件使用 `mc.listen("onJoin", ...)` 来监听玩家进入游戏的事件。
 5.  **处理消息**: 当玩家加入时，插件会定义一条包含内置占位符和自定义 JS 占位符的欢迎语 `msg`。
-6.  **替换占位符**: 然后调用 `PA.replaceForPlayer` 函数，将欢迎语和当前玩家对象 `player` 传进去。C++ 插件会负责将 `{player_name}`、`{js:server_time}`、`{js:hello:再次欢迎}` 和 `{js:actor_pos}` 等占位符替换成真实数据。
+6.  **替换占位符**: 然后调用 `PA.replaceForPlayer` 函数，将欢迎语和当前玩家对象 `player` 传进去。C++ 插件会负责将 `{player_realname}`、`{js:server_time}`、`{js:hello:再次欢迎}` 和 `{js:actor_pos}` 等占位符替换成真实数据。
 7.  **发送消息**: 最后，通过 `player.tell()` 将处理完成的消息发送给玩家。
 8.  **插件卸载**: 在插件卸载时，通过 `PA.unregisterByCallbackNamespace(JS_CB_NS)` 批量卸载由本 JS 命名空间注册的所有占位符，避免资源泄露。
 
@@ -124,7 +124,7 @@ logger.info("PlaceholderAPI JS 示例插件已加载，正在监听 onJoin 事�
 // ...
 mc.listen("onJoin", (player) => {
     // 修改为您想要的任何文本和占位符
-    const msg = "你好, {player_name}！欢迎来到服务器！你的坐标是 {js:actor_pos}。";
+    const msg = "你好, {player_realname}！欢迎来到服务器！你的坐标是 {js:actor_pos}。";
 
     const processedMessage = PA.replaceForPlayer(msg, player);
     player.tell(processedMessage);
@@ -139,14 +139,14 @@ mc.listen("onJoin", (player) => {
 
 1.  **定义回调函数**: 在 `JS_CB_NS` 命名空间下，使用 `ll.export` 定义一个新的 JavaScript 回调函数。确保其签名与您希望支持的上下文类型（服务器、玩家、实体等）相匹配。
 
-    回调函数通常接收 `token` (占位符名称), `param` (占位符参数，如果存在), 以及可选的上下文对象 (如 `Player*`, `Actor*`)。
+    回调函数通常接收 `token` (占位符名称), `args` (占位符参数数组), 以及可选的上下文对象 (如 `Player*`, `Actor*`)。
 
     例如，一个支持参数的玩家上下文占位符回调：
     ```javascript
-    ll.export((token, param, player) => {
+    ll.export((token, args, player) => {
         const playerName = player ? player.name : "未知玩家";
-        if (param) {
-            return `玩家 ${playerName} 的自定义消息: ${param}`;
+        if (args.length > 0) {
+            return `玩家 ${playerName} 的自定义消息: ${args.join(",")}`;
         }
         return `你好，${playerName}！`;
     }, JS_CB_NS, "myParameterizedPlayerPlaceholder");

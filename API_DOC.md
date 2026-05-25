@@ -33,7 +33,7 @@ Placeholder API 允许开发者在文本中定义可替换的占位符，这些�
 
 占位符是实现 `PA::IPlaceholder` 接口的对象。
 
-*   **`token()`**：返回占位符的字符串标识，例如 `"{player_name}"`。
+*   **`token()`**：返回占位符的字符串标识，例如 `"{player_realname}"`。
 *   **`contextTypeId()`**：返回此占位符绑定的上下文类型 ID。
 *   **`evaluate(const IContext* ctx, std::string& out)`**：根据上下文计算并返回替换文本。
 *   **`evaluateWithArgs(const IContext* ctx, const std::vector<std::string_view>& args, std::string& out)`**：带参数的求值方法，用于处理原生参数。
@@ -235,7 +235,7 @@ if (!service) {
     Player* player = ...;
     auto ctx = PA::PlayerContext::from(player); // 自动填充 player/mob/actor
 
-    std::string text = "玩家 {player_name} 的 Ping: {ping}";
+    std::string text = "玩家 {player_realname} 的 Ping: {player_ping}";
     std::string result = service->replace(text, &ctx);
     // result: "玩家 Steve 的 Ping: 50"
     ```
@@ -259,7 +259,7 @@ if (!service) {
 
 **带 prefix 的宏变体：**
 
-以上所有宏均有对应的 `_P` 后缀变体，用于第三方插件注册带命名空间前缀的占位符：
+当前提供以下 `_P` 后缀变体，用于第三方插件注册带命名空间前缀的占位符：
 
 *   `PA_SIMPLE_P(svc, owner, prefix, ctx_type, token_str, lambda_body)`
 *   `PA_CACHED_P(svc, owner, prefix, ctx_type, token_str, cache_duration, lambda_body)`
@@ -332,7 +332,7 @@ void registerMyPlaceholders(PA::IPlaceholderService* svc) {
 - `svc`: `IPlaceholderService*` 服务指针
 - `owner`: `void*` 所有者标识，用于批量注销
 - `ctx_type`: 上下文类型（如 `PA::PlayerContext`, `PA::ActorContext` 等）
-- `token_str`: 占位符标识字符串（如 `"{player_name}"`）
+- `token_str`: 占位符标识字符串（如 `"{player_realname}"`）
 - `cache_duration`: 缓存持续时间（秒）
 - `lambda_body`: Lambda 函数体，可以直接访问：
   - `c`: 上下文对象（类型为 `const ctx_type&`）

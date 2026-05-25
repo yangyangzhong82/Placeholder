@@ -2,7 +2,7 @@
 
 本文档详细列出了 Placeholder API 提供的所有内置占位符及其用法。
 
-**注册函数：** `void PA::registerBuiltinPlaceholders(IPlaceholderService* svc)`
+**注册函数：** `void PA::registerAllBuiltinPlaceholders(IPlaceholderService* svc)`
 
 ### 玩家上下文 (`PlayerContext`)
 
@@ -24,7 +24,7 @@
 | `{player_gametype}`        | 玩家的游戏模式                     | `Survival`       |
 | `{player_ip}`              | 玩家的 IP 地址和端口               | `127.0.0.1:19132` |
 | `{llmoney}`                | 玩家的 LegacyMoney 余额            | `1000`           |
-| `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:type_name}` | `minecraft:horse` |
+| `{player_riding:<inner_placeholder_spec>}` | 玩家骑乘的实体。可用于获取骑乘实体的属性，例如 `{player_riding:actor_type_name}` | `minecraft:horse` |
 | `{player_hand:<inner_placeholder_spec>}` | 玩家手持的物品。可用于获取手持物品的属性，例如 `{player_hand:item_name}` | `minecraft:diamond_sword` |
 | `{player_inventory:<inner_placeholder_spec>}` | 玩家背包容器。可用于获取背包容器的属性，例如 `{player_inventory:container_size}` | `36` |
 | `{player_enderchest:<inner_placeholder_spec>}` | 玩家末影箱容器。可用于获取末影箱容器的属性，例如 `{player_enderchest:container_size}` | `27` |
@@ -76,7 +76,7 @@
 | `{actor_is_baby}`      | Actor 是否是幼年生物                       | `false`                      |
 | `{actor_is_riding}`    | Actor 是否正在骑乘                         | `false`                      |
 | `{actor_is_tame}`      | Actor 是否被驯服                           | `false`                      |
-| `{actor_look:<params>:<inner_placeholder_spec>}` | 实体正在看的实体。可用于获取所看实体的属性。支持参数：`maxDistance` (浮点数)。例如 `{actor_look:maxDistance=10:type_name}` | `minecraft:cow` |
+| `{actor_look:<params>:<inner_placeholder_spec>}` | 实体正在看的实体。可用于获取所看实体的属性。支持参数：`maxDistance` (浮点数)。例如 `{actor_look:maxDistance=10:actor_type_name}` | `minecraft:cow` |
 | `{actor_runtimeid}`    | Actor 的运行时 ID                          | `123`                        |
 | `{actor_effects}`      | Actor 的药水效果。无参数时列出所有效果名称；带一个参数时返回特定效果的详细信息；带两个参数时返回特定效果的指定属性 (level, duration, id, display_name)。 | `速度 (等级: 1, 持续时间: 30秒)` |
 | `{actor_max_health}`   | Actor 的最大生命值                         | `20`                         |
