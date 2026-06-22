@@ -1,6 +1,9 @@
 #include "PA/Placeholders/ServerPlaceholders.h"
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <unordered_set>
 
 #include "ll/api/Versions.h"
@@ -9,12 +12,26 @@
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
 #include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h"
 #include "mc/network/ServerNetworkHandler.h"
+#include "mc/profile/ProfilerLite.h"
 #include "mc/server/PropertiesSettings.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/ActorType.h"
 #include "mc/world/level/Level.h"
 #include "mc/world/level/storage/LevelData.h"
 
+namespace {
+
+std::string formatServerMspt() {
+    auto const& profiler = ProfilerLite::gProfilerLiteInstance();
+    auto const  tickTime = std::chrono::nanoseconds{profiler.mDebugServerTickTime};
+    auto const  mspt     = std::chrono::duration<double, std::milli>(tickTime).count();
+
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(2) << mspt;
+    return ss.str();
+}
+
+} // namespace
 
 namespace PA {
 
@@ -32,6 +49,10 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
         auto server = ll::service::getServerNetworkHandler();
         out         = server ? std::to_string(server->mMaxNumPlayers) : "0";
     });
+
+    // {server_mspt} / {mspt}
+    PA_SERVER(svc, owner, "{server_mspt}", { out = formatServerMspt(); });
+    PA_SERVER(svc, owner, "{mspt}", { out = formatServerMspt(); });
 
     // {total_entities} - 允许通过参数选择是否排除掉落物，或指定只计算特定类型
     // 用法: {total_entities:type=minecraft:zombie,type=minecraft:skeleton,exclude_drops}

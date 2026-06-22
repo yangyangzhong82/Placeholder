@@ -145,6 +145,8 @@
 | :------------------------ | :------------------- | :----------------- |
 | `{online_players}`        | 当前在线玩家数量     | `10`               |
 | `{max_players}`           | 服务器最大玩家数量   | `20`               |
+| `{server_mspt}`           | 当前服务器 MSPT (毫秒/ tick) | `12.34`       |
+| `{mspt}`                  | 当前服务器 MSPT (毫秒/ tick)，等同于 `{server_mspt}` | `12.34` |
 | `{total_entities}`        | 服务器中的实体总数。可选参数 `exclude_drops` 可排除掉落物，`exclude_players` 可排除玩家 | `150`              |
 | `{server_version}`        | 服务器版本           | `1.20.50.02`       |
 | `{server_protocol_version}` | 服务器协议版本       | `618`              |
