@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
+
+## [0.7.2] 2026-06-23
+
+### Added
+- 新增 `{server_mspt}` 和 `{mspt}` 内置服务器占位符，从 `ProfilerLite` 获取当前服务器 MSPT，并以毫秒值保留两位小数输出。
+
+### Changed
+- 完善缓存占位符管理：读取到过期缓存时会立即移除，更新缓存时会清理过期项，并按 `globalCacheSize` 限制每个缓存占位符最多保留的缓存键数量；配置值 `<=0` 表示不限制。
+- 占位符解析统一为 `{placeholder}` 包裹形式，不再扫描 `%placeholder%` 写法。
+- 文档与示例统一使用 `{player_realname}` 等当前有效占位符名称，并将 JavaScript 回调参数说明同步为 `args` 数组。
+
+### Fixed
+- 修复内置占位符和内置上下文工厂使用不同 owner 导致反注册不完整的问题；重新注册内置占位符前会先清理旧注册项。
+- 修复 `char_map` 遇到空源字符串规则时可能产生无效替换的问题，现在会忽略该规则并输出警告。
+
 ## [0.7.1] 2026-04-27
 
 ### Changed
