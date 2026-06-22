@@ -165,8 +165,12 @@ PlaceholderParams parse(std::string_view paramPart) {
             for (const auto& rule : ruleSegments) {
                 size_t colon_pos = rule.find(':');
                 if (colon_pos != std::string_view::npos) {
-                    params.charReplaceMap.mappings[std::string(rule.substr(0, colon_pos))] =
-                        std::string(rule.substr(colon_pos + 1));
+                    std::string from = rule.substr(0, colon_pos);
+                    if (from.empty()) {
+                        logger.warn("Ignoring char_map rule with empty source: '{}'", rule);
+                        continue;
+                    }
+                    params.charReplaceMap.mappings[std::move(from)] = std::string(rule.substr(colon_pos + 1));
                 }
             }
         } else if (p.rfind("json_map=", 0) == 0) {

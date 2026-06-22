@@ -8,8 +8,7 @@
 namespace PA {
 
 void registerBlockActorPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {block_actor_pos}
     PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_pos}", {

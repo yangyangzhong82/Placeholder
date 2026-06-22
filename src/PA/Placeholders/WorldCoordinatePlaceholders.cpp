@@ -12,8 +12,7 @@
 namespace PA {
 
 void registerWorldCoordinatePlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {world_pos}
     PA_SIMPLE(svc, owner, WorldCoordinateContext, "{world_pos}", {

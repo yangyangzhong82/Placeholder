@@ -36,6 +36,7 @@ bool Entry::enable() {
 
 bool Entry::disable() {
     getSelf().getLogger().debug("Disabling...");
+    unregisterAllBuiltinPlaceholders(PA_GetPlaceholderService());
 
     return true;
 }

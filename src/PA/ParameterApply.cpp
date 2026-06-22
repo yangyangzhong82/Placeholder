@@ -172,6 +172,11 @@ void applyCharReplaceMap(std::string& evaluatedValue, const CharReplaceMap& char
         const std::string& from = pair.first;
         const std::string& to   = pair.second;
 
+        if (from.empty()) {
+            logger.warn("Skipping char_map replacement with empty source.");
+            continue;
+        }
+
         size_t pos = evaluatedValue.find(from, 0);
         while (pos != std::string::npos) {
             evaluatedValue.replace(pos, from.length(), to);

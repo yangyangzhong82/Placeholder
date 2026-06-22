@@ -7,8 +7,7 @@
 namespace PA {
 
 void registerMobPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {mob_can_fly}
     PA_SIMPLE(svc, owner, MobContext, "{mob_can_fly}", {

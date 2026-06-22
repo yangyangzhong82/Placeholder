@@ -60,6 +60,11 @@
 
 namespace PA {
 
+inline void* builtinPlaceholderOwner() noexcept {
+    static int kBuiltinOwnerTag = 0;
+    return &kBuiltinOwnerTag;
+}
+
 // 泛型占位符实现（上下文型）
 template <typename Ctx, typename Fn>
 class TypedLambdaPlaceholder final : public PA::IPlaceholder {

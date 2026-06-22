@@ -19,8 +19,7 @@
 namespace PA {
 
 void registerServerPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {online_players}
     PA_SERVER(svc, owner, "{online_players}", {

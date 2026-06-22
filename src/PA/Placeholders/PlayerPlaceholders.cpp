@@ -79,8 +79,7 @@ static void unloadLegacyMoneyDll() {
 namespace PA {
 
 void registerPlayerPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
 #if defined(_WIN32)
     loadLegacyMoneyDll(); // 尝试加载 LegacyMoney.dll

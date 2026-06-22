@@ -10,8 +10,7 @@
 namespace PA {
 
 void registerSystemPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // 记录服务器启动时间
     static auto serverStartTime = std::chrono::steady_clock::now();

@@ -14,8 +14,7 @@
 namespace PA {
 
 void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_name}", {
         out = "N/A";

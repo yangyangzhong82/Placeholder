@@ -24,8 +24,7 @@
 namespace PA {
 
 void registerContextAliasPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {actor_look:<inner_placeholder_spec>}
     svc->registerContextAlias(

@@ -6,8 +6,7 @@
 namespace PA {
 
 void registerContainerPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {container_size}
     PA_SIMPLE(svc, owner, ContainerContext, "{container_size}", {

@@ -9,6 +9,7 @@
 #include "PA/Placeholders/SystemPlaceholders.h"
 #include "PA/Placeholders/TimePlaceholders.h"
 #include "PA/Placeholders/BlockPlaceholders.h" // Add BlockPlaceholders header
+#include "PA/Placeholders/CommonPlaceholderTemplates.h"
 #include "PA/Placeholders/ItemStackBasePlaceholders.h" // Add ItemStackBasePlaceholders header
 #include "PA/Placeholders/ContainerPlaceholders.h" // Add ContainerPlaceholders header
 #include "PA/Placeholders/BlockActorPlaceholders.h" // Add BlockActorPlaceholders header
@@ -19,18 +20,23 @@ namespace PA {
 // 注册内置占位符
 // 注意：owner 指针用于跨模块卸载时反注册。建议使用模块内唯一地址作为 owner。
 void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinFactoryOwner = 0;
-    void*      factoryOwner         = &kBuiltinFactoryOwner;
+    if (!svc) {
+        return;
+    }
+
+    unregisterAllBuiltinPlaceholders(svc);
+
+    void* owner = builtinPlaceholderOwner();
 
     // 注册所有内置上下文工厂，使别名占位符能通过工厂机制构造上下文
-    svc->registerContextFactory(ActorContext::kTypeId,          ActorContext::factory,          factoryOwner);
-    svc->registerContextFactory(MobContext::kTypeId,            MobContext::factory,            factoryOwner);
-    svc->registerContextFactory(PlayerContext::kTypeId,         PlayerContext::factory,         factoryOwner);
-    svc->registerContextFactory(BlockContext::kTypeId,          BlockContext::factory,          factoryOwner);
-    svc->registerContextFactory(ItemStackBaseContext::kTypeId,  ItemStackBaseContext::factory,  factoryOwner);
-    svc->registerContextFactory(ContainerContext::kTypeId,      ContainerContext::factory,      factoryOwner);
-    svc->registerContextFactory(BlockActorContext::kTypeId,     BlockActorContext::factory,     factoryOwner);
-    svc->registerContextFactory(WorldCoordinateContext::kTypeId, WorldCoordinateContext::factory, factoryOwner);
+    svc->registerContextFactory(ActorContext::kTypeId,          ActorContext::factory,          owner);
+    svc->registerContextFactory(MobContext::kTypeId,            MobContext::factory,            owner);
+    svc->registerContextFactory(PlayerContext::kTypeId,         PlayerContext::factory,         owner);
+    svc->registerContextFactory(BlockContext::kTypeId,          BlockContext::factory,          owner);
+    svc->registerContextFactory(ItemStackBaseContext::kTypeId,  ItemStackBaseContext::factory,  owner);
+    svc->registerContextFactory(ContainerContext::kTypeId,      ContainerContext::factory,      owner);
+    svc->registerContextFactory(BlockActorContext::kTypeId,     BlockActorContext::factory,     owner);
+    svc->registerContextFactory(WorldCoordinateContext::kTypeId, WorldCoordinateContext::factory, owner);
 
     registerActorPlaceholders(svc);
     registerContextAliasPlaceholders(svc);
@@ -44,6 +50,12 @@ void registerAllBuiltinPlaceholders(IPlaceholderService* svc) {
     registerContainerPlaceholders(svc); // Register ContainerPlaceholders
     registerBlockActorPlaceholders(svc); // Register BlockActorPlaceholders
     registerWorldCoordinatePlaceholders(svc); // Register WorldCoordinatePlaceholders
+}
+
+void unregisterAllBuiltinPlaceholders(IPlaceholderService* svc) {
+    if (svc) {
+        svc->unregisterByOwner(builtinPlaceholderOwner());
+    }
 }
 
 } // namespace PA

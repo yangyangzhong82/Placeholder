@@ -16,8 +16,7 @@
 namespace PA {
 
 void registerActorPlaceholders(IPlaceholderService* svc) {
-    static int kBuiltinOwnerTag = 0;
-    void*      owner            = &kBuiltinOwnerTag;
+    void* owner = builtinPlaceholderOwner();
 
     // {actor_is_on_ground}
     PA_SIMPLE(svc, owner, ActorContext, "{actor_is_on_ground}", {
