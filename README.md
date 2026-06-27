@@ -1,166 +1,118 @@
-# PlaceholderAPI JavaScript 插件示例使用说明
+# PlaceholderAPI
 
-本文档将指导您如何使用 `ExamplePlugin.js`，这是一个基于 PlaceholderAPI 的 JavaScript 插件示例。
+适用于 LeviLamina (BDS) 的占位符系统。它让你在任意文本中写入 `{占位符}`，运行时自动替换为玩家、实体、世界或服务器的实时数据，并支持参数、条件输出、着色、缓存等格式化能力。
 
-## 功能简介
+```text
+你好, {player_realname}! 你的延迟：{player_ping:|map=>200:§c高;>100:§e中;§a低}
+        ↓
+你好, Steve! 你的延迟：§a低
+```
 
-该插件会在每一位玩家加入游戏时，向其发送一条个性化的欢迎消息。这条消息利用了 PlaceholderAPI 的强大功能，将预设文本中的占位符（如 `{player_realname}`）替换为玩家的实际信息。
+## 功能特性
 
-**新功能**: 本插件现在还演示了如何在 JavaScript 中注册自定义占位符，并与 PlaceholderAPI 配合使用，例如 `{js:hello}`、`{js:server_time}` 和 `{js:actor_pos}`。
+- **丰富的内置占位符**：玩家、实体、生物、方块、容器、物品、世界、时间、系统、服务器等。完整列表见 [内置占位符文档](BUILTIN_PLACEHOLDERS.md)。
+- **强大的格式化管线**：数值精度、条件映射 (`map`)、布尔/字符/正则/JSON 映射、阈值着色等。
+- **上下文继承**：`Player → Mob → Actor`，玩家上下文可直接复用实体/生物占位符。
+- **上下文别名**：如 `{look:actor_health}` 获取玩家视线所指生物的血量，无需重写占位符。
+- **缓存**：对不常变的值按秒级缓存，降低开销。
+- **多语言接入**：C++ API、C ABI（C/Rust/Go/Zig 等 FFI）、以及通过 RemoteCall 的 JS API。
 
-## 安装步骤
+## 安装
 
-1.  **前置要求**:
-    *   确保您的服务器已经正确安装并加载了 `PlaceholderAPI` C++ 插件。这是本 JS 插件运行的基础。
-    *   确保您的服务器支持加载 JavaScript 插件。
+1. 确保服务器已安装 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 及其依赖 `LegacyRemoteCall`。
+2. 将本插件（`Placeholder`）放入服务器 `plugins/` 目录。
+3. 重启服务器。控制台出现加载日志即表示成功。
 
-2.  **放置插件**:
-    *   将 `ExamplePlugin.js` 文件复制到您服务器的 `plugins/` 目录下。
+> 本插件是其它插件/脚本的**基础库**：它本身负责解析与替换占位符，具体占位符由内置集合与各插件注册提供。
 
-3.  **重启服务器**:
-    *   重启您的服务器以加载新的 JS 插件。加载成功后，您应该能在控制台看到 "PlaceholderAPI JS 示例插件已成功加载，正在监听 onJoin 事件并注册 JS 占位符。" 的提示信息。
+## 快速上手（服务器管理员 / 脚本作者）
 
-## 工作原理
+占位符的基本写法是 `{token}`，可带参数与格式化指令：
 
-插件的核心代码逻辑如下：
+```text
+{token:业务参数...|格式化参数...}
+```
+
+常用示例：
+
+```text
+{player_realname}                                   玩家名
+{player_pos_x:|precision=2}                          保留两位小数的坐标
+{player_ping:|50,§a,100,§e,§c}ms                     按阈值着色的延迟
+{actor_is_alive:|bool_map=true:§a存活;false:§c死亡}   布尔值本地化
+{look:actor_health}                                  视线所指生物的血量（上下文别名）
+```
+
+完整的语法、参数分流规则（`:` `,` `;` `|`）、格式化参数与排错，见 **[使用指南 USAGE_GUIDE.md](USAGE_GUIDE.md)**。
+
+## 文档导航
+
+| 你是… | 推荐阅读 |
+|---|---|
+| 服务器管理员 / 配置占位符的人 | [USAGE_GUIDE.md](USAGE_GUIDE.md) · [BUILTIN_PLACEHOLDERS.md](BUILTIN_PLACEHOLDERS.md) |
+| C++ / C ABI 插件开发者 | [API_DOC.md](API_DOC.md) |
+| JS 脚本开发者（RemoteCall） | 下方「JS / RemoteCall 接入」 · [ExamplePlugin.js](ExamplePlugin.js) |
+| 想了解版本变化 | [CHANGELOG.md](CHANGELOG.md) |
+
+## JS / RemoteCall 接入
+
+通过 `ll.import("PA", <函数名>)` 即可在 JS 中调用。可用导出函数：
+
+**文本替换**
+
+| 函数 | 说明 |
+|---|---|
+| `replace(text)` | 服务器级替换（无上下文） |
+| `replaceForPlayer(text, player)` | 以玩家为上下文替换 |
+| `replaceForActor(text, actor)` | 以实体为上下文替换 |
+| `replaceMany(texts)` / `replaceManyForPlayer(texts, player)` | 批量替换 |
+| `replaceObject(kv)` / `replaceObjectForPlayer(kv, player)` | 替换键值对象的值 |
+
+**注册自定义占位符**（回调通过 `ll.export(fn, namespace, name)` 提供）
+
+| 函数 | 上下文 |
+|---|---|
+| `registerServerPlaceholder(prefix, token, cbNS, cbName, cacheDuration?)` | 服务器级 |
+| `registerPlayerPlaceholder(prefix, token, cbNS, cbName, cacheDuration?)` | 玩家 |
+| `registerActorPlaceholder(prefix, token, cbNS, cbName, cacheDuration?)` | 实体 |
+| `registerMobPlaceholder(prefix, token, cbNS, cbName, cacheDuration?)` | 生物 |
+| `registerPlaceholderByKind(...)` / `registerPlaceholderByContextId(...)` | 进阶 |
+| `unregisterByCallbackNamespace(cbNS)` | 按命名空间批量注销 |
+| `contextTypeIds()` | 查询各上下文类型 ID |
+
+> `cacheDuration` 传大于 0 的秒数即启用缓存。
+
+最小示例：
 
 ```javascript
-// 插件名称：PlaceholderAPI JS 示例（含注册自定义占位符）
-// 插件版本：1.1.0
-// 插件描述：演示如何在 JS 中注册自定义占位符，并与 PlaceholderAPI 配合使用
-
-// 1) 导入 PlaceholderAPI 暴露的函数
 const PA = {
     replaceForPlayer: ll.import("PA", "replaceForPlayer"),
-    registerActorPlaceholder: ll.import("PA", "registerActorPlaceholder"),
-    registerServerPlaceholder: ll.import("PA", "registerServerPlaceholder"),
-    registerPlaceholderByKind: ll.import("PA", "registerPlaceholderByKind"),
-    registerPlaceholderByContextId: ll.import("PA", "registerPlaceholderByContextId"),
-
+    registerPlayerPlaceholder: ll.import("PA", "registerPlayerPlaceholder"),
     unregisterByCallbackNamespace: ll.import("PA", "unregisterByCallbackNamespace"),
-    contextTypeIds: ll.import("PA", "contextTypeIds"),
 };
 
-// 2) 在 JS 中导出一个回调函数，供 C++ 在占位符求值时调用
-// 回调命名空间
-const JS_CB_NS = "JSPH";
+const NS = "MyScript";
 
-// 玩家上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Player* player)
-ll.export((token, args, player) => {
-    // token 是注册时传入的 tokenName（不带花括号），例如 "hello"
-    // args 是占位符参数数组（如果用户写了 {js:hello:xxx}，args 为 ["xxx"]，否则为空数组）
-    const extra = args.length > 0 ? `（${args.join(",")}）` : "";
-    const name = player ? player.name : "未知玩家";
-    return `你好，${name}${extra}`;
-}, JS_CB_NS, "helloPlayer");
+// 回调签名：(token, args, player) => string
+ll.export((token, args, player) => `你好，${player ? player.name : "?"}`, NS, "hello");
 
-// 服务器级占位符回调签名：std::string(std::string token, std::vector<std::string> args)
-ll.export((token, args) => {
-    const now = new Date();
-    return `服务器时间：${now.toLocaleString()}`;
-}, JS_CB_NS, "serverTime");
-
-// Actor 上下文占位符回调签名：std::string(std::string token, std::vector<std::string> args, Actor* actor)
-ll.export((token, args, actor) => {
-    if (!actor) return "无实体";
-    const pos = actor.pos;
-    return `实体坐标(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
-}, JS_CB_NS, "actorPos");
-
-// 注册一个缓存的服务器级占位符，缓存时间为 5 秒
-ll.export((token, args) => {
-    const now = new Date();
-    return `缓存服务器时间：${now.toLocaleString()}`;
-}, JS_CB_NS, "cachedServerTime");
-
-// 3) 向 PlaceholderAPI 注册这些占位符
-// 最终占位符形如：{js:hello}、{js:server_time}、{js:actor_pos}、{js:cached_server_time}
-const ok1 = PA.registerPlayerPlaceholder("js", "hello", JS_CB_NS, "helloPlayer");
-const ok2 = PA.registerServerPlaceholder("js", "server_time", JS_CB_NS, "serverTime");
-const ok3 = PA.registerActorPlaceholder("js", "actor_pos", JS_CB_NS, "actorPos");
-// 现在 registerServerPlaceholder 会根据传入的 cacheDuration 自动处理缓存
-const ok4 = PA.registerServerPlaceholder("js", "cached_server_time", JS_CB_NS, "cachedServerTime", 5);
-
-if (!ok1 || !ok2 || !ok3 || !ok4) {
-    logger.error("注册 JS 占位符失败，请检查前面的日志。");
-} else {
-    logger.info("已注册 JS 占位符：{js:hello} / {js:server_time} / {js:actor_pos} / {js:cached_server_time} (缓存)");
-}
+// 注册后即可使用 {js:hello}
+PA.registerPlayerPlaceholder("js", "hello", NS, "hello", 0);
 
 mc.listen("onJoin", (player) => {
-    const msg = "欢迎, {player_realname}! 现在时间：{js:server_time}，自定义问候：{js:hello:再次欢迎} {js:actor_pos}，缓存时间：{js:cached_server_time}";
-    const processedMessage = PA.replaceForPlayer(msg, player);
-    player.tell(processedMessage);
-    logger.info(`向玩家 ${player.name} 发送了欢迎消息: ${processedMessage}`);
+    player.tell(PA.replaceForPlayer("欢迎, {js:hello}!", player));
 });
 
-// 5) 插件卸载时，清理由本 JS 命名空间注册的占位符
-ll.registerPluginUnload && ll.registerPluginUnload(() => {
-    const ok = PA.unregisterByCallbackNamespace(JS_CB_NS);
-    logger.info(`已卸载 '${JS_CB_NS}' 名下的占位符：${ok}`);
-});
-
-logger.info("PlaceholderAPI JS 示例插件已加载，正在监听 onJoin 事件并注册 JS 占位符。");
+// 卸载时清理
+ll.registerPluginUnload && ll.registerPluginUnload(() => PA.unregisterByCallbackNamespace(NS));
 ```
 
-1.  **导入函数**: 插件首先通过 `ll.import` 从 C++ 插件中导入核心的占位符替换函数以及注册自定义占位符的函数。
-2.  **导出回调**: 插件使用 `ll.export` 导出 JavaScript 函数，这些函数将作为自定义占位符的回调。`JS_CB_NS` 定义了这些回调的命名空间。
-3.  **注册占位符**: 接着，插件使用 `PA.registerPlayerPlaceholder`、`PA.registerServerPlaceholder` 和 `PA.registerActorPlaceholder` 等函数向 PlaceholderAPI 注册自定义占位符，将它们与之前导出的 JS 回调函数关联起来。
-4.  **监听事件**: 插件使用 `mc.listen("onJoin", ...)` 来监听玩家进入游戏的事件。
-5.  **处理消息**: 当玩家加入时，插件会定义一条包含内置占位符和自定义 JS 占位符的欢迎语 `msg`。
-6.  **替换占位符**: 然后调用 `PA.replaceForPlayer` 函数，将欢迎语和当前玩家对象 `player` 传进去。C++ 插件会负责将 `{player_realname}`、`{js:server_time}`、`{js:hello:再次欢迎}` 和 `{js:actor_pos}` 等占位符替换成真实数据。
-7.  **发送消息**: 最后，通过 `player.tell()` 将处理完成的消息发送给玩家。
-8.  **插件卸载**: 在插件卸载时，通过 `PA.unregisterByCallbackNamespace(JS_CB_NS)` 批量卸载由本 JS 命名空间注册的所有占位符，避免资源泄露。
+可直接运行的完整示例（含实体坐标、缓存占位符、侧边栏更新等）见仓库根目录的 **[ExamplePlugin.js](ExamplePlugin.js)**。
 
-## 自定义
+## C++ / C ABI 接入
 
-您可以轻松地修改 `ExamplePlugin.js` 文件以满足您的需求。
+C++ 推荐使用 `CommonPlaceholderTemplates.h` 中的简化宏注册占位符；需要跨编译器/语言时使用 `PA/PlaceholderCAPI.h` 暴露的 C ABI。详见 [API_DOC.md](API_DOC.md)。
 
-### 修改欢迎消息
+## 许可证
 
-要修改欢迎消息，只需编辑 `mc.listen` 回调函数中 `msg` 变量的内容即可：
-
-```javascript
-// ...
-mc.listen("onJoin", (player) => {
-    // 修改为您想要的任何文本和占位符
-    const msg = "你好, {player_realname}！欢迎来到服务器！你的坐标是 {js:actor_pos}。";
-
-    const processedMessage = PA.replaceForPlayer(msg, player);
-    player.tell(processedMessage);
-    // ...
-});
-// ...
-```
-
-### 注册新的自定义占位符
-
-您可以按照以下步骤注册新的自定义占位符：
-
-1.  **定义回调函数**: 在 `JS_CB_NS` 命名空间下，使用 `ll.export` 定义一个新的 JavaScript 回调函数。确保其签名与您希望支持的上下文类型（服务器、玩家、实体等）相匹配。
-
-    回调函数通常接收 `token` (占位符名称), `args` (占位符参数数组), 以及可选的上下文对象 (如 `Player*`, `Actor*`)。
-
-    例如，一个支持参数的玩家上下文占位符回调：
-    ```javascript
-    ll.export((token, args, player) => {
-        const playerName = player ? player.name : "未知玩家";
-        if (args.length > 0) {
-            return `玩家 ${playerName} 的自定义消息: ${args.join(",")}`;
-        }
-        return `你好，${playerName}！`;
-    }, JS_CB_NS, "myParameterizedPlayerPlaceholder");
-    ```
-
-2.  **注册占位符**: 使用 `PA` 对象中相应的 `register*Placeholder` 函数注册您的占位符。
-
-    例如，注册上述支持参数的玩家上下文占位符：
-    ```javascript
-    const okNew = PA.registerPlayerPlaceholder("js", "my_param_player", JS_CB_NS, "myParameterizedPlayerPlaceholder");
-    if (okNew) {
-        logger.info("已注册新的 JS 占位符：{js:my_param_player} (支持参数)");
-    }
-    ```
-    现在您可以在游戏中使用 `{js:my_param_player}` 或 `{js:my_param_player:您的参数}`。
-
-**请注意**: 您可以使用的内置占位符取决于 `PlaceholderAPI` C++ 插件中注册了哪些。请参考其文档以获取所有可用的内置占位符列表。对于自定义 JS 占位符，您需要确保 `ll.export` 的回调函数签名与 `PA.register*Placeholder` 函数所期望的上下文类型相匹配。如果需要注册缓存占位符，只需在注册时为 `register*Placeholder` 函数的 `cacheDuration` 参数传入一个大于 0 的值即可。
+见 [LICENSE](LICENSE)。
