@@ -74,9 +74,9 @@ PlaceholderParams parse(std::string_view paramPart) {
         if (p.rfind("precision=", 0) == 0) {
             std::string_view precision_sv = std::string_view(p).substr(10); // "precision=".length()
             int              parsedPrecision;
-            auto [prec_ptr, prec_ec] =
-                std::from_chars(precision_sv.data(), precision_sv.data() + precision_sv.size(), parsedPrecision);
-            if (prec_ec == std::errc()) {
+            const char*      precision_end = precision_sv.data() + precision_sv.size();
+            auto [prec_ptr, prec_ec] = std::from_chars(precision_sv.data(), precision_end, parsedPrecision);
+            if (prec_ec == std::errc() && prec_ptr == precision_end) {
                 params.precision = parsedPrecision;
             }
         } else if (p.rfind("map=", 0) == 0) {
@@ -109,7 +109,7 @@ PlaceholderParams parse(std::string_view paramPart) {
                 else return false; // Should be unreachable
 
                 auto [ptr, ec] = std::from_chars(val_str.data(), val_str.data() + val_str.size(), c.threshold);
-                if (ec != std::errc()) return false;
+                if (ec != std::errc() || ptr != val_str.data() + val_str.size()) return false;
 
                 c.output = rule.substr(colon_pos + 1);
                 c.epsilon = params.conditional.default_epsilon; // 使用默认 epsilon
@@ -137,9 +137,9 @@ PlaceholderParams parse(std::string_view paramPart) {
         } else if (p.rfind("eq_eps=", 0) == 0) {
             std::string_view epsilon_sv = std::string_view(p).substr(7); // "eq_eps=".length()
             double           parsedEpsilon;
-            auto [eps_ptr, eps_ec] =
-                std::from_chars(epsilon_sv.data(), epsilon_sv.data() + epsilon_sv.size(), parsedEpsilon);
-            if (eps_ec == std::errc()) {
+            const char*      epsilon_end = epsilon_sv.data() + epsilon_sv.size();
+            auto [eps_ptr, eps_ec] = std::from_chars(epsilon_sv.data(), epsilon_end, parsedEpsilon);
+            if (eps_ec == std::errc() && eps_ptr == epsilon_end) {
                 params.conditional.default_epsilon = parsedEpsilon;
                 for (auto& c : params.conditional.conditions) {
                     c.epsilon = parsedEpsilon;

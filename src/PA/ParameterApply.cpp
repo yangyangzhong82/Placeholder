@@ -16,8 +16,9 @@ void formatNumericValue(std::string& evaluatedValue, int precision) {
     }
 
     double value;
-    auto [ptr, ec] = std::from_chars(evaluatedValue.data(), evaluatedValue.data() + evaluatedValue.size(), value);
-    if (ec == std::errc()) {
+    const char* numEnd = evaluatedValue.data() + evaluatedValue.size();
+    auto [ptr, ec]     = std::from_chars(evaluatedValue.data(), numEnd, value);
+    if (ec == std::errc() && ptr == numEnd) {
         std::stringstream ss;
         ss << std::fixed << std::setprecision(precision) << value;
         evaluatedValue = ss.str();
@@ -58,8 +59,9 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
     }
 
     double value;
-    auto [ptr, ec] = std::from_chars(evaluatedValue.data(), evaluatedValue.data() + evaluatedValue.size(), value);
-    if (ec != std::errc()) {
+    const char* valueEnd = evaluatedValue.data() + evaluatedValue.size();
+    auto [ptr, ec]       = std::from_chars(evaluatedValue.data(), valueEnd, value);
+    if (ec != std::errc() || ptr != valueEnd) {
         return;
     }
 
@@ -68,9 +70,9 @@ void applyColorRules(std::string& evaluatedValue, const std::string& colorParamP
         for (size_t i = 0; i < params.size() - 1; i += 2) {
             double           threshold;
             std::string_view threshold_sv = params[i];
-            auto [t_ptr, t_ec] =
-                std::from_chars(threshold_sv.data(), threshold_sv.data() + threshold_sv.size(), threshold);
-            if (t_ec == std::errc()) {
+            const char*      threshold_end = threshold_sv.data() + threshold_sv.size();
+            auto [t_ptr, t_ec] = std::from_chars(threshold_sv.data(), threshold_end, threshold);
+            if (t_ec == std::errc() && t_ptr == threshold_end) {
                 if (value < threshold) {
                     appliedColor = params[i + 1];
                     break;
@@ -97,8 +99,9 @@ void applyConditionalOutput(std::string& evaluatedValue, const ConditionalOutput
     }
 
     double value;
-    auto [ptr, ec] = std::from_chars(evaluatedValue.data(), evaluatedValue.data() + evaluatedValue.size(), value);
-    if (ec != std::errc()) {
+    const char* valueEnd = evaluatedValue.data() + evaluatedValue.size();
+    auto [ptr, ec]       = std::from_chars(evaluatedValue.data(), valueEnd, value);
+    if (ec != std::errc() || ptr != valueEnd) {
         return;
     }
 

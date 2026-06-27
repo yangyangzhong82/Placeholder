@@ -13,6 +13,18 @@ namespace PA {
 
 namespace {
 
+// 防止别名占位符递归展开导致爆栈（输入可能来自玩家）
+constexpr int    kMaxRecursionDepth = 32;
+thread_local int gRecursionDepth    = 0;
+
+struct RecursionGuard {
+    bool ok;
+    RecursionGuard() : ok(++gRecursionDepth <= kMaxRecursionDepth) {}
+    ~RecursionGuard() { --gRecursionDepth; }
+    RecursionGuard(const RecursionGuard&)            = delete;
+    RecursionGuard& operator=(const RecursionGuard&) = delete;
+};
+
 constexpr std::array<std::string_view, 8> kFormattingPrefixes = {
     "precision=",
     "map=",
@@ -352,6 +364,12 @@ void PlaceholderProcessor::applyFormatting(std::string& value, const std::string
 
 std::string
 PlaceholderProcessor::process(std::string_view text, const IContext* ctx, const PlaceholderRegistry& registry) {
+    RecursionGuard guard;
+    if (!guard.ok) {
+        logger.warn("[PA] Max placeholder recursion depth ({}) exceeded, aborting expansion.", kMaxRecursionDepth);
+        return std::string(text);
+    }
+
     std::string result;
     result.reserve(text.length());
     size_t pos = 0;
