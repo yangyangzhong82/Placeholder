@@ -132,7 +132,7 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
         out = "0";
         if (c.player) {
             if (auto ns = c.player->getNetworkStatus()) {
-                out = std::to_string(ns->mAveragePing);
+                out = std::to_string(ns->mAveragePing.get().count());
             }
         }
     });
@@ -142,7 +142,7 @@ void registerPlayerPlaceholders(IPlaceholderService* svc) {
         out = "0";
         if (c.player) {
             if (auto ns = c.player->getNetworkStatus()) {
-                out = std::to_string(ns->mCurrentPing);
+                out = std::to_string(ns->mCurrentPing.get().count());
             }
         }
     });

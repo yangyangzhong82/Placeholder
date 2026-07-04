@@ -168,7 +168,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             // 检查是否是空气或无效方块
             if (bl.isAir()
                 || (bl.getBlockType().mProperties == BlockProperty::None
-                    && bl.getBlockType().mMaterial.mType == MaterialType::Any)) {
+                    && bl.getBlockType().mMaterial.mType == ::SharedTypes::v1_26_20::MaterialType::Any)) {
                 return nullptr;
             }
 
