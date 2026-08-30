@@ -1,17 +1,14 @@
 add_rules("mode.debug", "mode.release")
 
 add_repositories("levimc-repo https://github.com/LiteLDev/xmake-repo.git")
-add_requires("exprtk")
-add_requires("utfcpp")
--- add_requires("levilamina x.x.x") for a specific version
--- add_requires("levilamina develop") to use develop version
--- please note that you should add bdslibrary yourself if using dev version
+
 if is_config("target_type", "server") then
     add_requires("levilamina 26.20.0", {configs = {target_type = "server"}})
 else
     add_requires("levilamina 26.26.0", {configs = {target_type = "client"}})
 end
-
+add_requires("exprtk")
+add_requires("utfcpp")
 add_requires("levibuildscript")
 add_requires("fast_float")
 add_requires("icu4c")
@@ -31,6 +28,7 @@ option_end()
 target("Placeholder") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
+    set_toolchains("clang-cl")
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
     add_defines("NOMINMAX", "UNICODE","Placeholder_EXPORTS")
     add_packages("levilamina","exprtk","utfcpp","fast_float", "icu4c","sol2","legacyremotecall","magic_enum")
@@ -40,15 +38,9 @@ target("Placeholder") -- Change this to your mod name.
     set_symbols("debug")
     add_headerfiles("src/**.h")
     add_files("src/**.cpp")
-    remove_files("src/PA/Entry/test.cpp") -- 示例代码，不参与编译
+    remove_files("src/PA/Entry/test.cpp") 
     add_includedirs("src")
-    -- if is_config("target_type", "server") then
-    --     add_includedirs("src-server")
-    --     add_files("src-server/**.cpp")
-    -- else
-    --     add_includedirs("src-client")
-    --     add_files("src-client/**.cpp")
-    -- end
+
         after_build(function (target)
         local bindir = path.join(os.projectdir(), "bin")
         local includedir = path.join(bindir, "include") -- 修改目标包含目录
