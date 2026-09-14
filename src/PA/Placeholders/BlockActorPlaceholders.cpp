@@ -2,8 +2,10 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/world/level/block/actor/BlockActor.h"
+#include "mc/world/level/block/actor/component/IVanillaMainBlockActorComponent.h"
 #include "mc/world/level/BlockSource.h"
 #include "mc/world/Container.h"
+#include "mc/safety/RedactableString.h"
 
 namespace PA {
 
@@ -37,25 +39,25 @@ void registerBlockActorPlaceholders(IPlaceholderService* svc) {
     // {block_actor_type_name}
     PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_type_name}", {
         out = "N/A";
-        if (c.blockActor) out = c.blockActor->getName();
+        if (c.blockActor) {
+            if (auto* main = c.blockActor->_getMainComponent()) out = main->getName();
+        }
     });
 
     // {block_actor_custom_name}
     PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_custom_name}", {
         out = "N/A";
-        if (c.blockActor) out = c.blockActor->mCustomName->mUnredactedString;
-    });
-
-    // {block_actor_repair_cost}
-    PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_repair_cost}", {
-        out = "0";
-        if (c.blockActor) out = std::to_string(c.blockActor->mRepairCost);
+        if (c.blockActor) {
+            if (auto* main = c.blockActor->_getMainComponent()) out = main->getCustomName().mUnredactedString;
+        }
     });
 
     // {block_actor_has_container}
     PA_SIMPLE(svc, owner, BlockActorContext, "{block_actor_has_container}", {
         bool hasContainer = false;
-        if (c.blockActor) hasContainer = (c.blockActor->getContainer() != nullptr);
+        if (c.blockActor) {
+            if (auto* main = c.blockActor->_getMainComponent()) hasContainer = (main->getContainer() != nullptr);
+        }
         out = hasContainer ? "true" : "false";
     });
 }

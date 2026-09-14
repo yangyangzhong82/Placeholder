@@ -88,7 +88,7 @@ void registerActorPlaceholders(IPlaceholderService* svc) {
 
     // {actor_is_riding}
     PA_SIMPLE(svc, owner, ActorContext, "{actor_is_riding}", {
-        out = (c.actor && c.actor->isRiding()) ? "true" : "false";
+        out = (c.actor && c.actor->getVehicle() != nullptr) ? "true" : "false";
     });
 
     // {actor_is_tame}

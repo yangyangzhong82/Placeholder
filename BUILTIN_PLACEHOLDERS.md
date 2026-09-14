@@ -105,7 +105,6 @@
 | `{block_actor_pos_z}`  | 方块实体的 Z 坐标                          | `200`                        |
 | `{block_actor_type_name}` | 方块实体的类型名称                       | `ChestBlockActor`            |
 | `{block_actor_custom_name}` | 方块实体的自定义名称                     | `我的箱子`                   |
-| `{block_actor_repair_cost}` | 方块实体的修复成本                       | `0`                          |
 | `{block_actor_has_container}` | 方块实体是否包含容器                     | `true`                       |
 
 ### 方块上下文 (`BlockContext`)

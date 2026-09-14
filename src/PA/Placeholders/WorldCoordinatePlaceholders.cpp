@@ -3,6 +3,7 @@
 
 #include "mc/world/level/block/Block.h"
 #include "mc/world/level/block/actor/BlockActor.h"
+#include "mc/world/level/block/actor/component/IVanillaMainBlockActorComponent.h"
 #include "mc/world/level/dimension/Dimension.h"
 #include "ll/api/service/Bedrock.h"
 #include "mc/world/level/Level.h"
@@ -98,7 +99,7 @@ void registerWorldCoordinatePlaceholders(IPlaceholderService* svc) {
                     BlockPos     bp = BlockPos(c.data->pos);
                     BlockActor*  blockActor = bs.getBlockEntity(bp);
                     if (blockActor) {
-                        out = blockActor->getName();
+                        if (auto* main = blockActor->_getMainComponent()) out = main->getName();
                     }
                 }
             }

@@ -2,8 +2,26 @@
 #include "PA/Placeholders/CommonPlaceholderTemplates.h"
 
 #include "mc/world/Container.h"
+#include "mc/world/item/ItemStack.h"
 
 namespace PA {
+
+namespace {
+
+// 26.40 移除了 Container::getItemCount(std::function) 重载，这里保持旧语义：累加匹配槽位的物品数量
+template <typename Pred>
+int countContainerItems(const Container& container, Pred&& pred) {
+    int total = 0;
+    int size  = container.getContainerSize();
+    for (int i = 0; i < size; ++i) {
+        const ItemStack& item = container.getItem(i);
+        if (item.isNull()) continue;
+        if (pred(item)) total += static_cast<int>(item.mCount);
+    }
+    return total;
+}
+
+} // namespace
 
 void registerContainerPlaceholders(IPlaceholderService* svc) {
     void* owner = builtinPlaceholderOwner();
@@ -49,7 +67,7 @@ void registerContainerPlaceholders(IPlaceholderService* svc) {
     // {container_item_count}
     PA_SIMPLE(svc, owner, ContainerContext, "{container_item_count}", {
         out = "0";
-        if (c.container) out = std::to_string(c.container->getItemCount([](const ItemStack&){ return true; }));
+        if (c.container) out = std::to_string(countContainerItems(*c.container, [](const ItemStack&) { return true; }));
     });
 
     // {container_remaining_capacity}
@@ -70,7 +88,7 @@ void registerContainerPlaceholders(IPlaceholderService* svc) {
             targetTypeNames.emplace_back(arg);
         }
 
-        int count = c.container->getItemCount([&](const ItemStack& item) {
+        int count = countContainerItems(*c.container, [&](const ItemStack& item) {
             if (item.isNull()) {
                 return false;
             }

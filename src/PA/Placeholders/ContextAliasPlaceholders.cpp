@@ -85,10 +85,7 @@ void registerContextAliasPlaceholders(IPlaceholderService* svc) {
             if (!playerCtx || !playerCtx->player) {
                 return nullptr;
             }
-            if (playerCtx->player->isRiding()) {
-                return playerCtx->player->getVehicle();
-            }
-            return nullptr;
+            return playerCtx->player->getVehicle();
         },
         owner
     );

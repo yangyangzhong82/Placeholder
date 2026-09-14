@@ -3,6 +3,7 @@
 
 #include "mc/deps/core/math/Color.h"
 #include "mc/deps/core/string/HashedString.h"
+#include "mc/deps/nbt/CompoundTag.h"
 #include "mc/world/item/Item.h"
 #include "mc/world/item/ItemColor.h"
 #include "mc/world/item/ItemStack.h"
@@ -125,13 +126,13 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_container_data}", {
         bool hasData = false;
-        if (c.itemStackBase) hasData = c.itemStackBase->hasContainerData();
+        if (c.itemStackBase && c.itemStackBase->mUserData) hasData = c.itemStackBase->mUserData->contains("Items");
         out = hasData ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_custom_hover_name}", {
         bool hasName = false;
-        if (c.itemStackBase) hasName = c.itemStackBase->hasCustomHoverName();
+        if (c.itemStackBase) hasName = !c.itemStackBase->getCustomName().empty();
         out = hasName ? "true" : "false";
     });
 
@@ -161,186 +162,186 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_music_disk}", {
         bool isMusicDisk = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isMusicDisk = c.itemStackBase->getItem()->isMusicDisk();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isMusicDisk = c.itemStackBase->mItem.get()->isMusicDisk();
         }
         out = isMusicDisk ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_component_based}", {
         bool isComponentBased = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isComponentBased = c.itemStackBase->getItem()->isComponentBased();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isComponentBased = c.itemStackBase->mItem.get()->isComponentBased();
         }
         out = isComponentBased ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_block_planter}", {
         bool isBlockPlanter = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isBlockPlanter = c.itemStackBase->getItem()->isBlockPlanterItem();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isBlockPlanter = c.itemStackBase->mItem.get()->isBlockPlanterItem();
         }
         out = isBlockPlanter ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_bucket}", {
         bool isBucket = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isBucket = c.itemStackBase->getItem()->isBucket();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isBucket = c.itemStackBase->mItem.get()->isBucket();
         }
         out = isBucket ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_candle}", {
         bool isCandle = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isCandle = c.itemStackBase->getItem()->isCandle();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isCandle = c.itemStackBase->mItem.get()->isCandle();
         }
         out = isCandle ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_dyeable}", {
         bool isDyeable = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isDyeable = c.itemStackBase->getItem()->isDyeable();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isDyeable = c.itemStackBase->mItem.get()->isDyeable();
         }
         out = isDyeable ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_dye}", {
         bool isDye = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isDye = c.itemStackBase->getItem()->isDye();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isDye = c.itemStackBase->mItem.get()->isDye();
         }
         out = isDye ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_color_enum}", {
         out = "None";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = magic_enum::enum_name(c.itemStackBase->getItem()->getItemColor());
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = magic_enum::enum_name(c.itemStackBase->mItem.get()->getItemColor());
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_fertilizer}", {
         bool isFertilizer = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isFertilizer = c.itemStackBase->getItem()->isFertilizer();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isFertilizer = c.itemStackBase->mItem.get()->isFertilizer();
         }
         out = isFertilizer ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_food_item_type}", {
         bool isFood = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isFood = c.itemStackBase->getItem()->isFood();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isFood = c.itemStackBase->mItem.get()->isFood();
         }
         out = isFood ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_throwable}", {
         bool isThrowable = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isThrowable = c.itemStackBase->getItem()->isThrowable();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isThrowable = c.itemStackBase->mItem.get()->isThrowable();
         }
         out = isThrowable ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_useable}", {
         bool isUseable = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isUseable = c.itemStackBase->getItem()->isUseable();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isUseable = c.itemStackBase->mItem.get()->isUseable();
         }
         out = isUseable ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_trim_allowed}", {
         bool isTrimAllowed = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isTrimAllowed = c.itemStackBase->getItem()->isTrimAllowed();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isTrimAllowed = c.itemStackBase->mItem.get()->isTrimAllowed();
         }
         out = isTrimAllowed ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_max_damage_type}", {
         out = "0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = std::to_string(c.itemStackBase->getItem()->getMaxDamage());
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = std::to_string(c.itemStackBase->mItem.get()->getMaxDamage());
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_attack_damage}", {
         out = "0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = std::to_string(c.itemStackBase->getItem()->getAttackDamage());
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = std::to_string(c.itemStackBase->mItem.get()->getAttackDamage());
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_hand_equipped}", {
         bool isHandEquipped = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isHandEquipped = c.itemStackBase->getItem()->isHandEquipped();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isHandEquipped = c.itemStackBase->mItem.get()->isHandEquipped();
         }
         out = isHandEquipped ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_pattern}", {
         bool isPattern = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isPattern = c.itemStackBase->getItem()->isPattern();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isPattern = c.itemStackBase->mItem.get()->isPattern();
         }
         out = isPattern ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_pattern_index}", {
         out = "0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = std::to_string(c.itemStackBase->getItem()->getPatternIndex());
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = std::to_string(c.itemStackBase->mItem.get()->getPatternIndex());
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_base_rarity}", {
         out = "Common";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = magic_enum::enum_name(c.itemStackBase->getItem()->getBaseRarity());
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = magic_enum::enum_name(c.itemStackBase->mItem.get()->getBaseRarity());
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_rarity}", {
         out = "Common";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = magic_enum::enum_name(c.itemStackBase->getItem()->getRarity(*c.itemStackBase));
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = magic_enum::enum_name(c.itemStackBase->mItem.get()->getRarity(*c.itemStackBase));
         }
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_shows_durability_in_creative}", {
         bool showsDurability = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            showsDurability = c.itemStackBase->getItem()->showsDurabilityInCreative();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            showsDurability = c.itemStackBase->mItem.get()->showsDurabilityInCreative();
         }
         out = showsDurability ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_complex}", {
         bool isComplex = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isComplex = c.itemStackBase->getItem()->isComplex();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isComplex = c.itemStackBase->mItem.get()->isComplex();
         }
         out = isComplex ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_actor_placer}", {
         bool isActorPlacer = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            isActorPlacer = c.itemStackBase->getItem()->isActorPlacerItem();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            isActorPlacer = c.itemStackBase->mItem.get()->isActorPlacerItem();
         }
         out = isActorPlacer ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_has_custom_color_item_type}", {
         bool hasCustomColor = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            hasCustomColor = c.itemStackBase->getItem()->hasCustomColor(*c.itemStackBase);
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            hasCustomColor = c.itemStackBase->mItem.get()->hasCustomColor(*c.itemStackBase);
         }
         out = hasCustomColor ? "true" : "false";
     });
@@ -348,16 +349,16 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_can_be_charged}", {
         bool canBeCharged = false;
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            canBeCharged = c.itemStackBase->getItem()->canBeCharged();
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            canBeCharged = c.itemStackBase->mItem.get()->canBeCharged();
         }
         out = canBeCharged ? "true" : "false";
     });
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_furnace_xp_multiplier}", {
         out = "0.0";
-        if (c.itemStackBase && c.itemStackBase->getItem()) {
-            out = std::to_string(c.itemStackBase->getItem()->getFurnaceXPmultiplier(*c.itemStackBase));
+        if (c.itemStackBase && c.itemStackBase->mItem.get()) {
+            out = std::to_string(c.itemStackBase->mItem.get()->getFurnaceXPmultiplier(*c.itemStackBase));
         }
     });
 }

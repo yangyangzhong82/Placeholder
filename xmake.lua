@@ -3,9 +3,9 @@ add_rules("mode.debug", "mode.release")
 add_repositories("levimc-repo https://github.com/LiteLDev/xmake-repo.git")
 
 if is_config("target_type", "server") then
-    add_requires("levilamina 26.20.0", {configs = {target_type = "server"}})
+    add_requires("levilamina 26.40.2", {configs = {target_type = "server"}})
 else
-    add_requires("levilamina 26.26.0", {configs = {target_type = "client"}})
+    add_requires("levilamina 26.40.2", {configs = {target_type = "client"}})
 end
 add_requires("exprtk")
 add_requires("utfcpp")
@@ -13,7 +13,7 @@ add_requires("levibuildscript")
 add_requires("fast_float")
 add_requires("icu4c")
 add_requires("sol2")
-add_requires("legacyremotecall 0.19.0")
+add_requires("legacyremotecall 0.21.1")
 add_requires("magic_enum 0.9.7")
 if not has_config("vs_runtime") then
     set_runtimes("MD")
