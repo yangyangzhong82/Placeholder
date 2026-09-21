@@ -134,6 +134,7 @@
 | `{item_raw_name_id}`   | 物品的原始名称 ID                        | `minecraft:diamond_sword`    |
 | `{item_description_id}`| 物品的描述 ID                            | `item.diamondSword`          |
 | `{item_is_block}`      | 物品是否是方块                           | `true`                       |
+| `{item_is_humanoid_wearable_block}` | 物品是否是可供人形生物穿戴的方块（不包括普通盔甲） | `false` |
 | `{item_is_armor}`      | 物品是否是盔甲                           | `false`                      |
 | `{item_is_potion}`     | 物品是否是药水                           | `false`                      |
 | `{item_block:<inner_placeholder_spec>}` | 物品的方块信息。可用于获取物品作为方块时的属性，例如 `{item_block:block_type_name}` | `minecraft:stone` |

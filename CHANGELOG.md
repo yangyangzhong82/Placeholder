@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Changed
+- 服务端适配 LeviLamina 26.51.1。
+- `{item_is_block}` 改用物品堆的方块指针判断；`{item_is_humanoid_wearable_block}` 适配新的穿戴判定接口，仍仅匹配可穿戴方块。
+- `{server_version}` 改从新版 `Common::StringConstants` 读取服务器版本字符串。
+
 ## [0.9.0] 2026-09-15
 
 ### Changed

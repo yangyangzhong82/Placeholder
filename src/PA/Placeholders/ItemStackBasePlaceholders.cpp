@@ -87,7 +87,7 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_block}", {
         bool isBlock = false;
-        if (c.itemStackBase) isBlock = static_cast<bool>(c.itemStackBase->getBlockType());
+        if (c.itemStackBase) isBlock = c.itemStackBase->mBlock != nullptr;
         out = isBlock ? "true" : "false";
     });
 
@@ -156,7 +156,14 @@ void registerItemStackBasePlaceholders(IPlaceholderService* svc) {
 
     PA_SIMPLE(svc, owner, ItemStackBaseContext, "{item_is_humanoid_wearable_block}", {
         bool isWearableBlock = false;
-        if (c.itemStackBase) isWearableBlock = c.itemStackBase->isHumanoidWearableBlockItem();
+        if (c.itemStackBase) {
+#ifdef LL_PLAT_S
+            // The new API also includes non-block wearables; preserve the block-only placeholder.
+            isWearableBlock = c.itemStackBase->mBlock && c.itemStackBase->isHumanoidWearableItem();
+#else
+            isWearableBlock = c.itemStackBase->isHumanoidWearableBlockItem();
+#endif
+        }
         out = isWearableBlock ? "true" : "false";
     });
 

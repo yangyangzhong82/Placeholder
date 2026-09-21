@@ -12,6 +12,9 @@
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
 #include "mc/deps/ecs/gamerefs_entity/GameRefsEntity.h"
 #include "mc/common/Common.h"
+#ifdef LL_PLAT_S
+#include "mc/common/StringConstants.h"
+#endif
 #include "mc/network/ServerNetworkHandler.h"
 #include "mc/profile/ProfilerLite.h"
 #include "mc/server/PropertiesSettings.h"
@@ -99,7 +102,14 @@ void registerServerPlaceholders(IPlaceholderService* svc) {
     });
 
     // 服务器版本占位符 (缓存 5 分钟)
-    PA_SERVER_CACHED(svc, owner, "{server_version}", 300, { out = Common::getServerVersionString(); });
+    PA_SERVER_CACHED(svc, owner, "{server_version}", 300, {
+#ifdef LL_PLAT_S
+        static const auto versions = Common::_buildStringConstants();
+        out = versions.mServerVersionString.get();
+#else
+        out = Common::getServerVersionString();
+#endif
+    });
 
     // 服务器协议版本占位符 (缓存 5 分钟)
     PA_SERVER_CACHED(svc, owner, "{server_protocol_version}", 300, {

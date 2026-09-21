@@ -19,7 +19,7 @@
 
 ## 安装
 
-1. 确保服务器已安装 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 及其依赖 `LegacyRemoteCall`。
+1. 确保服务器已安装 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 26.51.1 及插件依赖 `LegacyRemoteCall`。
 2. 将本插件（`Placeholder`）放入服务器 `plugins/` 目录。
 3. 重启服务器。控制台出现加载日志即表示成功。
 
