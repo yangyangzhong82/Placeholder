@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <Windows.h>
 
 namespace PA {
 namespace ScriptExports {
@@ -37,7 +38,13 @@ static std::string safeNullPtr(void const* p) {
 
 // ========== 现有导出 ==========
 
+bool isAvailable() noexcept {
+    return GetModuleHandleW(L"LegacyRemoteCall.dll") != nullptr;
+}
+
 void install() {
+    if (!isAvailable()) return;
+
     std::call_once(gInstallOnce, [] {
         logger.info("[PA::ScriptExports] Installing script exports under namespace '{}'", kNamespace);
 
@@ -363,6 +370,10 @@ void install() {
 
 void uninstall() {
     if (!gInstalled.load(std::memory_order_acquire)) return;
+    if (!isAvailable()) {
+        gInstalled.store(false, std::memory_order_release);
+        return;
+    }
     int removed = RemoteCall::removeNameSpace(kNamespace);
     logger.info("[PA::ScriptExports] Uninstalled namespace '{}', removed {} exported functions", kNamespace, removed);
     gInstalled.store(false, std::memory_order_release);

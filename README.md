@@ -19,7 +19,7 @@
 
 ## 安装
 
-1. 确保服务器已安装 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 26.51.1 及插件依赖 `LegacyRemoteCall`。
+1. 确保服务器已安装 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 26.51.1。`LegacyRemoteCall` 为可选依赖，仅使用 JS / RemoteCall 接口时需要安装；未安装时 PA 核心功能及 C++ / C ABI 接口仍可正常使用。
 2. 将本插件（`Placeholder`）放入服务器 `plugins/` 目录。
 3. 重启服务器。控制台出现加载日志即表示成功。
 
@@ -55,6 +55,8 @@
 | 想了解版本变化 | [CHANGELOG.md](CHANGELOG.md) |
 
 ## JS / RemoteCall 接入
+
+使用前需安装 `LegacyRemoteCall` 并重启服务器；未安装时不会注册以下 JS 接口，也不会报依赖或模块缺失。
 
 通过 `ll.import("PA", <函数名>)` 即可在 JS 中调用。可用导出函数：
 

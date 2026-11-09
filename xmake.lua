@@ -32,6 +32,9 @@ target("Placeholder") -- Change this to your mod name.
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
     add_defines("NOMINMAX", "UNICODE","Placeholder_EXPORTS")
     add_packages("levilamina","exprtk","utfcpp","fast_float", "icu4c","sol2","legacyremotecall","magic_enum")
+    -- Keep the optional script bridge out of the DLL's mandatory imports.
+    add_shflags("/DELAYLOAD:LegacyRemoteCall.dll", {force = true})
+    add_syslinks("delayimp")
     set_exceptions("none") -- To avoid conflicts with /EHa.
     set_kind("shared")
     set_languages("c++20")

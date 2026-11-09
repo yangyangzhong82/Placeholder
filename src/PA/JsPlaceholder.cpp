@@ -2,6 +2,7 @@
 #include "PA/JsPlaceholder.h"
 
 #include "PA/PlaceholderAPI.h"
+#include "PA/ScriptExports.h"
 #include "PA/logger.h"
 #include "RemoteCallAPI.h"
 
@@ -92,6 +93,8 @@ public:
         const std::vector<std::string_view>& args,
         std::string&                         out
     ) const override {
+        if (!ScriptExports::isAvailable()) return;
+
         try {
             std::vector<std::string> args_str;
             args_str.reserve(args.size());
@@ -159,6 +162,8 @@ bool registerJsPlaceholder(
     std::string  cbName,
     unsigned int cacheDuration
 ) {
+    if (!ScriptExports::isAvailable()) return false;
+
     auto* svc = PA_GetPlaceholderService();
     if (!svc) {
         logger.error("[PA::registerJsPlaceholder] PlaceholderService is null");

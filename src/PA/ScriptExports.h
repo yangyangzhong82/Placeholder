@@ -4,6 +4,9 @@
 namespace PA {
 namespace ScriptExports {
 
+// 检查模块是否已加载
+bool isAvailable() noexcept;
+
 // 注册所有对脚本公开的 RemoteCall API
 void install();
 

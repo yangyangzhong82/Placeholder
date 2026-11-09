@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `LegacyRemoteCall` 改为可选依赖：未安装时跳过 JS 接口，PA 核心功能及 C++ / C ABI 接口仍可正常使用，且不再因缺少该模块而加载失败。
 - 服务端适配 LeviLamina 26.51.1。
 - `{item_is_block}` 改用物品堆的方块指针判断；`{item_is_humanoid_wearable_block}` 适配新的穿戴判定接口，仍仅匹配可穿戴方块。
 - `{server_version}` 改从新版 `Common::StringConstants` 读取服务器版本字符串。
